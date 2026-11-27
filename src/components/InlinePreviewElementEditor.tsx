@@ -102,7 +102,7 @@ export const InlinePreviewElementEditor: React.FC<InlinePreviewElementEditorProp
 
     const clampTitleX = (x: number) => Math.round(Math.max(40, Math.min(stageWidth - 40, x)));
     const clampTitleY = (y: number) => Math.round(Math.max(36, Math.min(stageHeight - 40, y)));
-    const clampTitleScale = (s: number) => Number(Math.max(0.5, Math.min(1.8, s)).toFixed(2));
+    const clampTitleScale = (s: number) => Number(Math.max(0.3, Math.min(1.8, s)).toFixed(2));
 
     return (
       <div
@@ -234,7 +234,7 @@ export const InlinePreviewElementEditor: React.FC<InlinePreviewElementEditorProp
               <input
                 type="range"
                 aria-label="Tỉ lệ chữ tên bài giảng"
-                min={0.5}
+                min={0.3}
                 max={1.8}
                 step={0.05}
                 value={titleScale}

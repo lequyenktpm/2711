@@ -94,7 +94,9 @@ import {
 } from '../engine/audioMixHelper';
 import { buildVideoDescription } from '../engine/videoDescriptionBuilder';
 import { downloadTextAsPlainFile, isHtmlPayload } from '../utils/safeFileDownload';
-import { playExportCompleteSound } from '../utils/soundEffects';
+import { playExportCompleteSound, playTtsCompleteSound } from '../utils/soundEffects';
+import { notifyEdgeFallbackToGoogle } from '../utils/ttsFallbackNotice';
+import { isMultilingualVoiceId } from '../engine/bilingualTtsHelper';
 import { parseTranscriptAuto } from '../engine/transcriptParser';
 import {
   alignAudioWithProgressJob,
@@ -2234,7 +2236,9 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
     return new File([bytes], fileName, { type: mimeType });
   };
 
-  const handleGenerateReadingTts = async (): Promise<GeneratedReadingBundle | null> => {
+  const handleGenerateReadingTts = async (
+    ttsOverride?: { provider?: string; strictProvider?: boolean },
+  ): Promise<GeneratedReadingBundle | null> => {
     if (isGeneratingReadingTts || !readingText.trim()) return null;
     setAlignError(null);
     setIsGeneratingReadingTts(true);
@@ -2256,7 +2260,13 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
       const voiceObj = allReadingVoices.find((v) => v.id === readingVoice);
       const langFallback =
         LEARNING_LANGUAGE_OPTIONS.find((l) => l.id === readingLearningLang)?.voiceLang || 'en-US';
-      const baseLang = voiceObj?.lang || langFallback;
+      const baseLang =
+        isMultilingualVoiceId(readingVoice) || !voiceObj?.lang || voiceObj.lang === 'multi'
+          ? langFallback
+          : voiceObj.lang;
+      const activeProvider = ttsOverride?.provider || readingProvider;
+      const activeStrict = ttsOverride?.strictProvider === true;
+      const unifiedMultilingual = isMultilingualVoiceId(readingVoice);
       const activeIntroText = readingIntroEnabled
         ? (!isReadingIntroCustom
             ? buildDefaultIntroForLang(readingLearningLang, cleanTitle)
@@ -2266,13 +2276,16 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
       const res = await synthesizeAudioAndSyncCues({
         rawScript: cleanBody,
         title: cleanTitle,
-        provider: readingProvider,
+        provider: activeProvider,
+        strictProvider: activeStrict,
         voice: readingVoice,
         lang: baseLang,
         rate: readingTtsRate,
-        autoSplitLanguages: false,
+        autoSplitLanguages: unifiedMultilingual,
+        singleVoiceMultilingual: unifiedMultilingual,
         alignWithWhisper: true,
         whisperModel: alignModel,
+        suppressCompleteSound: true,
         onProgress: (pct, label) => {
           setReadingTtsProgress(Math.round(pct * 0.7));
           setReadingTtsStageLabel(label);
@@ -2285,20 +2298,31 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
       const hasVietnameseChars = (s: string) =>
         /[ăđơưảãạằắẳẵặầấẩẫậẻẽẹềếểễệỉĩịỏõọồốổỗộờớởỡợủũụừứửữựỷỹỵ]/i.test(s);
 
+      let anyEdgeFallback = Boolean(res.edgeFallbackToGoogle);
+      const collectedEdgeErrors = [...(res.edgeErrors || [])];
+
       if (activeIntroText) {
         setReadingTtsProgress(74);
         setReadingTtsStageLabel('Đang tạo giọng Intro mở đầu bài đọc...');
         const useViVoice =
+          !unifiedMultilingual &&
           hasVietnameseChars(activeIntroText) &&
-          (readingProvider === 'auto' || readingProvider === 'edge');
+          (activeProvider === 'auto' || activeProvider === 'edge');
         const introRes = await synthesizeAudioWithProgressJob({
-          provider: readingProvider,
-          voice: useViVoice ? 'vi-VN-HoaiMyNeural' : readingVoice,
-          lang: useViVoice ? 'vi-VN' : baseLang,
+          provider: activeProvider,
+          strictProvider: activeStrict,
+          voice: unifiedMultilingual ? readingVoice : useViVoice ? 'vi-VN-HoaiMyNeural' : readingVoice,
+          lang: hasVietnameseChars(activeIntroText) ? 'vi-VN' : baseLang,
           autoSplitLanguages: false,
+          singleVoiceMultilingual: unifiedMultilingual,
           rate: readingTtsRate,
+          suppressCompleteSound: true,
           segments: [{ id: 'reading-intro', text: activeIntroText, pauseAfterSec: 0, autoSplit: false }],
         });
+        if (introRes.edgeFallbackToGoogle) {
+          anyEdgeFallback = true;
+          collectedEdgeErrors.push(...(introRes.edgeErrors || []));
+        }
         if (introRes.audioBase64) {
           partsToConcat.push({
             file: decodeBase64AudioClip(
@@ -2325,16 +2349,24 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
         setReadingTtsProgress(82);
         setReadingTtsStageLabel('Đang tạo giọng đọc Outro...');
         const useViOutro =
+          !unifiedMultilingual &&
           hasVietnameseChars(outroText) &&
-          (readingProvider === 'auto' || readingProvider === 'edge');
+          (activeProvider === 'auto' || activeProvider === 'edge');
         const outroRes = await synthesizeAudioWithProgressJob({
-          provider: readingProvider,
-          voice: useViOutro ? 'vi-VN-HoaiMyNeural' : readingVoice,
-          lang: useViOutro ? 'vi-VN' : baseLang,
+          provider: activeProvider,
+          strictProvider: activeStrict,
+          voice: unifiedMultilingual ? readingVoice : useViOutro ? 'vi-VN-HoaiMyNeural' : readingVoice,
+          lang: hasVietnameseChars(outroText) ? 'vi-VN' : baseLang,
           autoSplitLanguages: false,
+          singleVoiceMultilingual: unifiedMultilingual,
           rate: readingTtsRate,
+          suppressCompleteSound: true,
           segments: [{ id: 'reading-outro', text: outroText, pauseAfterSec: 0, autoSplit: false }],
         });
+        if (outroRes.edgeFallbackToGoogle) {
+          anyEdgeFallback = true;
+          collectedEdgeErrors.push(...(outroRes.edgeErrors || []));
+        }
         if (outroRes.audioBase64) {
           partsToConcat.push({
             file: decodeBase64AudioClip(
@@ -2479,6 +2511,24 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
       setAlignCurrentSec(0);
       setReadingTtsProgress(100);
       setReadingTtsStageLabel('Hoàn tất Intro · Bài đọc · Outro có nhạc nền!');
+      playTtsCompleteSound();
+
+      if (anyEdgeFallback && !activeStrict) {
+        notifyEdgeFallbackToGoogle({
+          id: 'reading-along-edge-fallback',
+          sourceLabel: 'Reading Along',
+          edgeErrors: collectedEdgeErrors,
+          onRetryEdge: async () => {
+            const retried = await handleGenerateReadingTts({
+              provider: 'edge',
+              strictProvider: true,
+            });
+            if (!retried) {
+              throw new Error('Edge TTS vẫn đang tạm gián đoạn, đã giữ nguyên Audio Google.');
+            }
+          },
+        });
+      }
 
       return {
         audioFile: finalAudioFile,

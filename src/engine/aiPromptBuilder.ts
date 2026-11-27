@@ -176,16 +176,8 @@ Quy tắc an toàn (KHÔNG invent type hay icon ngoài danh mục):
       : `- Tổng phạm vi Transcript: \`${totalStart}\` → \`${totalEnd}\` (${effectiveCues.length} segments).`;
 
   const durationBudgetLine = targetMinutes
-    ? `- **Thời lượng & Chiều sâu sư phạm mục tiêu**: Người dùng mong muốn video hoàn chỉnh dài khoảng **${targetMinutes} phút (~${Math.round(targetMinutes * 60)} giây)**. ${
-        targetMinutes >= 3
-          ? 'KHÔNG được chạy vội nhồi chữ theo kiểu 1 từ + 1 ví dụ sơ sài cho đủ số lượng. Hãy chia scene thật sâu sắc: phân tích TẠI SAO cách nói đó nghe tự nhiên như người bản ngữ (Sound More Natural), đối chiếu lỗi sai / câu cứng nhắc kiểu sách giáo khoa người học hay mắc ("Don\'t say X → Say Y"), giải thích sắc thái, ngữ cảnh giao tiếp thực tế và mở rộng nhiều ví dụ phản xạ để nội dung giàu chiều sâu xứng đáng với thời lượng ' +
-            targetMinutes +
-            ' phút.'
-          : targetMinutes <= 1
-            ? 'Giữ nhịp nhanh, súc tích nhưng vẫn nêu rõ vì sao cách diễn đạt tự nhiên hơn câu thông thường và tránh nhồi chữ dư thừa.'
-            : 'Cân đối số scene và chiều sâu phân tích: mỗi mục cần giải thích ngắn gọn lý do nghe tự nhiên, lỗi dễ sai và ví dụ thực tế vừa vặn với thời lượng mục tiêu.'
-      }`
-    : '';
+    ? `- **Thời lượng TỐI THIỂU (MỨC SÀN — CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN)**: Mức **${targetMinutes} phút (~${Math.round(targetMinutes * 60)} giây)** là ngưỡng sàn tối thiểu. Hãy để **số lượng mục kiến thức và chiều sâu phân tích** quyết định thời lượng thực tế (được phép dài hơn ${targetMinutes} phút để diễn giải trọn vẹn, TUYỆT ĐỐI KHÔNG cắt xén hay nén xuống thấp hơn). Không bao giờ sinh câu cụt lủn, nửa vời hay vô nghĩa để ép thời gian; chất lượng giải thích sư phạm (vì sao tự nhiên, lỗi dễ sai, sắc thái & ngữ cảnh thực tế, ví dụ đầy đủ ý nghĩa) là **tiêu chí bắt buộc**.`
+    : `- **Chiều sâu kiến thức & chất lượng giải thích là tiêu chí bắt buộc**: Hãy để số lượng mục kiến thức và độ sâu phân tích quyết định độ dài từng scene — TUYỆT ĐỐI KHÔNG viết câu cụt, ví dụ nửa vời hay nội dung sơ sài vô nghĩa.`;
 
   const pickCleanSampleQuote = (raw: string | undefined, fallback: string, maxChars = 64): string => {
     const clean = (raw || '').trim();
@@ -211,9 +203,9 @@ ${audioDiagLine}${durationBudgetLine ? `\n${durationBudgetLine}` : ''}
 - **LUẬT BẢO TOÀN TRANSCRIPT**: Sao chép CHÍNH XÁC từng ký tự trong \`source_segments[]\` bên dưới (giữ nguyên dấu phẩy, dấu ngoặc kép \`"..."\`, chấm hỏi, xuống dòng, \`segment_id\`, \`start\`, \`end\`). Tuyệt đối KHÔNG sửa chính tả, không bỏ dấu ngoặc kép (VD: \`"I'm looking," he says,\` phải giữ nguyên từng dấu câu). Không bao giờ trộn hai bộ timestamp khác nhau.
 
 ## STAGE 2 — INSTRUCTIONAL DESIGNER (CHIA ĐA SCENE SƯ PHẠM)
-- **CẤM DỒN 1 SCENE**: Tuyệt đối KHÔNG nhét toàn bộ bài vào 1 scene \`sc1\` duy nhất! Hãy chia bài học thành **nhiều \`scenes[]\` liên tiếp** (\`sc_01\`, \`sc_02\`, \`sc_03\`... mỗi scene 1–4 câu hoặc 1 ý sư phạm rõ ràng: Intro Hook → Tình huống/Quy tắc 1 → Đối chiếu/Ví dụ 2 → Takeaway/Practice).
+- **CẤM DỒN 1 SCENE & CẤM CÂU CỤT VÔ NGHĨA**: Tuyệt đối KHÔNG nhét toàn bộ bài vào 1 scene \`sc1\` duy nhất và KHÔNG cắt xén thành các câu cụt thiếu nghĩa! Hãy chia bài học thành **nhiều \`scenes[]\` liên tiếp** (\`sc_01\`, \`sc_02\`, \`sc_03\`... mỗi scene giải quyết trọn vẹn 1 mục kiến thức có chiều sâu: Intro Hook → Tình huống/Quy tắc 1 → Đối chiếu lỗi sai & giải thích bản chất → Takeaway/Practice).
 - Mỗi scene phải gắn đúng \`segment_id\` tăng dần theo mạch bài học (không trỏ toàn bộ scene vào \`seg_001\`).
-- Mỗi scene phải có \`scene_id\`, \`title\`, \`learning_objective\`, \`composition\`, \`transition\`, và dạy được ý nghĩa bài học **ngay cả khi tắt tiếng** nhờ sơ đồ/vật thể/chú thích trực quan.
+- Mỗi scene phải có \`scene_id\`, \`title\`, \`learning_objective\`, \`composition\`, \`transition\`, và dạy được ý nghĩa bài học **ngay cả khi tắt tiếng** nhờ sơ đồ/vật thể/chú thích trực quan có giá trị thực tiễn cao.
 
 ## STAGE 3 — MOTION GRAPHICS DIRECTOR (TỌA ĐỘ 0..1 & ĐỒNG BỘ \`sync_anchor\`)
 ### ${styleGuide}

@@ -338,7 +338,7 @@ function splitPhraseForIcon(text: string): { prefix: string; highlight: string }
   };
 }
 
-function cleanShortPhrase(text: string, maxWords = 5, maxChars = 26): string {
+function cleanShortPhrase(text: string, maxWords = 12, maxChars = 72): string {
   const quoted = text.match(/"([^"]+)"|'([^']+)'|「([^」]+)」/);
   const target = (quoted?.[1] || quoted?.[2] || quoted?.[3] || text).trim();
   const words = target.split(/\s+/).filter(Boolean);
@@ -348,12 +348,11 @@ function cleanShortPhrase(text: string, maxWords = 5, maxChars = 26): string {
   let charCount = 0;
   for (const w of words.slice(0, maxWords)) {
     const nextLen = charCount + (picked.length > 0 ? 1 : 0) + w.length;
-    if (picked.length > 0 && nextLen > maxChars - 1) break;
+    if (picked.length > 0 && nextLen > maxChars) break;
     picked.push(w);
     charCount = nextLen;
   }
-  const joined = (picked.length > 0 ? picked.join(' ') : words[0].slice(0, maxChars - 1)).replace(/[,;:]+$/, '');
-  return picked.length < words.length || joined.length < target.length ? `${joined}…` : joined;
+  return (picked.length > 0 ? picked.join(' ') : words[0].slice(0, maxChars)).replace(/[,;:]+$/, '');
 }
 
 function extractTargetSentence(cue: TranscriptCue): string | null {
@@ -406,9 +405,9 @@ function deriveStripItems(project: LessonProject): ComparisonItem[] {
     const cue = cues[idx];
     const target = extractTargetSentence(cue) ?? cue.text;
     const words = target.replace(/[^\p{L}\p{N}\s'-]/gu, '').split(/\s+/).filter(Boolean);
-    const label = words.slice(0, 2).join(' ') || `Part ${i + 1}`;
+    const label = words.slice(0, 4).join(' ') || `Part ${i + 1}`;
     return {
-      label: label.length > 14 ? `${label.slice(0, 12)}…` : label,
+      label,
       activateAt: cue.start,
       accentColor: colors[i % colors.length],
     };

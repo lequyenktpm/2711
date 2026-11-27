@@ -1,4 +1,5 @@
 import { buildApiKeyHeaders, loadClientApiKeys } from '../utils/apiKeysStore';
+import { playTtsCompleteSound } from '../utils/soundEffects';
 import { splitMixedLanguageTtsSpans } from './bilingualTtsHelper';
 import { cleanDownloadFileName } from './outputNaming';
 import {
@@ -24,6 +25,10 @@ export interface TtsProviderItem {
 export interface TtsSynthesizeResponse {
   ok?: boolean;
   providerUsed?: string;
+  providersUsed?: string[];
+  edgeAttempted?: boolean;
+  edgeFallbackToGoogle?: boolean;
+  edgeErrors?: string[];
   mimeType?: string;
   audioBase64?: string;
   durationSec?: number;
@@ -57,6 +62,10 @@ export interface SynthesizeAndSyncResult {
   srt: string;
   blockTranscript: string;
   providerUsed: string;
+  providersUsed?: string[];
+  edgeAttempted?: boolean;
+  edgeFallbackToGoogle?: boolean;
+  edgeErrors?: string[];
   detectedLanguage?: string;
   durationSec: number;
   whisperAligned: boolean;
@@ -139,13 +148,20 @@ async function runDirectTtsFallback(
 }
 
 export async function synthesizeAudioWithProgressJob(
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown> & { suppressCompleteSound?: boolean },
   onProgress?: (progress: number, stageLabel: string) => void,
 ): Promise<TtsSynthesizeResponse> {
   onProgress?.(4, 'Đang khởi tạo tác vụ đọc TTS...');
   const clientKeys = loadClientApiKeys();
+  const { suppressCompleteSound, ...cleanPayload } = payload;
+  const finishWithSound = (res: TtsSynthesizeResponse): TtsSynthesizeResponse => {
+    if (!suppressCompleteSound && res?.audioBase64) {
+      playTtsCompleteSound();
+    }
+    return res;
+  };
   const bodyWithKeys: Record<string, unknown> = {
-    ...payload,
+    ...cleanPayload,
     ...(clientKeys.elevenlabsApiKey ? { elevenLabsApiKey: clientKeys.elevenlabsApiKey } : {}),
     ...(clientKeys.geminiApiKey ? { geminiApiKey: clientKeys.geminiApiKey } : {}),
   };
@@ -160,7 +176,7 @@ export async function synthesizeAudioWithProgressJob(
 
   // Graceful fallback to synchronous endpoint if /start returned 404 or HTML page
   if (startRes.status === 404 || trimmedStart.startsWith('<')) {
-    return runDirectTtsFallback(headers, bodyWithKeys, onProgress);
+    return finishWithSound(await runDirectTtsFallback(headers, bodyWithKeys, onProgress));
   }
 
   let startJson: { jobId?: string; error?: string } = {};
@@ -190,7 +206,7 @@ export async function synthesizeAudioWithProgressJob(
     } catch (netErr) {
       consecutivePollFailures += 1;
       if (consecutivePollFailures >= 4) {
-        return runDirectTtsFallback(headers, bodyWithKeys, onProgress);
+        return finishWithSound(await runDirectTtsFallback(headers, bodyWithKeys, onProgress));
       }
       continue;
     }
@@ -207,7 +223,7 @@ export async function synthesizeAudioWithProgressJob(
         continue;
       }
       // Server restarted or routed to another instance: seamlessly fall back to stateless sync TTS
-      return runDirectTtsFallback(headers, bodyWithKeys, onProgress);
+      return finishWithSound(await runDirectTtsFallback(headers, bodyWithKeys, onProgress));
     }
 
     const pollRaw = await pollRes.text();
@@ -215,7 +231,7 @@ export async function synthesizeAudioWithProgressJob(
     if (!trimmedPoll || trimmedPoll.startsWith('<')) {
       consecutivePollFailures += 1;
       if (consecutivePollFailures >= 4) {
-        return runDirectTtsFallback(headers, bodyWithKeys, onProgress);
+        return finishWithSound(await runDirectTtsFallback(headers, bodyWithKeys, onProgress));
       }
       continue;
     }
@@ -251,7 +267,7 @@ export async function synthesizeAudioWithProgressJob(
     }
     if (pollData.status === 'done' && pollData.result) {
       onProgress?.(100, 'Tổng hợp Audio hoàn tất!');
-      return pollData.result;
+      return finishWithSound(pollData.result);
     }
     if (pollData.status === 'error') {
       throw new Error(pollData.error || 'Lỗi tổng hợp Audio TTS.');
@@ -426,9 +442,12 @@ export async function synthesizeAudioAndSyncCues(params: {
   secondaryVoice?: string;
   secondaryLang?: string;
   autoSplitLanguages?: boolean;
+  singleVoiceMultilingual?: boolean;
+  strictProvider?: boolean;
   rate?: number;
   alignWithWhisper?: boolean;
   whisperModel?: string;
+  suppressCompleteSound?: boolean;
   onProgress?: (progress: number, stageLabel: string) => void;
 }): Promise<SynthesizeAndSyncResult> {
   const cleanText = stripTimestampsFromScript(params.rawScript).trim();
@@ -443,6 +462,7 @@ export async function synthesizeAudioAndSyncCues(params: {
       primaryVoice: params.voice,
       secondaryVoice: params.secondaryVoice,
       autoSplit: params.autoSplitLanguages !== false,
+      singleVoiceMultilingual: params.singleVoiceMultilingual,
     }).length > 1;
 
   const useWhisperAlign = params.alignWithWhisper !== false && !hasMixedLangs;
@@ -454,8 +474,15 @@ export async function synthesizeAudioAndSyncCues(params: {
       ...(params.secondaryVoice ? { secondaryVoice: params.secondaryVoice } : {}),
       ...(params.secondaryLang ? { secondaryLang: params.secondaryLang } : {}),
       autoSplitLanguages: params.autoSplitLanguages !== false,
+      ...(typeof params.singleVoiceMultilingual === 'boolean'
+        ? { singleVoiceMultilingual: params.singleVoiceMultilingual }
+        : {}),
+      ...(typeof params.strictProvider === 'boolean'
+        ? { strictProvider: params.strictProvider }
+        : {}),
       rate: params.rate ?? 1.0,
       text: cleanText,
+      suppressCompleteSound: true,
     },
     (pct, label) => {
       const scaled = useWhisperAlign ? Math.round(pct * 0.72) : pct;
@@ -515,6 +542,10 @@ export async function synthesizeAudioAndSyncCues(params: {
     data.mimeType || 'audio/mpeg',
   );
 
+  if (!params.suppressCompleteSound) {
+    playTtsCompleteSound();
+  }
+
   return {
     audioFile,
     audioBase64: data.audioBase64,
@@ -522,6 +553,10 @@ export async function synthesizeAudioAndSyncCues(params: {
     srt,
     blockTranscript,
     providerUsed,
+    providersUsed: data.providersUsed,
+    edgeAttempted: data.edgeAttempted,
+    edgeFallbackToGoogle: data.edgeFallbackToGoogle,
+    edgeErrors: data.edgeErrors,
     detectedLanguage,
     durationSec: Number(data.durationSec || 0),
     whisperAligned,

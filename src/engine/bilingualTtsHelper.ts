@@ -544,6 +544,25 @@ export function normalizeTtsLangCode(raw?: string): SupportedTtsLang {
   return 'en';
 }
 
+const LOCALE_BY_TTS_LANG: Record<SupportedTtsLang, string> = {
+  en: 'en-US',
+  vi: 'vi-VN',
+  ja: 'ja-JP',
+  zh: 'zh-CN',
+  ko: 'ko-KR',
+  fr: 'fr-FR',
+  es: 'es-ES',
+};
+
+export function isMultilingualVoiceId(voiceId?: string): boolean {
+  const v = String(voiceId || '').trim();
+  return /MultilingualNeural$/i.test(v);
+}
+
+export function getLocaleForTtsLang(lang: SupportedTtsLang): string {
+  return LOCALE_BY_TTS_LANG[lang] || 'en-US';
+}
+
 export function detectVoiceLangCode(voiceId?: string): SupportedTtsLang | null {
   const v = String(voiceId || '').trim();
   if (!v) return null;
@@ -563,6 +582,9 @@ export function detectVoiceLangCode(voiceId?: string): SupportedTtsLang | null {
 export function pickVoiceForLangCode(langCode: SupportedTtsLang, requestedVoice?: string): string {
   const req = String(requestedVoice || '').trim();
   if (req) {
+    if (isMultilingualVoiceId(req)) {
+      return req;
+    }
     const reqLang = detectVoiceLangCode(req);
     if (reqLang === langCode) {
       return req;
@@ -599,6 +621,7 @@ export function splitMixedLanguageTtsSpans(
     primaryVoice?: string;
     secondaryVoice?: string;
     autoSplit?: boolean;
+    singleVoiceMultilingual?: boolean;
   } = {},
 ): TtsLanguageSpan[] {
   const clean = String(text || '').replace(/\s+/g, ' ').trim();
@@ -610,6 +633,18 @@ export function splitMixedLanguageTtsSpans(
       detectVoiceLangCode(opts.secondaryVoice) ||
       (primary === 'vi' ? 'en' : 'vi'),
   );
+
+  const primaryIsMultilingual = isMultilingualVoiceId(opts.primaryVoice);
+  const secondaryIsMultilingual = isMultilingualVoiceId(opts.secondaryVoice);
+  const useSingleUnifiedVoice =
+    Boolean(opts.singleVoiceMultilingual) || primaryIsMultilingual;
+  const unifiedVoiceId = useSingleUnifiedVoice
+    ? (primaryIsMultilingual
+        ? opts.primaryVoice!
+        : secondaryIsMultilingual
+          ? opts.secondaryVoice!
+          : opts.primaryVoice || 'en-US-AvaMultilingualNeural')
+    : null;
 
   // Enforce a single consistent Vietnamese voice across all 'vi' spans in the same request
   const consistentViVoice =
@@ -625,6 +660,9 @@ export function splitMixedLanguageTtsSpans(
     DEFAULT_EDGE_VOICE_BY_LANG.vi;
 
   const voiceForLang = (lang: SupportedTtsLang): string => {
+    if (unifiedVoiceId) {
+      return unifiedVoiceId;
+    }
     if (lang === 'vi') {
       return consistentViVoice;
     }

@@ -693,10 +693,12 @@ export function pickContextualSceneIcon(
   return fallback;
 }
 
-function cleanSnippet(text: string, maxLen = 22): string {
+function cleanSnippet(text: string, maxLen = 64): string {
   const cleaned = text.replace(/["“”'「」]/g, '').trim();
   if (cleaned.length <= maxLen) return cleaned;
-  return `${cleaned.slice(0, maxLen - 1).trim()}…`;
+  const slice = cleaned.slice(0, maxLen).trim();
+  const lastSpace = slice.lastIndexOf(' ');
+  return lastSpace >= Math.floor(maxLen * 0.5) ? slice.slice(0, lastSpace).trim() : slice;
 }
 
 function extractTimeHint(text: string): { hour: number; minute: number; formula: string } | null {
@@ -717,8 +719,8 @@ function buildDynamicContrastSpec(cueText: string, cardText?: string): DynamicSc
   // Detect contrast pattern: "Don't say X, say Y" / "Stop saying X. Say Y" / "X vs Y" / "X -> Y"
   const stopMatch = source.match(/(?:stop saying|don't say|instead of)\s+["“]?([^"”.,;!?]+)["”]?[\s.,;!?]+(?:say|try|use)\s+["“]?([^"”.!?]+)["”]?/i);
   if (stopMatch) {
-    const left = cleanSnippet(stopMatch[1], 20);
-    const right = cleanSnippet(stopMatch[2], 20);
+    const left = cleanSnippet(stopMatch[1], 48);
+    const right = cleanSnippet(stopMatch[2], 48);
     return {
       layout: 'split-compare',
       badgeText: 'NATURAL UPGRADE',

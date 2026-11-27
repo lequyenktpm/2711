@@ -87,3 +87,52 @@ export function playCountdownRevealChime(): void {
     // ignore Web Audio playback errors
   }
 }
+
+export function playTtsCompleteSound(): void {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  try {
+    const now = ctx.currentTime;
+    const totalDurationSec = 2.0;
+
+    // Gentle ascending arpeggio notes leading into a warm 2.0s sustained harmonic chord
+    const notes: Array<{ freq: number; delay: number; peak: number; dur: number }> = [
+      { freq: 523.25, delay: 0.0, peak: 0.1, dur: 0.55 }, // C5
+      { freq: 659.25, delay: 0.14, peak: 0.1, dur: 0.65 }, // E5
+      { freq: 783.99, delay: 0.28, peak: 0.11, dur: 0.85 }, // G5
+      { freq: 1046.5, delay: 0.44, peak: 0.12, dur: 1.56 }, // C6 sustains cleanly to t = 2.0s
+    ];
+
+    notes.forEach(({ freq, delay, peak, dur }) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const startAt = now + delay;
+      const stopAt = Math.min(now + totalDurationSec, startAt + dur);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startAt);
+      gain.gain.setValueAtTime(0.0001, startAt);
+      gain.gain.exponentialRampToValueAtTime(peak, startAt + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, stopAt);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(startAt);
+      osc.stop(stopAt);
+    });
+
+    // Warm underlying harmonic pad stretching across the full 2.0 seconds
+    const padOsc = ctx.createOscillator();
+    const padGain = ctx.createGain();
+    padOsc.type = 'triangle';
+    padOsc.frequency.setValueAtTime(523.25, now); // C5 warmth
+    padGain.gain.setValueAtTime(0.0001, now);
+    padGain.gain.exponentialRampToValueAtTime(0.055, now + 0.18);
+    padGain.gain.exponentialRampToValueAtTime(0.0001, now + totalDurationSec);
+    padOsc.connect(padGain);
+    padGain.connect(ctx.destination);
+    padOsc.start(now);
+    padOsc.stop(now + totalDurationSec);
+  } catch {
+    // ignore Web Audio playback errors
+  }
+}
+

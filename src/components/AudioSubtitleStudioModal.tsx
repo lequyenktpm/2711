@@ -28,9 +28,11 @@ import {
 import { TranscriptCue } from '../engine/types';
 import {
   detectVoiceLangCode,
+  isMultilingualVoiceId,
   pickVoiceForLangCode,
 } from '../engine/bilingualTtsHelper';
 import { buildApiKeyHeaders, useClientApiKeys } from '../utils/apiKeysStore';
+import { notifyEdgeFallbackToGoogle } from '../utils/ttsFallbackNotice';
 import {
   loadPersistedSettings,
   PersistedStudioSettings,
@@ -464,6 +466,9 @@ export const AudioSubtitleStudioModal: React.FC<AudioSubtitleStudioModalProps> =
   };
 
   const resolveVoiceForScript = (sampleText: string, preferredVoice: string, preferredLang: string) => {
+    if (isMultilingualVoiceId(preferredVoice)) {
+      return { voice: preferredVoice, lang: preferredLang };
+    }
     const voiceLang = detectVoiceLangCode(preferredVoice) || detectVoiceLangCode(preferredLang);
     if (RE_LINE_HAS_HANZI.test(sampleText) && !RE_LINE_HAS_KANA.test(sampleText) && voiceLang !== 'zh') {
       const zhVoice =
@@ -508,14 +513,16 @@ export const AudioSubtitleStudioModal: React.FC<AudioSubtitleStudioModalProps> =
       const explVoice = secondaryVoice || 'vi-VN-HoaiMyNeural';
       const explLang = secondaryVoiceObj?.lang || 'vi-VN';
       const resolvedPrimary = resolveVoiceForScript(clean, voice, selectedVoiceObj?.lang || 'en-US');
+      const useUnifiedMultilingual = isMultilingualVoiceId(resolvedPrimary.voice);
 
       const requestPayload: Record<string, unknown> = {
         provider,
         voice: resolvedPrimary.voice,
         lang: resolvedPrimary.lang,
-        secondaryVoice: secondaryVoice || undefined,
+        secondaryVoice: useUnifiedMultilingual ? resolvedPrimary.voice : secondaryVoice || undefined,
         secondaryLang: explLang,
         autoSplitLanguages: onlyTargetContentSpeech ? false : autoSplitLanguages,
+        singleVoiceMultilingual: useUnifiedMultilingual,
         rate,
       };
 
@@ -589,78 +596,97 @@ export const AudioSubtitleStudioModal: React.FC<AudioSubtitleStudioModalProps> =
         requestPayload.text = clean;
       }
 
-      const data = await synthesizeAudioWithProgressJob(
-        requestPayload,
-        (pct, lbl) => {
-          const scaled = autoAlignWhisper ? Math.round(pct * 0.72) : pct;
-          setTtsProgress(Math.max(4, scaled));
-          setTtsStageLabel(lbl);
-        },
-      );
-      if (!data?.audioBase64) {
-        throw new Error(data?.error || 'Không thể sinh Audio TTS.');
-      }
-
-      // Start from exact per-line timestamps measured from actual TTS MP3 segments
-      let finalCues: TranscriptCue[] = data.cues || [];
-      let providerUsed = data.providerUsed || provider;
-      let detectedLanguage: string | undefined;
-
-      if (autoAlignWhisper && finalCues.length > 0) {
-        setIsAligningTts(true);
-        setTtsProgress(74);
-        setTtsStageLabel(
-          ttsAlignMode === 'fast-forced'
-            ? 'Đang căn nhịp từng từ theo kịch bản (Fast Forced Align)...'
-            : `Đang đồng bộ từng từ qua Whisper (${ttsWhisperModel})...`,
+      const executeModalTtsAndApply = async (payloadToRun: Record<string, unknown>) => {
+        const data = await synthesizeAudioWithProgressJob(
+          payloadToRun,
+          (pct, lbl) => {
+            const scaled = autoAlignWhisper ? Math.round(pct * 0.72) : pct;
+            setTtsProgress(Math.max(4, scaled));
+            setTtsStageLabel(lbl);
+          },
         );
-        try {
-          const aligned = await alignAudioWithWhisperAuto(data.audioBase64, ttsWhisperModel, clean);
-          const whisperWords = Array.isArray(aligned?.words) ? aligned.words : [];
-          if (whisperWords.length > 0) {
-            finalCues = refineCuesWithWhisperWords(finalCues, whisperWords);
-          }
-          detectedLanguage = aligned?.language;
-          providerUsed = `${providerUsed} + ${aligned?.backendUsed || 'whisper'} (${aligned?.modelUsed || ttsWhisperModel})`;
-          setTtsAlignNote(
-            `Đã khớp 100% thời lượng Audio cho ${finalCues.length} dòng & tinh chỉnh word-level qua Whisper (${aligned?.modelUsed || ttsWhisperModel})${aligned?.language ? ` · Nhận diện ngôn ngữ: ${aligned.language}` : ''}.`,
-          );
-        } catch (alignErr) {
-          setTtsAlignNote(
-            `Đã khớp 100% thời lượng Audio theo từng câu đo từ FFmpeg (${alignErr instanceof Error ? `Whisper bỏ qua: ${alignErr.message}` : 'dùng timing đo trực tiếp'}).`,
-          );
-        } finally {
-          setIsAligningTts(false);
+        if (!data?.audioBase64) {
+          throw new Error(data?.error || 'Không thể sinh Audio TTS.');
         }
-      } else {
-        setTtsAlignNote(
-          `Đã tự động tính lại toàn bộ mốc thời gian cho ${finalCues.length} dòng khớp 100% thời lượng Audio (${Number(data.durationSec || 0).toFixed(1)}s).`,
-        );
+
+        // Start from exact per-line timestamps measured from actual TTS MP3 segments
+        let finalCues: TranscriptCue[] = data.cues || [];
+        let providerUsed = data.providerUsed || String(payloadToRun.provider || provider);
+        let detectedLanguage: string | undefined;
+
+        if (autoAlignWhisper && finalCues.length > 0) {
+          setIsAligningTts(true);
+          setTtsProgress(74);
+          setTtsStageLabel(
+            ttsAlignMode === 'fast-forced'
+              ? 'Đang căn nhịp từng từ theo kịch bản (Fast Forced Align)...'
+              : `Đang đồng bộ từng từ qua Whisper (${ttsWhisperModel})...`,
+          );
+          try {
+            const aligned = await alignAudioWithWhisperAuto(data.audioBase64, ttsWhisperModel, clean);
+            const whisperWords = Array.isArray(aligned?.words) ? aligned.words : [];
+            if (whisperWords.length > 0) {
+              finalCues = refineCuesWithWhisperWords(finalCues, whisperWords);
+            }
+            detectedLanguage = aligned?.language;
+            providerUsed = `${providerUsed} + ${aligned?.backendUsed || 'whisper'} (${aligned?.modelUsed || ttsWhisperModel})`;
+            setTtsAlignNote(
+              `Đã khớp 100% thời lượng Audio cho ${finalCues.length} dòng & tinh chỉnh word-level qua Whisper (${aligned?.modelUsed || ttsWhisperModel})${aligned?.language ? ` · Nhận diện ngôn ngữ: ${aligned.language}` : ''}.`,
+            );
+          } catch (alignErr) {
+            setTtsAlignNote(
+              `Đã khớp 100% thời lượng Audio theo từng câu đo từ FFmpeg (${alignErr instanceof Error ? `Whisper bỏ qua: ${alignErr.message}` : 'dùng timing đo trực tiếp'}).`,
+            );
+          } finally {
+            setIsAligningTts(false);
+          }
+        } else {
+          setTtsAlignNote(
+            `Đã tự động tính lại toàn bộ mốc thời gian cho ${finalCues.length} dòng khớp 100% thời lượng Audio (${Number(data.durationSec || 0).toFixed(1)}s).`,
+          );
+        }
+
+        const finalSrt = finalCues.length > 0 ? cuesToSrt(finalCues) : (data.srt || '');
+        const blockTranscript = finalCues.length > 0 ? cuesToBlockTranscript(finalCues) : '';
+
+        const safeName = `${ttsTitle.trim().replace(/[^a-zA-Z0-9-_]+/g, '_').slice(0, 32) || 'tts_audio'}.mp3`;
+        const audioFile = base64ToFile(data.audioBase64, safeName, data.mimeType || 'audio/mpeg');
+        const audioUrl = URL.createObjectURL(audioFile);
+
+        setTtsProgress(100);
+        setTtsStageLabel('Hoàn tất sinh Audio & Phụ đề!');
+        setTtsResult((prev) => {
+          if (prev?.audioUrl) URL.revokeObjectURL(prev.audioUrl);
+          return {
+            audioFile,
+            audioUrl,
+            audioBase64: data.audioBase64!,
+            cues: finalCues,
+            srt: finalSrt,
+            blockTranscript,
+            providerUsed,
+            detectedLanguage,
+            durationSec: Number(data.durationSec || 0),
+          };
+        });
+        return data;
+      };
+
+      const data = await executeModalTtsAndApply(requestPayload);
+      if (data.edgeFallbackToGoogle) {
+        notifyEdgeFallbackToGoogle({
+          id: 'audio-studio-edge-fallback',
+          sourceLabel: 'Studio Audio & Phụ Đề',
+          edgeErrors: data.edgeErrors,
+          onRetryEdge: async () => {
+            await executeModalTtsAndApply({
+              ...requestPayload,
+              provider: 'edge',
+              strictProvider: true,
+            });
+          },
+        });
       }
-
-      const finalSrt = finalCues.length > 0 ? cuesToSrt(finalCues) : (data.srt || '');
-      const blockTranscript = finalCues.length > 0 ? cuesToBlockTranscript(finalCues) : '';
-
-      const safeName = `${ttsTitle.trim().replace(/[^a-zA-Z0-9-_]+/g, '_').slice(0, 32) || 'tts_audio'}.mp3`;
-      const audioFile = base64ToFile(data.audioBase64, safeName, data.mimeType || 'audio/mpeg');
-      const audioUrl = URL.createObjectURL(audioFile);
-
-      setTtsProgress(100);
-      setTtsStageLabel('Hoàn tất sinh Audio & Phụ đề!');
-      setTtsResult((prev) => {
-        if (prev?.audioUrl) URL.revokeObjectURL(prev.audioUrl);
-        return {
-          audioFile,
-          audioUrl,
-          audioBase64: data.audioBase64!,
-          cues: finalCues,
-          srt: finalSrt,
-          blockTranscript,
-          providerUsed,
-          detectedLanguage,
-          durationSec: Number(data.durationSec || 0),
-        };
-      });
     } catch (err) {
       setTtsError(err instanceof Error ? err.message : 'Lỗi khi tạo Audio TTS.');
     } finally {

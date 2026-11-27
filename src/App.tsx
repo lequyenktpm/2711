@@ -11,6 +11,7 @@ import { GlobalOutputPanel, emitOutputUpdated } from './components/GlobalOutputP
 import { StageOverlayZone } from './components/InlinePreviewElementEditor';
 import { StagePreview } from './components/StagePreview';
 import { TimelineAndInspector } from './components/TimelineAndInspector';
+import { TtsFallbackToast } from './components/TtsFallbackToast';
 import {
   DEFAULT_BGM_PRESET,
   DEFAULT_BGM_VOLUME,
@@ -1791,6 +1792,8 @@ export default function App() {
         onClose={() => setIsAudioSubStudioOpen(false)}
         onApplyAudioAndCues={handleApplyGeneratedAudioAndCues}
       />
+
+      <TtsFallbackToast />
     </div>
   );
 }

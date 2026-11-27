@@ -127,6 +127,8 @@ import {
   splitMultipleExercisesFromText,
 } from './englishReelsEngine';
 import {
+  getLocaleForTtsLang,
+  isMultilingualVoiceId,
   pickVoiceForLangCode,
   sanitizeSpanTextForSpeech,
   splitMixedLanguageTtsSpans,
@@ -4523,6 +4525,87 @@ test('SEGMENT_EXCEEDS_AUDIO gracefully warns and auto-clamps modest overhang whi
   assert.ok(proj.duration <= 92.07, `Project duration ${proj.duration} should match audio 92.07`);
   assert.ok(proj.cues[proj.cues.length - 1].end <= 92.07);
 });
+
+test('single-voice MultilingualNeural TTS preserves one voice across spans while keeping per-token lang & locale hints', () => {
+  assert.equal(isMultilingualVoiceId('en-US-AvaMultilingualNeural'), true);
+  assert.equal(isMultilingualVoiceId('vi-VN-HoaiMyNeural'), false);
+  assert.equal(getLocaleForTtsLang('ja'), 'ja-JP');
+  assert.equal(getLocaleForTtsLang('vi'), 'vi-VN');
+
+  const pickedJa = pickVoiceForLangCode('ja', 'en-US-AvaMultilingualNeural');
+  assert.equal(pickedJa, 'en-US-AvaMultilingualNeural');
+
+  const spans = splitMixedLanguageTtsSpans('Dùng từ 水 khi nói tiếng Nhật hoặc checkout bằng tiếng Anh.', {
+    primaryLang: 'vi',
+    secondaryLang: 'ja',
+    primaryVoice: 'en-US-AvaMultilingualNeural',
+    singleVoiceMultilingual: true,
+  });
+
+  assert.ok(spans.length >= 3, `Expected multiple language-tagged spans, got ${spans.length}`);
+  assert.ok(spans.some((s) => s.lang === 'ja' && s.text.includes('水')), 'Should tag single Japanese kanji 水 as lang=ja');
+  assert.ok(spans.some((s) => s.lang === 'en' && /checkout/i.test(s.text)), 'Should tag embedded English word as lang=en');
+  assert.ok(spans.some((s) => s.lang === 'vi'), 'Should keep Vietnamese segments as lang=vi');
+  assert.ok(
+    spans.every((s) => s.voice === 'en-US-AvaMultilingualNeural'),
+    'All spans in single-voice multilingual mode must share the exact same MultilingualNeural voice ID',
+  );
+});
+
+test('formatCartoonHostHeadline preserves full long lesson titles without ellipsis truncation', () => {
+  const longTitle = 'Phân biệt cách dùng Can, Could, May trong giao tiếp công sở lịch sự';
+  assert.equal(formatCartoonHostHeadline(longTitle), longTitle);
+  assert.ok(!formatCartoonHostHeadline(longTitle).includes('…'));
+  assert.equal(
+    formatCartoonHostHeadline(`${longTitle} (Transcript Anh-Việt 2:15)`),
+    longTitle,
+  );
+});
+
+test('AI prompt builders enforce knowledge depth and target duration as minimum floor (never shorter)', () => {
+  const studioPrompt = buildSceneGenerationPrompt(PRESET_JP_EN_POLITE.cues, {
+    title: 'Polite Requests',
+    targetDurationMinutes: 5,
+  });
+  assert.ok(studioPrompt.includes('CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN'));
+  assert.ok(studioPrompt.includes('5 phút'));
+
+  const readingPrompt = buildReadingWebAiPrompt({
+    mode: 'topic',
+    topic: 'Deep Focus Rituals',
+    level: 'B2',
+    durationMinutes: 4,
+  });
+  assert.ok(readingPrompt.includes('CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN'));
+  assert.ok(readingPrompt.includes('4 phút'));
+
+  const reelsSourcePrompt = buildEnglishReelsWebAiPrompt({
+    sourceText: 'Could you possibly give me a hand?',
+    mode: 'vocab',
+    targetLang: 'vi',
+    durationMinutes: 3,
+  });
+  assert.ok(reelsSourcePrompt.includes('CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN'));
+
+  const creatorPrompt = buildAiCreatorWebAiPrompt({
+    learningLanguage: 'en',
+    level: 'B1',
+    durationMinutes: 4,
+    targetLang: 'Tiếng Việt',
+  });
+  assert.ok(creatorPrompt.includes('CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN'));
+  assert.ok(creatorPrompt.includes('EXPLANATION QUALITY & KNOWLEDGE DEPTH ARE MANDATORY'));
+
+  const translationPrompt = buildTranslationChallengePrompt({
+    learningLanguage: 'ja',
+    level: 'N4',
+    durationMinutes: 3,
+    targetLang: 'vi',
+  });
+  assert.ok(translationPrompt.includes('CHỈ ĐƯỢC DÀI HƠN, KHÔNG THẤP HƠN'));
+  assert.ok(translationPrompt.includes('MANDATORY QUALITY & DEPTH'));
+});
+
 
 
 

@@ -56,11 +56,13 @@ import {
 } from '../engine/cartoonAnimationDb';
 import {
   detectVoiceLangCode,
+  isMultilingualVoiceId,
   normalizeTtsLangCode,
   pickExplanationDefaultVoice,
   pickLearningDefaultVoice,
   splitMixedLanguageTtsSpans,
 } from '../engine/bilingualTtsHelper';
+import { notifyEdgeFallbackToGoogle } from '../utils/ttsFallbackNotice';
 import { resyncProjectTimingToCues } from '../engine/autoChoreographer';
 import {
   buildAiCreatorWebAiPrompt,
@@ -499,7 +501,10 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           ? initialReelsSaved?.translationLearningLang || 'en'
           : 'en';
     const savedVoice = initialModeSaved.ttsVoice;
-    if (savedVoice && (savedLang === 'en' || detectVoiceLangCode(savedVoice) === savedLang)) {
+    if (
+      savedVoice &&
+      (isMultilingualVoiceId(savedVoice) || savedLang === 'en' || detectVoiceLangCode(savedVoice) === savedLang)
+    ) {
       return savedVoice;
     }
     return pickLearningDefaultVoice(savedLang);
@@ -809,7 +814,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         setActiveCardIdx(0);
         hasCustomCardsRef.current = Boolean(r.translationCustomLines?.trim());
         const trLang = r.translationLearningLang || 'en';
-        if (!m.ttsVoice || detectVoiceLangCode(m.ttsVoice) !== trLang) {
+        if (!m.ttsVoice || (!isMultilingualVoiceId(m.ttsVoice) && detectVoiceLangCode(m.ttsVoice) !== trLang)) {
           setTtsVoice(pickLearningDefaultVoice(trLang));
         }
       } else if (hydratedMode === 'creator' && r.creatorLearningLang && r.creatorLearningLang !== 'en' && !r.rawText) {
@@ -823,7 +828,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         setCards(starter.cards);
         setActiveCardIdx(0);
         hasCustomCardsRef.current = false;
-        if (!m.ttsVoice || detectVoiceLangCode(m.ttsVoice) !== r.creatorLearningLang) {
+        if (!m.ttsVoice || (!isMultilingualVoiceId(m.ttsVoice) && detectVoiceLangCode(m.ttsVoice) !== r.creatorLearningLang)) {
           setTtsVoice(pickLearningDefaultVoice(r.creatorLearningLang));
         }
       } else if (r.rawText) {
@@ -1507,6 +1512,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     setCreatorLearningLang(lang);
     setTranslationLearningLang(lang);
     setTtsVoice((prevVoice) => {
+      if (isMultilingualVoiceId(prevVoice)) return prevVoice;
       const currentLang = detectVoiceLangCode(prevVoice);
       if (currentLang === lang) return prevVoice;
       return pickVoiceIdForProviderAndLang(ttsProvider, lang, availableVoices);
@@ -1805,6 +1811,12 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
             ? translationLearningLang
             : undefined),
     );
+    if (isMultilingualVoiceId(ttsVoice)) {
+      return {
+        voice: ttsVoice,
+        lang: getLearningVoiceLangFallback(inferredLang),
+      };
+    }
     const currentVoiceLang = detectVoiceLangCode(ttsVoice);
     if (currentVoiceLang === inferredLang || (inferredLang === 'en' && !card.learningLang && reelCreationMode === 'source' && !/[\u4e00-\u9faf\u3040-\u30ff\uac00-\ud7af]/.test(`${card.title} ${card.content} ${card.ttsText}`))) {
       return { voice: ttsVoice, lang: selectedVoiceLang };
@@ -2088,14 +2100,16 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     } else if (nextMode === 'creator') {
       applyStarterLesson(creatorLearningLang, nextTargetLang, creatorLevel);
       setTtsVoice(
-        persistedNext.ttsVoice && detectVoiceLangCode(persistedNext.ttsVoice) === creatorLearningLang
+        persistedNext.ttsVoice &&
+          (isMultilingualVoiceId(persistedNext.ttsVoice) || detectVoiceLangCode(persistedNext.ttsVoice) === creatorLearningLang)
           ? persistedNext.ttsVoice
           : pickVoiceIdForProviderAndLang(nextProvider, creatorLearningLang, availableVoices),
       );
     } else {
       applyTranslationStarterOrCustom({ explLang: nextTargetLang });
       setTtsVoice(
-        persistedNext.ttsVoice && detectVoiceLangCode(persistedNext.ttsVoice) === translationLearningLang
+        persistedNext.ttsVoice &&
+          (isMultilingualVoiceId(persistedNext.ttsVoice) || detectVoiceLangCode(persistedNext.ttsVoice) === translationLearningLang)
           ? persistedNext.ttsVoice
           : pickVoiceIdForProviderAndLang(nextProvider, translationLearningLang, availableVoices),
       );
@@ -2292,6 +2306,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
             enableDualTts &&
             targetLang !== 'none' &&
             segments.some((s) => s.autoSplit === true),
+          singleVoiceMultilingual: isMultilingualVoiceId(cardTarget.voice),
           rate: ttsRate,
           segments,
         },
@@ -2300,6 +2315,13 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           setTtsStageLabel(lbl);
         },
       );
+      if (data?.edgeFallbackToGoogle) {
+        notifyEdgeFallbackToGoogle({
+          id: 'reels-preview-edge-fallback',
+          sourceLabel: 'Nghe thử thẻ Reels',
+          edgeErrors: data.edgeErrors,
+        });
+      }
       if (!data?.audioBase64) {
         throw new Error(data?.error || 'Không phát thử được TTS.');
       }
@@ -2320,6 +2342,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
 
   const synthesizeLessonAudioBundle = async (
     quizPositionByCard?: Map<number, number>,
+    ttsOverride?: { provider?: string; strictProvider?: boolean },
   ): Promise<{
     audioFile: File;
     durations: number[] | undefined;
@@ -2338,13 +2361,17 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     );
     const defaultVoiceLang = detectVoiceLangCode(ttsVoice);
     const lessonVoice =
-      defaultVoiceLang === inferredLessonLang || (inferredLessonLang === 'en' && reelCreationMode === 'source')
+      isMultilingualVoiceId(ttsVoice) ||
+      defaultVoiceLang === inferredLessonLang ||
+      (inferredLessonLang === 'en' && reelCreationMode === 'source')
         ? ttsVoice
         : pickVoiceIdForProviderAndLang(ttsProvider, inferredLessonLang, availableVoices);
     const lessonVoiceLang =
-      defaultVoiceLang === inferredLessonLang || (inferredLessonLang === 'en' && reelCreationMode === 'source')
-        ? selectedVoiceLang
-        : getLearningVoiceLangFallback(inferredLessonLang);
+      isMultilingualVoiceId(ttsVoice)
+        ? getLearningVoiceLangFallback(inferredLessonLang)
+        : defaultVoiceLang === inferredLessonLang || (inferredLessonLang === 'en' && reelCreationMode === 'source')
+          ? selectedVoiceLang
+          : getLearningVoiceLangFallback(inferredLessonLang);
 
     const segments: Array<{
       id: string;
@@ -2554,9 +2581,11 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         ? 'Đang tạo giọng đọc tách vai (tự xử lý từ xen kẽ nếu có)...'
         : 'Đang tạo giọng đọc bài học (Dual-TTS tách ngôn ngữ)...',
     );
+    const effectiveProvider = ttsOverride?.provider || ttsProvider;
     const data = await synthesizeAudioWithProgressJob(
       {
-        provider: ttsProvider,
+        provider: effectiveProvider,
+        strictProvider: ttsOverride?.strictProvider === true,
         voice: lessonVoice,
         lang: lessonVoiceLang,
         secondaryVoice: enableDualTts && targetLang !== 'none' ? explanationTtsVoice : undefined,
@@ -2565,6 +2594,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           enableDualTts &&
           targetLang !== 'none' &&
           segments.some((s) => s.autoSplit === true),
+        singleVoiceMultilingual: isMultilingualVoiceId(lessonVoice),
         rate: ttsRate,
         segments,
       },
@@ -2575,6 +2605,19 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     );
     if (!data?.audioBase64) {
       throw new Error(data?.error || 'Không thể tạo audio TTS từ server.');
+    }
+    if (data.edgeFallbackToGoogle && !ttsOverride?.strictProvider) {
+      notifyEdgeFallbackToGoogle({
+        id: 'reels-bundle-edge-fallback',
+        sourceLabel: 'English Reels / Đa Ngôn Ngữ',
+        edgeErrors: data.edgeErrors,
+        onRetryEdge: async () => {
+          await synthesizeLessonAudioBundle(quizPositionByCard, {
+            provider: 'edge',
+            strictProvider: true,
+          });
+        },
+      });
     }
 
     const rawFileName = cleanDownloadFileName(lessonTitle, 'mp3', 'English Reels');
@@ -3431,9 +3474,11 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                         const langMeta = LEARNING_LANGUAGE_OPTIONS.find((l) => l.id === nextLang);
                         const nextLvl = langMeta?.defaultLevel || nextLevels[0]?.id || 'B1';
                         setTranslationLevel(nextLvl);
-                        setTtsVoice(
-                          pickVoiceIdForProviderAndLang(ttsProvider, nextLang, availableVoices),
-                        );
+                        if (!isMultilingualVoiceId(ttsVoice)) {
+                          setTtsVoice(
+                            pickVoiceIdForProviderAndLang(ttsProvider, nextLang, availableVoices),
+                          );
+                        }
                         if (!translationCustomLines.trim() && !pastedAiJson.trim()) {
                           applyTranslationStarterOrCustom({
                             learningLang: nextLang,
@@ -3744,9 +3789,11 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                         const langMeta = LEARNING_LANGUAGE_OPTIONS.find((l) => l.id === nextLang);
                         const nextLvl = langMeta?.defaultLevel || nextLevels[0]?.id || 'B1';
                         setCreatorLevel(nextLvl);
-                        setTtsVoice(
-                          pickVoiceIdForProviderAndLang(ttsProvider, nextLang, availableVoices),
-                        );
+                        if (!isMultilingualVoiceId(ttsVoice)) {
+                          setTtsVoice(
+                            pickVoiceIdForProviderAndLang(ttsProvider, nextLang, availableVoices),
+                          );
+                        }
                         const isSampleOrUntouched =
                           !hasCustomCardsRef.current ||
                           (!pastedAiJson.trim() &&

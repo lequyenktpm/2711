@@ -1429,7 +1429,7 @@ export function resolveLessonTitleBox(
   const ov = project.titleLayout;
   const scale =
     typeof ov?.scale === 'number' && Number.isFinite(ov.scale)
-      ? Math.max(0.45, Math.min(2.0, ov.scale))
+      ? Math.max(0.3, Math.min(2.0, ov.scale))
       : 1;
   const finalX =
     typeof ov?.x === 'number' && Number.isFinite(ov.x)
@@ -1440,17 +1440,30 @@ export function resolveLessonTitleBox(
       ? Math.max(48, Math.min(stage.height - 48, ov.y))
       : centerY;
 
-  const estWidth = Math.min(maxW, Math.max(260, Math.round(cleanTitle.length * maxFontSize * 0.56))) * scale;
-  const estHeight = Math.round(maxH * scale);
+  // When title is scaled smaller than 1.0, its effective unscaled wrap box expands proportionally
+  // so shrinking the title renders the full text cleanly without unnecessary wrapping or cutoff.
+  const availStageW = Math.max(240, 2 * Math.min(finalX - 24, stageW - 24 - finalX));
+  const effectiveMaxW =
+    scale < 0.99
+      ? Math.max(maxW, Math.round(availStageW / Math.max(0.3, scale)))
+      : Math.max(maxW, Math.min(stageW - 48, availStageW));
+  const effectiveMaxH =
+    scale < 0.99 ? Math.round(maxH / Math.max(0.35, scale)) : Math.max(maxH, 128);
+
+  const estWidth = Math.min(
+    availStageW,
+    Math.max(180, Math.round(cleanTitle.length * maxFontSize * 0.56)) * scale,
+  );
+  const estHeight = Math.round(Math.min(stage.height * 0.45, Math.max(maxH, 96) * scale));
 
   return {
     x: Math.round(finalX),
     y: Math.round(finalY),
     width: Math.round(estWidth),
-    height: estHeight,
+    height: Math.round(estHeight),
     scale,
-    maxW,
-    maxH,
+    maxW: effectiveMaxW,
+    maxH: effectiveMaxH,
     maxFontSize,
     cleanTitle,
   };
@@ -1475,9 +1488,9 @@ function drawCartoonHostHeadline(
   const fitted = fitWrappedTextBlock(ctx, cleanTitle, maxW, maxH, {
     fontWeight: 900,
     maxFontSize,
-    minFontSize: 22,
-    maxLines: 2,
-    lineHeightRatio: 1.12,
+    minFontSize: 16,
+    maxLines: 6,
+    lineHeightRatio: 1.14,
   });
 
   ctx.save();
@@ -1502,12 +1515,12 @@ function drawCartoonHostHeadline(
     ctx.shadowColor = 'rgba(250, 204, 21, 0.50)';
     ctx.shadowBlur = 16;
     ctx.strokeStyle = '#3B1D0A';
-    ctx.lineWidth = Math.max(8, Math.round(fitted.fontSize * 0.24));
+    ctx.lineWidth = Math.max(7, Math.round(fitted.fontSize * 0.22));
     ctx.lineJoin = 'round';
-    ctx.strokeText(ln, 0, ly, maxW);
+    ctx.strokeText(ln, 0, ly);
     ctx.restore();
     ctx.fillStyle = grad;
-    ctx.fillText(ln, 0, ly, maxW);
+    ctx.fillText(ln, 0, ly);
   });
 
   if (isSelected) {
@@ -1515,7 +1528,7 @@ function drawCartoonHostHeadline(
     const guideH = fitted.lines.length * fitted.lineHeight + 28;
     ctx.save();
     ctx.strokeStyle = '#4F46E5';
-    ctx.lineWidth = 4 / Math.max(0.45, scale);
+    ctx.lineWidth = 4 / Math.max(0.3, scale);
     ctx.setLineDash([12, 8]);
     drawRoundedRectPath(ctx, -guideW / 2, -guideH / 2, guideW, guideH, 18);
     ctx.stroke();
@@ -3474,11 +3487,12 @@ function fitWrappedTextBlock(
     minFontSize?: number;
     lineHeightRatio?: number;
     maxLines?: number;
+    strictMaxLines?: boolean;
   },
 ): { fontSize: number; lineHeight: number; lines: string[] } {
   const weight = options.fontWeight ?? 700;
   const family = options.fontFamily ?? FONT_DISPLAY;
-  const minFont = Math.max(12, options.minFontSize ?? 16);
+  const minFont = Math.max(10, options.minFontSize ?? 16);
   const lhRatio = options.lineHeightRatio ?? 1.24;
   const maxLines = options.maxLines ?? 8;
   const safeW = Math.max(24, maxWidth);
@@ -3512,10 +3526,24 @@ function fitWrappedTextBlock(
   }
 
   if (firstFit) return firstFit;
+
+  // Step down slightly below requested minFont (down to 10px) before giving up so full text fits without clipping
+  let floorTry = minFont - 2;
+  while (floorTry >= 10) {
+    ctx.font = `${weight} ${floorTry}px ${family}`;
+    const wrapped = wrapTextLines(ctx, text, safeW);
+    const lh = Math.round(floorTry * lhRatio);
+    bestLines = wrapped;
+    if (wrapped.length <= maxLines && wrapped.length * lh <= safeH) {
+      return { fontSize: floorTry, lineHeight: lh, lines: wrapped };
+    }
+    floorTry -= 2;
+  }
+
   return {
-    fontSize: minFont,
-    lineHeight: Math.round(minFont * lhRatio),
-    lines: bestLines.slice(0, maxLines),
+    fontSize: Math.min(minFont, 12),
+    lineHeight: Math.round(Math.min(minFont, 12) * lhRatio),
+    lines: options.strictMaxLines ? bestLines.slice(0, maxLines) : bestLines,
   };
 }
 
@@ -3715,9 +3743,9 @@ function drawComparisonStrip(
       fontWeight: 700,
       fontFamily: FONT_DISPLAY,
       maxFontSize: isSingleRow ? (count >= 4 ? 22 : 26) : 31,
-      minFontSize: isSingleRow ? 13 : 18,
-      lineHeightRatio: 1.16,
-      maxLines: isSingleRow ? 1 : 2,
+      minFontSize: 11,
+      lineHeightRatio: 1.14,
+      maxLines: isSingleRow ? 2 : 3,
     });
 
     ctx.textAlign = 'center';
@@ -5431,9 +5459,9 @@ function drawIllustrationProp(
     const tagStr = (props.data?.highlightWord || props.data?.formula || '').trim();
 
     ctx.font = `800 34px ${FONT_DISPLAY}`;
-    const titleLines = wrapTextLines(ctx, titleStr, 590).slice(0, 2);
+    const titleLines = wrapTextLines(ctx, titleStr, 590);
     ctx.font = `600 30px ${FONT_DISPLAY}`;
-    const bodyLines = bodyStr ? wrapTextLines(ctx, bodyStr, 590).slice(0, 3) : [];
+    const bodyLines = bodyStr ? wrapTextLines(ctx, bodyStr, 590) : [];
 
     const tagH = tagStr ? 48 : 0;
     const contentH = tagH + titleLines.length * 42 + bodyLines.length * 38 + 52;
@@ -5501,9 +5529,9 @@ function drawIllustrationProp(
     const subStr = props.data?.subtitle || props.data?.speechText || '';
 
     ctx.font = `800 38px ${FONT_DISPLAY}`;
-    const titleLines = wrapTextLines(ctx, titleStr, 600).slice(0, 2);
+    const titleLines = wrapTextLines(ctx, titleStr, 600);
     ctx.font = `600 30px ${FONT_DISPLAY}`;
-    const subLines = subStr ? wrapTextLines(ctx, subStr, 600).slice(0, 3) : [];
+    const subLines = subStr ? wrapTextLines(ctx, subStr, 600) : [];
     const textBlockH = titleLines.length * 46 + (subLines.length > 0 ? 8 + subLines.length * 38 : 0);
     const bodyH = textBlockH + 64;
     const cardH = Math.max(264, 72 + bodyH);
@@ -5663,14 +5691,16 @@ function drawIllustrationProp(
     ctx.font = `800 32px ${FONT_DISPLAY}`;
     ctx.fillStyle = '#0F172A';
     ctx.fillText(props.data?.title || 'Key Phrase', -225, -4, 590);
-    ctx.font = `600 26px ${FONT_SANS}`;
-    ctx.fillStyle = '#334155';
-    const bodyLines = wrapTextLines(
+    const toastBody = fitWrappedTextBlock(
       ctx,
       props.data?.speechText || props.data?.subtitle || '',
       590,
-    ).slice(0, 2);
-    bodyLines.forEach((ln, li) => ctx.fillText(ln, -225, 42 + li * 34));
+      78,
+      { fontWeight: 600, fontFamily: FONT_SANS, maxFontSize: 26, minFontSize: 13, maxLines: 4, lineHeightRatio: 1.2 },
+    );
+    ctx.font = `600 ${toastBody.fontSize}px ${FONT_SANS}`;
+    ctx.fillStyle = '#334155';
+    toastBody.lines.forEach((ln, li) => ctx.fillText(ln, -225, 36 + li * toastBody.lineHeight));
   } else if (props.variant === 'bs-list-group') {
     const items = props.data?.labels?.slice(0, 3) ?? [
       'Listen to rhythm',
@@ -5714,12 +5744,17 @@ function drawIllustrationProp(
       ctx.fillText(`${i + 1}`, -352, ry + 1);
 
       ctx.textAlign = 'left';
-      ctx.font = `${i === 1 ? 800 : 700} 28px ${FONT_DISPLAY}`;
+      const fittedRow = fitWrappedTextBlock(ctx, row, 670, 64, {
+        fontWeight: i === 1 ? 800 : 700,
+        maxFontSize: 28,
+        minFontSize: 14,
+        maxLines: 3,
+        lineHeightRatio: 1.12,
+      });
+      ctx.font = `${i === 1 ? 800 : 700} ${fittedRow.fontSize}px ${FONT_DISPLAY}`;
       ctx.fillStyle = i === 1 ? '#1D4ED8' : '#1E293B';
-      const lines = wrapTextLines(ctx, row, 670).slice(0, 2);
-      const lh = 30;
-      const ly = ry - ((lines.length - 1) * lh) / 2;
-      lines.forEach((ln, li) => ctx.fillText(ln, -308, ly + li * lh));
+      const ly = ry - ((fittedRow.lines.length - 1) * fittedRow.lineHeight) / 2;
+      fittedRow.lines.forEach((ln, li) => ctx.fillText(ln, -308, ly + li * fittedRow.lineHeight));
       ctx.restore();
     });
   } else if (props.variant === 'bs-pricing-tier') {
@@ -5739,10 +5774,18 @@ function drawIllustrationProp(
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('BASIC', -322, -70);
-    ctx.font = `800 30px ${FONT_DISPLAY}`;
+    const lFitted = fitWrappedTextBlock(ctx, leftTxt, 340, 86, {
+      fontWeight: 800,
+      maxFontSize: 30,
+      minFontSize: 14,
+      maxLines: 4,
+      lineHeightRatio: 1.14,
+    });
+    ctx.font = `800 ${lFitted.fontSize}px ${FONT_DISPLAY}`;
     ctx.fillStyle = '#334155';
-    const lLines = wrapTextLines(ctx, leftTxt, 340).slice(0, 2);
-    lLines.forEach((ln, li) => ctx.fillText(ln, -224, -4 - ((lLines.length - 1) * 34) / 2 + li * 34, 344));
+    lFitted.lines.forEach((ln, li) =>
+      ctx.fillText(ln, -224, -4 - ((lFitted.lines.length - 1) * lFitted.lineHeight) / 2 + li * lFitted.lineHeight),
+    );
     ctx.font = `600 24px ${FONT_SANS}`;
     ctx.fillStyle = '#64748B';
     ctx.fillText('✗ Literal', -224, 64, 340);
@@ -5758,10 +5801,18 @@ function drawIllustrationProp(
     ctx.font = `800 20px ${FONT_SANS}`;
     ctx.fillStyle = '#FFFFFF';
     ctx.fillText('★ RECOMMENDED', 169, -79, 196);
-    ctx.font = `800 30px ${FONT_DISPLAY}`;
+    const rFitted = fitWrappedTextBlock(ctx, rightTxt, 340, 88, {
+      fontWeight: 800,
+      maxFontSize: 30,
+      minFontSize: 14,
+      maxLines: 4,
+      lineHeightRatio: 1.14,
+    });
+    ctx.font = `800 ${rFitted.fontSize}px ${FONT_DISPLAY}`;
     ctx.fillStyle = '#312E81';
-    const rLines = wrapTextLines(ctx, rightTxt, 340).slice(0, 2);
-    rLines.forEach((ln, li) => ctx.fillText(ln, 224, -6 - ((rLines.length - 1) * 34) / 2 + li * 34, 344));
+    rFitted.lines.forEach((ln, li) =>
+      ctx.fillText(ln, 224, -6 - ((rFitted.lines.length - 1) * rFitted.lineHeight) / 2 + li * rFitted.lineHeight),
+    );
     ctx.font = `700 24px ${FONT_SANS}`;
     ctx.fillStyle = '#15803D';
     ctx.fillText('✓ 100% Natural', 224, 66, 340);
@@ -5785,11 +5836,18 @@ function drawIllustrationProp(
     ctx.fillText('▲', 386, -90);
 
     ctx.textAlign = 'left';
-    ctx.font = `600 26px ${FONT_SANS}`;
-    ctx.fillStyle = '#1E293B';
     const ansText = props.data?.speechText || props.data?.subtitle || 'Clear explanation';
-    const ansLines = wrapTextLines(ctx, ansText, 768).slice(0, 3);
-    ansLines.forEach((ln, li) => ctx.fillText(ln, -386, -24 + li * 34, 768));
+    const ansFitted = fitWrappedTextBlock(ctx, ansText, 768, 138, {
+      fontWeight: 600,
+      fontFamily: FONT_SANS,
+      maxFontSize: 26,
+      minFontSize: 13,
+      maxLines: 6,
+      lineHeightRatio: 1.24,
+    });
+    ctx.font = `600 ${ansFitted.fontSize}px ${FONT_SANS}`;
+    ctx.fillStyle = '#1E293B';
+    ansFitted.lines.forEach((ln, li) => ctx.fillText(ln, -386, -24 + li * ansFitted.lineHeight));
   } else if (props.variant === 'bs-breadcrumb-path') {
     const crumbs = props.data?.labels?.slice(0, 3) ?? ['Context', 'Pattern', 'Fluent!'];
     const useVertical = crumbs.some((c) => c.length > 12);
@@ -5881,11 +5939,16 @@ function drawIllustrationProp(
       ctx.fillText(tile.num, -204 + 44, -61 + 62);
       ctx.textAlign = 'left';
       ctx.fillStyle = '#0F172A';
-      ctx.font = `800 26px ${FONT_DISPLAY}`;
-      const lines = wrapTextLines(ctx, tile.lbl, 298).slice(0, 2);
-      const lh = 30;
-      const ly = -61 + 62 - ((lines.length - 1) * lh) / 2;
-      lines.forEach((ln, li) => ctx.fillText(ln, -204 + 88, ly + li * lh));
+      const tileFitted = fitWrappedTextBlock(ctx, tile.lbl, 298, 96, {
+        fontWeight: 800,
+        maxFontSize: 26,
+        minFontSize: 13,
+        maxLines: 4,
+        lineHeightRatio: 1.15,
+      });
+      ctx.font = `800 ${tileFitted.fontSize}px ${FONT_DISPLAY}`;
+      const ly = -61 + 62 - ((tileFitted.lines.length - 1) * tileFitted.lineHeight) / 2;
+      tileFitted.lines.forEach((ln, li) => ctx.fillText(ln, -204 + 88, ly + li * tileFitted.lineHeight));
       ctx.restore();
     });
   } else if (props.variant === 'css-glass-quote') {
@@ -5907,14 +5970,17 @@ function drawIllustrationProp(
     ctx.fillText('“', -382, -52);
 
     ctx.textAlign = 'center';
-    ctx.font = `800 34px ${FONT_DISPLAY}`;
-    ctx.fillStyle = '#0F172A';
-    const qLines = wrapTextLines(
+    const qFitted = fitWrappedTextBlock(
       ctx,
       props.data?.speechText || props.data?.title || 'Speak clearly, connect naturally.',
       680,
-    ).slice(0, 2);
-    qLines.forEach((ln, li) => ctx.fillText(ln, 0, -24 + li * 40));
+      110,
+      { fontWeight: 800, maxFontSize: 34, minFontSize: 15, maxLines: 4, lineHeightRatio: 1.18 },
+    );
+    ctx.font = `800 ${qFitted.fontSize}px ${FONT_DISPLAY}`;
+    ctx.fillStyle = '#0F172A';
+    const qStartY = -20 - ((qFitted.lines.length - 1) * qFitted.lineHeight) / 2;
+    qFitted.lines.forEach((ln, li) => ctx.fillText(ln, 0, qStartY + li * qFitted.lineHeight));
 
     if (props.data?.subtitle) {
       ctx.font = `700 24px ${FONT_SANS}`;
@@ -5933,12 +5999,21 @@ function drawIllustrationProp(
       ctx.globalAlpha *= s0.opacity;
       ctx.translate(0, s0.translateY);
       fillCardWithShadow(ctx, -382, -104, 620, 88, 24, '#FFFFFF', 0.06);
-      ctx.font = `600 26px ${FONT_SANS}`;
+      const l0Fitted = fitWrappedTextBlock(ctx, props.data?.labels?.[0] || 'A: "Excuse me?"', 560, 74, {
+        fontWeight: 600,
+        fontFamily: FONT_SANS,
+        maxFontSize: 26,
+        minFontSize: 13,
+        maxLines: 3,
+        lineHeightRatio: 1.15,
+      });
+      ctx.font = `600 ${l0Fitted.fontSize}px ${FONT_SANS}`;
       ctx.fillStyle = '#334155';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      const l0 = wrapTextLines(ctx, props.data?.labels?.[0] || 'A: "Excuse me?"', 560).slice(0, 2);
-      l0.forEach((ln, li) => ctx.fillText(ln, -352, -60 - ((l0.length - 1) * 30) / 2 + li * 30));
+      l0Fitted.lines.forEach((ln, li) =>
+        ctx.fillText(ln, -352, -60 - ((l0Fitted.lines.length - 1) * l0Fitted.lineHeight) / 2 + li * l0Fitted.lineHeight),
+      );
       ctx.restore();
     }
 
@@ -5948,12 +6023,20 @@ function drawIllustrationProp(
       ctx.globalAlpha *= s1.opacity;
       ctx.translate(0, s1.translateY);
       fillCardWithShadow(ctx, -238, 12, 620, 90, 24, '#4F46E5', 0.14);
-      ctx.font = `700 26px ${FONT_DISPLAY}`;
+      const l1Fitted = fitWrappedTextBlock(ctx, props.data?.labels?.[1] || 'B: "Go right ahead!"', 560, 76, {
+        fontWeight: 700,
+        maxFontSize: 26,
+        minFontSize: 13,
+        maxLines: 3,
+        lineHeightRatio: 1.15,
+      });
+      ctx.font = `700 ${l1Fitted.fontSize}px ${FONT_DISPLAY}`;
       ctx.fillStyle = '#FFFFFF';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      const l1 = wrapTextLines(ctx, props.data?.labels?.[1] || 'B: "Go right ahead!"', 560).slice(0, 2);
-      l1.forEach((ln, li) => ctx.fillText(ln, -208, 57 - ((l1.length - 1) * 30) / 2 + li * 30));
+      l1Fitted.lines.forEach((ln, li) =>
+        ctx.fillText(ln, -208, 57 - ((l1Fitted.lines.length - 1) * l1Fitted.lineHeight) / 2 + li * l1Fitted.lineHeight),
+      );
       ctx.restore();
     }
   } else if (props.variant === 'css-roadmap-steps') {
@@ -5978,13 +6061,18 @@ function drawIllustrationProp(
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(`0${i + 1}`, -350, ry + 1);
-        ctx.font = `800 30px ${FONT_DISPLAY}`;
+        const stepFitted = fitWrappedTextBlock(ctx, lbl, 680, 68, {
+          fontWeight: 800,
+          maxFontSize: 30,
+          minFontSize: 14,
+          maxLines: 3,
+          lineHeightRatio: 1.12,
+        });
+        ctx.font = `800 ${stepFitted.fontSize}px ${FONT_DISPLAY}`;
         ctx.fillStyle = '#0F172A';
         ctx.textAlign = 'left';
-        const lines = wrapTextLines(ctx, lbl, 680).slice(0, 2);
-        const lh = 32;
-        const ly = ry - ((lines.length - 1) * lh) / 2;
-        lines.forEach((ln, li) => ctx.fillText(ln, -304, ly + li * lh));
+        const ly = ry - ((stepFitted.lines.length - 1) * stepFitted.lineHeight) / 2;
+        stepFitted.lines.forEach((ln, li) => ctx.fillText(ln, -304, ly + li * stepFitted.lineHeight));
         ctx.restore();
       });
     } else {
@@ -6016,10 +6104,16 @@ function drawIllustrationProp(
         ctx.textBaseline = 'middle';
         ctx.fillText(`0${i + 1}`, 0, -33);
 
-        ctx.font = `800 28px ${FONT_DISPLAY}`;
+        const stepShort = fitWrappedTextBlock(ctx, lbl, 224, 80, {
+          fontWeight: 800,
+          maxFontSize: 28,
+          minFontSize: 13,
+          maxLines: 4,
+          lineHeightRatio: 1.14,
+        });
+        ctx.font = `800 ${stepShort.fontSize}px ${FONT_DISPLAY}`;
         ctx.fillStyle = '#0F172A';
-        const lines = wrapTextLines(ctx, lbl, 224).slice(0, 2);
-        lines.forEach((ln, li) => ctx.fillText(ln, 0, 38 + li * 32));
+        stepShort.lines.forEach((ln, li) => ctx.fillText(ln, 0, 38 + li * stepShort.lineHeight));
         ctx.restore();
       });
     }
@@ -6060,14 +6154,13 @@ function drawIllustrationProp(
       props.data?.speechText ||
       props.data?.subtitle ||
       'Reading context';
-    const bodyFontPx = bodyText.length > 145 ? 30 : 32;
-    const bodyLineH = Math.round(bodyFontPx * 1.28);
+    const bodyFontPx = bodyText.length > 210 ? 24 : bodyText.length > 145 ? 28 : 32;
+    const bodyLineH = Math.round(bodyFontPx * 1.26);
     ctx.font = `600 ${bodyFontPx}px ${FONT_DISPLAY}`;
-    const wrappedBody = wrapTextLines(ctx, bodyText, 760);
-    const displayLines = wrappedBody.slice(0, 7);
+    const displayLines = wrapTextLines(ctx, bodyText, 760);
     const titleStr = props.data?.title || 'Reading Context';
     ctx.font = `800 34px ${FONT_DISPLAY}`;
-    const titleLines = wrapTextLines(ctx, titleStr, 760).slice(0, 2);
+    const titleLines = wrapTextLines(ctx, titleStr, 760);
     const cardH = Math.max(250, 90 + titleLines.length * 42 + displayLines.length * bodyLineH + 38);
     const cardTop = -Math.round(cardH / 2);
 
@@ -6112,11 +6205,7 @@ function drawIllustrationProp(
     ctx.font = `600 ${bodyFontPx}px ${FONT_DISPLAY}`;
     ctx.fillStyle = '#1E293B';
     displayLines.forEach((ln, idx) => {
-      const lineTxt =
-        idx === displayLines.length - 1 && wrappedBody.length > displayLines.length
-          ? `${ln.slice(0, Math.max(8, ln.length - 3))}...`
-          : ln;
-      ctx.fillText(lineTxt, 0, cy + idx * bodyLineH, 768);
+      ctx.fillText(ln, 0, cy + idx * bodyLineH, 768);
     });
   } else if (props.variant === 'css-grammar-equation') {
     const parts = props.data?.labels?.slice(0, 3) ?? ['Could you', 'V-inf', 'Polite!'];
@@ -6136,12 +6225,17 @@ function drawIllustrationProp(
       ctx.fillStyle = b.bg;
       drawRoundedRectPath(ctx, b.x, -30, b.w, 96, 22);
       ctx.fill();
-      ctx.font = `800 26px ${FONT_DISPLAY}`;
+      const bFitted = fitWrappedTextBlock(ctx, b.txt, b.w - 20, 82, {
+        fontWeight: 800,
+        maxFontSize: 26,
+        minFontSize: 13,
+        maxLines: 3,
+        lineHeightRatio: 1.12,
+      });
+      ctx.font = `800 ${bFitted.fontSize}px ${FONT_DISPLAY}`;
       ctx.fillStyle = b.fg;
-      const bLines = wrapTextLines(ctx, b.txt, b.w - 20).slice(0, 2);
-      const lh = 28;
-      const ly = 18 - ((bLines.length - 1) * lh) / 2;
-      bLines.forEach((ln, li) => ctx.fillText(ln, b.x + b.w / 2, ly + li * lh));
+      const ly = 18 - ((bFitted.lines.length - 1) * bFitted.lineHeight) / 2;
+      bFitted.lines.forEach((ln, li) => ctx.fillText(ln, b.x + b.w / 2, ly + li * bFitted.lineHeight));
     });
     ctx.font = `800 32px ${FONT_DISPLAY}`;
     ctx.fillStyle = '#64748B';
@@ -6164,17 +6258,28 @@ function drawIllustrationProp(
     ctx.textBaseline = 'middle';
     ctx.fillText(props.data?.formula || 'FLASHCARD', 0, -64, 210);
 
-    ctx.font = `800 42px ${FONT_DISPLAY}`;
+    const fcTitle = fitWrappedTextBlock(ctx, props.data?.title || 'commute', 660, 56, {
+      fontWeight: 800,
+      maxFontSize: 42,
+      minFontSize: 20,
+      maxLines: 2,
+      lineHeightRatio: 1.1,
+    });
+    ctx.font = `800 ${fcTitle.fontSize}px ${FONT_DISPLAY}`;
     ctx.fillStyle = '#0F172A';
-    ctx.fillText(props.data?.title || 'commute', 0, -4, 660);
-    ctx.font = `600 26px ${FONT_SANS}`;
-    ctx.fillStyle = '#475569';
-    const subLines = wrapTextLines(
+    fcTitle.lines.forEach((ln, li) =>
+      ctx.fillText(ln, 0, -6 - ((fcTitle.lines.length - 1) * fcTitle.lineHeight) / 2 + li * fcTitle.lineHeight),
+    );
+    const fcSub = fitWrappedTextBlock(
       ctx,
       props.data?.subtitle || props.data?.speechText || '',
       660,
-    ).slice(0, 2);
-    subLines.forEach((ln, li) => ctx.fillText(ln, 0, 52 + li * 32, 660));
+      74,
+      { fontWeight: 600, fontFamily: FONT_SANS, maxFontSize: 26, minFontSize: 13, maxLines: 3, lineHeightRatio: 1.18 },
+    );
+    ctx.font = `600 ${fcSub.fontSize}px ${FONT_SANS}`;
+    ctx.fillStyle = '#475569';
+    fcSub.lines.forEach((ln, li) => ctx.fillText(ln, 0, 48 + li * fcSub.lineHeight));
   } else if (props.variant === 'css-sticky-note') {
     ctx.save();
     ctx.rotate(-0.018);
@@ -6207,23 +6312,34 @@ function drawIllustrationProp(
     ctx.fillStyle = '#B45309';
     ctx.fillText(props.data?.formula || 'QUICK NOTE', 0, -68, 620);
 
-    const stickyTitle = fitWrappedTextBlock(ctx, props.data?.title || 'Remember', 660, 60, {
+    const stickyTitle = fitWrappedTextBlock(ctx, props.data?.title || 'Remember', 660, 66, {
       fontWeight: 800,
       maxFontSize: 36,
-      minFontSize: 22,
-      maxLines: 1,
+      minFontSize: 18,
+      maxLines: 2,
+      lineHeightRatio: 1.12,
     });
     ctx.font = `800 ${stickyTitle.fontSize}px ${FONT_DISPLAY}`;
     ctx.fillStyle = '#1E293B';
-    ctx.fillText(stickyTitle.lines[0] ?? 'Remember', 0, -6, 660);
+    const stStartY = stickyTitle.lines.length > 1 ? -14 : -6;
+    stickyTitle.lines.forEach((sln, sli) => {
+      ctx.fillText(sln, 0, stStartY + sli * stickyTitle.lineHeight);
+    });
 
-    ctx.font = `600 26px ${FONT_SANS}`;
-    ctx.fillStyle = '#334155';
     const rawSub = props.data?.subtitle || props.data?.speechText || '';
-    const wrappedSub = wrapTextLines(ctx, rawSub, 630).slice(0, 2);
-    const subStartY = wrappedSub.length === 2 ? 44 : 58;
-    wrappedSub.forEach((line, idx) => {
-      ctx.fillText(line, 0, subStartY + idx * 32, 630);
+    const subFitted = fitWrappedTextBlock(ctx, rawSub, 650, 74, {
+      fontWeight: 600,
+      fontFamily: FONT_SANS,
+      maxFontSize: 26,
+      minFontSize: 15,
+      maxLines: 3,
+      lineHeightRatio: 1.18,
+    });
+    ctx.font = `600 ${subFitted.fontSize}px ${FONT_SANS}`;
+    ctx.fillStyle = '#334155';
+    const subStartY = subFitted.lines.length >= 2 ? 42 : 58;
+    subFitted.lines.forEach((line, idx) => {
+      ctx.fillText(line, 0, subStartY + idx * subFitted.lineHeight);
     });
     ctx.restore();
   } else if (props.variant === 'bs-badge-cluster') {
@@ -6339,14 +6455,16 @@ function drawIllustrationProp(
     ctx.fillStyle = '#0F172A';
     ctx.fillText(props.data?.highlightWord || props.data?.title || 'Spotlight', -160, -4, 540);
 
-    ctx.font = `600 26px ${FONT_SANS}`;
-    ctx.fillStyle = '#475569';
-    const subLines = wrapTextLines(
+    const magSub = fitWrappedTextBlock(
       ctx,
       props.data?.subtitle || props.data?.speechText || '',
       540,
-    ).slice(0, 2);
-    subLines.forEach((ln, li) => ctx.fillText(ln, -160, 48 + li * 32, 540));
+      78,
+      { fontWeight: 600, fontFamily: FONT_SANS, maxFontSize: 26, minFontSize: 13, maxLines: 4, lineHeightRatio: 1.18 },
+    );
+    ctx.font = `600 ${magSub.fontSize}px ${FONT_SANS}`;
+    ctx.fillStyle = '#475569';
+    magSub.lines.forEach((ln, li) => ctx.fillText(ln, -160, 44 + li * magSub.lineHeight));
   } else if (props.variant === 'bs-modal-quiz') {
     fillCardWithShadow(ctx, -415, -130, 830, 260, 26, '#FFFFFF', 0.13);
     ctx.strokeStyle = '#CBD5E1';

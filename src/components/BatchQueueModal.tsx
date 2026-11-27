@@ -122,7 +122,8 @@ import {
 } from '../engine/types';
 import { buildVideoDescription } from '../engine/videoDescriptionBuilder';
 import { resizeImageFileToStageDataUrl } from '../utils/imageResize';
-import { playExportCompleteSound } from '../utils/soundEffects';
+import { playExportCompleteSound, playTtsCompleteSound } from '../utils/soundEffects';
+import { notifyEdgeFallbackToGoogle } from '../utils/ttsFallbackNotice';
 import {
   downloadServerOutputFile,
   downloadTextAsPlainFile,
@@ -1403,6 +1404,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
             rate: reelBatchRate,
             autoSplitLanguages: false,
             alignWithWhisper: true,
+            suppressCompleteSound: true,
             onProgress: (pct, lbl) => {
               updateAiItem(item.id, {
                 status: 'synthesizing',
@@ -1428,6 +1430,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
               lang: voiceMeta.voiceLang,
               autoSplitLanguages: false,
               rate: reelBatchRate,
+              suppressCompleteSound: true,
               segments: [{ id: 'batch-reading-intro', text: introSubText, pauseAfterSec: 0, autoSplit: false }],
             });
             if (introRes.audioBase64) {
@@ -1459,6 +1462,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
               lang: voiceMeta.voiceLang,
               autoSplitLanguages: false,
               rate: reelBatchRate,
+              suppressCompleteSound: true,
               segments: [{ id: 'batch-reading-outro', text: outroSpeech, pauseAfterSec: 0, autoSplit: false }],
             });
             if (outroRes.audioBase64) {
@@ -1472,6 +1476,14 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                 role: 'outro',
               });
             }
+          }
+          playTtsCompleteSound();
+          if (bodyRes.edgeFallbackToGoogle) {
+            notifyEdgeFallbackToGoogle({
+              id: `batch-reading-fallback-${item.id}`,
+              sourceLabel: `Batch Reading (${cleanTitle})`,
+              edgeErrors: bodyRes.edgeErrors,
+            });
           }
 
           const combined = await concatAudioFilesWithGaps(
@@ -1729,6 +1741,13 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
 
           if (!ttsData.audioBase64) {
             throw new Error(ttsData.error || 'Không tạo được audio TTS cho JSON này.');
+          }
+          if (ttsData.edgeFallbackToGoogle) {
+            notifyEdgeFallbackToGoogle({
+              id: `batch-reels-fallback-${item.id}`,
+              sourceLabel: `Batch Reels (${payload.title})`,
+              edgeErrors: ttsData.edgeErrors,
+            });
           }
 
           const rawAudioFile = base64ToAudioFile(

@@ -28,6 +28,8 @@ import {
   synthesizeAudioAndSyncCues,
   TtsProviderItem,
 } from '../engine/ttsSyncHelper';
+import { isMultilingualVoiceId } from '../engine/bilingualTtsHelper';
+import { notifyEdgeFallbackToGoogle } from '../utils/ttsFallbackNotice';
 import type { PromptVideoStyle } from '../engine/aiPromptBuilder';
 import { subscribeCartoonAnimations } from '../engine/cartoonAnimationDb';
 import { subscribeCustomComponents } from '../engine/customComponentStore';
@@ -535,7 +537,7 @@ export const AutomationPipelinePanel: React.FC<AutomationPipelinePanelProps> = (
     try {
       const selectedVoiceObj = inlineAvailableVoices.find((v) => v.id === inlineVoice);
       const secondaryVoiceObj = inlineAvailableVoices.find((v) => v.id === inlineSecondaryVoice);
-      const res = await synthesizeAudioAndSyncCues({
+      const baseTtsParams = {
         rawScript: rawTranscript,
         title: customTitle || project.title,
         provider: inlineProvider,
@@ -544,28 +546,52 @@ export const AutomationPipelinePanel: React.FC<AutomationPipelinePanelProps> = (
         secondaryVoice: inlineSecondaryVoice || undefined,
         secondaryLang: secondaryVoiceObj?.lang || 'vi-VN',
         autoSplitLanguages: true,
+        singleVoiceMultilingual: isMultilingualVoiceId(inlineVoice),
         rate: inlineRate,
         alignWithWhisper: inlineWhisperSync,
+      };
+      const applyTtsSyncResult = (res: Awaited<ReturnType<typeof synthesizeAudioAndSyncCues>>) => {
+        if (res.blockTranscript) {
+          setRawTranscript(res.blockTranscript);
+        }
+        setInlineGeneratedSrt(res.srt);
+        if (onApplyAudioAndCues) {
+          onApplyAudioAndCues(res.audioFile, res.cues, customTitle);
+        } else {
+          onUploadAudio(res.audioFile);
+          if (res.cues.length > 0) {
+            onApplyTranscript(res.cues, customTitle);
+          }
+        }
+        setInlineTtsNotice(
+          `Đã xuất Audio (${res.durationSec.toFixed(1)}s · ${res.providerUsed}) và tự đồng bộ lại toàn bộ ${res.cues.length} mốc Sub khớp 100% với Audio${res.whisperAligned ? ' (đã căn từng từ)' : ''}.`,
+        );
+      };
+
+      const res = await synthesizeAudioAndSyncCues({
+        ...baseTtsParams,
         onProgress: (pct, label) => {
           setInlineTtsProgress(pct);
           setInlineTtsStageLabel(label);
         },
       });
-      if (res.blockTranscript) {
-        setRawTranscript(res.blockTranscript);
+      applyTtsSyncResult(res);
+
+      if (res.edgeFallbackToGoogle) {
+        notifyEdgeFallbackToGoogle({
+          id: 'automation-edge-fallback',
+          sourceLabel: 'Automation Studio',
+          edgeErrors: res.edgeErrors,
+          onRetryEdge: async () => {
+            const retried = await synthesizeAudioAndSyncCues({
+              ...baseTtsParams,
+              provider: 'edge',
+              strictProvider: true,
+            });
+            applyTtsSyncResult(retried);
+          },
+        });
       }
-      setInlineGeneratedSrt(res.srt);
-      if (onApplyAudioAndCues) {
-        onApplyAudioAndCues(res.audioFile, res.cues, customTitle);
-      } else {
-        onUploadAudio(res.audioFile);
-        if (res.cues.length > 0) {
-          onApplyTranscript(res.cues, customTitle);
-        }
-      }
-      setInlineTtsNotice(
-        `Đã xuất Audio (${res.durationSec.toFixed(1)}s · ${res.providerUsed}) và tự đồng bộ lại toàn bộ ${res.cues.length} mốc Sub khớp 100% với Audio${res.whisperAligned ? ' (đã căn từng từ)' : ''}.`,
-      );
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Không thể xuất Audio TTS từ Sub.');
     } finally {

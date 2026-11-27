@@ -348,9 +348,9 @@ const VISEME_SHAPES: Record<CartoonViseme, VisemeMetrics> = {
 
 /**
  * Cleans accidental technical/duration suffixes like "(Transcript Nhật-Anh 1:42)" from
- * the top cartoon headline and keeps it concise and punchy for on-screen reading.
+ * the top cartoon headline while preserving the full title text without forcing "..." cutoffs.
  */
-export function formatCartoonHostHeadline(rawTitle?: string, maxChars = 40): string {
+export function formatCartoonHostHeadline(rawTitle?: string, maxChars = 0): string {
   const raw = (rawTitle || '').trim();
   if (!raw) return '';
 
@@ -363,7 +363,7 @@ export function formatCartoonHostHeadline(rawTitle?: string, maxChars = 40): str
     .trim();
 
   if (!cleaned) cleaned = raw;
-  if (cleaned.length <= maxChars) return cleaned;
+  if (!maxChars || maxChars <= 0 || cleaned.length <= maxChars) return cleaned;
 
   const slice = cleaned.slice(0, maxChars - 1).trim();
   const lastSpace = slice.lastIndexOf(' ');

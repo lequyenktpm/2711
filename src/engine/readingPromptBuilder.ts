@@ -377,7 +377,7 @@ ${cleanSource || '(người dùng sẽ dán đoạn văn gốc vào đây)'}
 """
 YÊU CẦU BIÊN TẬP CHUYÊN SÂU:
 - Giữ trọn ý nghĩa cốt lõi và mạch hấp dẫn từ nội dung gốc (nếu nguồn đang là tiếng Việt hoặc ngôn ngữ khác, hãy chuyển ngữ / biên tập lại hoàn toàn sang **${meta.nameVi}**).
-- Điều chỉnh từ vựng, độ dài câu và cấu trúc ngữ pháp chuẩn xác cho trình độ **${level}**, mở rộng chi tiết phân tích hoặc ví dụ nếu cần để đạt đúng mục tiêu thời lượng **${estimatedMinutesLabel}** (~${targetCount} ${meta.unit === 'chars' ? 'ký tự' : 'từ'}) mà KHÔNG làm mất chiều sâu.`
+- Điều chỉnh từ vựng, độ dài câu và cấu trúc ngữ pháp chuẩn xác cho trình độ **${level}**, triển khai đầy đủ các mục kiến thức với chiều sâu giải thích rõ ràng để đạt **tối thiểu ${estimatedMinutesLabel}** (tối thiểu ~${targetCount} ${meta.unit === 'chars' ? 'ký tự' : 'từ'}; được phép dài hơn để câu văn trọn vẹn ý nghĩa, TUYỆT ĐỐI KHÔNG cắt xén xuống thấp hơn hay tạo câu cụt vô nghĩa).`
       : opts.mode === 'web-url'
         ? cleanSource
           ? `NGUỒN BÀI VIẾT TỪ WEB${cleanUrl ? ` (${cleanUrl})` : ''}:
@@ -406,7 +406,8 @@ ${sourceBlock}
 # YÊU CẦU NGÔN NGỮ, TRÌNH ĐỘ & ĐỘ DÀI
 - Ngôn ngữ bài đọc: **${meta.nameVi}** (${meta.nativeName}). **BẮT BUỘC 100% THUẦN 1 NGÔN NGỮ DUY NHẤT (${meta.nativeName})** trong cả \`title\` và \`text\` — TUYỆT ĐỐI KHÔNG chèn tiếng Việt, tiếng Anh giải thích, bản dịch trong ngoặc, hay từ ngoại ngữ khác ngôn ngữ bài đọc.
 - Trình độ: ${describeReadingLevel(level, meta)}
-- Thời lượng render mục tiêu: **${estimatedMinutesLabel}** → Độ dài mục tiêu khoảng **${targetCount} ${meta.unit === 'chars' ? `ký tự ${meta.nativeName}` : `từ ${meta.nativeName}`}**${durationMinutes && durationMinutes >= 2 ? ' (mở rộng câu chuyện/bài phân tích đủ sâu và phong phú kiến thức cho đúng số phút mong muốn)' : ''}.
+- **Thời lượng TỐI THIỂU (MỨC SÀN — CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN)**: Ngưỡng **${estimatedMinutesLabel}** (tối thiểu **${targetCount} ${meta.unit === 'chars' ? `ký tự ${meta.nativeName}` : `từ ${meta.nativeName}`}**) là mức sàn tối thiểu. Hãy để **số lượng mục kiến thức và chiều sâu nội dung** quyết định độ dài bài đọc (được phép dài hơn nếu cần để diễn giải trọn vẹn, TUYỆT ĐỐI KHÔNG rút ngắn hơn hay cắt câu cụt lủn).
+- **CHẤT LƯỢNG & CHIỀU SÂU KIẾN THỨC LÀ TIÊU CHÍ BẮT BUỘC**: Mỗi câu viết ra phải hoàn chỉnh ngữ pháp, giàu ngữ cảnh và mang giá trị học tập rõ ràng — tuyệt đối không viết câu cụt, câu sáo rỗng hay nhồi chữ vô nghĩa.
 - ${meta.noPronunciationNote}
 - TUYỆT ĐỐI KHÔNG đưa các dòng nhãn bài tập ("Practice Reading...", "Exercise 1", "Part 1") hoặc tiêu đề markdown \`##\` vào trường \`text\`. Chỉ giữ các câu đọc hoàn chỉnh.
 - Mỗi câu viết trên **1 dòng riêng** (ngăn cách bằng \\n), KHÔNG đánh số thứ tự, KHÔNG gắn timestamp, KHÔNG markdown (\`**\`, \`*\`), KHÔNG emoji, để app đọc TTS & chạy con trỏ chỉ chữ chính xác từng từ.

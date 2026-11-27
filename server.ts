@@ -15,6 +15,8 @@ import { detectReelMode, splitMultipleExercisesFromText } from './src/engine/eng
 import { cleanOutputTitleStem, resolveTabOutputSubfolder } from './src/engine/outputNaming.ts';
 import {
   detectVoiceLangCode,
+  getLocaleForTtsLang,
+  isMultilingualVoiceId,
   normalizeTtsLangCode,
   sanitizeSpanTextForSpeech,
   splitMixedLanguageTtsSpans,
@@ -654,10 +656,17 @@ function escapeXmlForSsml(text: string): string {
     .replace(/>/g, '&gt;');
 }
 
-function pickEdgeVoiceForLang(lang: string, requestedVoice: string): string {
+function pickEdgeVoiceForLang(
+  lang: string,
+  requestedVoice: string,
+  singleVoiceMultilingual = false,
+): string {
   const targetLang = normalizeTtsLangCode(lang);
   const req = (requestedVoice || '').trim();
   if (req && req.includes('Neural')) {
+    if (isMultilingualVoiceId(req) || singleVoiceMultilingual) {
+      return req;
+    }
     const reqLang = detectVoiceLangCode(req);
     if (!reqLang || reqLang === targetLang) {
       return req;
@@ -685,6 +694,7 @@ async function synthesizeEdgeTtsSingleChunk(
   text: string,
   voice: string,
   rate = 1.0,
+  voiceLocale?: string,
 ): Promise<{ buffer: Buffer; wordBoundaries: EdgeWordBoundary[] }> {
   const safeXmlText = escapeXmlForSsml(sanitizeTtsSegmentText(text));
   if (!safeXmlText) {
@@ -694,6 +704,7 @@ async function synthesizeEdgeTtsSingleChunk(
   try {
     await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3, {
       wordBoundaryEnabled: true,
+      ...(voiceLocale ? { voiceLocale } : {}),
     });
     const prosody = new ProsodyOptions();
     const pct = Math.round((Math.max(0.6, Math.min(1.6, rate)) - 1) * 100);
@@ -755,6 +766,7 @@ async function synthesizeEdgeTtsBuffer(
   rate = 1.0,
   tmpDir?: string,
   prefix = 'edge',
+  voiceLocale?: string,
 ): Promise<{ buffer: Buffer; wordBoundaries: EdgeWordBoundary[] }> {
   const cleaned = sanitizeTtsSegmentText(text);
   const chunks = splitTextForTtsChunks(cleaned, 290);
@@ -762,13 +774,13 @@ async function synthesizeEdgeTtsBuffer(
     throw new Error('Nội dung TTS rỗng.');
   }
   if (chunks.length === 1 || !tmpDir) {
-    return synthesizeEdgeTtsSingleChunk(chunks.join(' '), voice, rate);
+    return synthesizeEdgeTtsSingleChunk(chunks.join(' '), voice, rate, voiceLocale);
   }
   const partFiles: string[] = [];
   const combinedBoundaries: EdgeWordBoundary[] = [];
   let chunkCursor = 0;
   for (let i = 0; i < chunks.length; i++) {
-    const part = await synthesizeEdgeTtsSingleChunk(chunks[i], voice, rate);
+    const part = await synthesizeEdgeTtsSingleChunk(chunks[i], voice, rate, voiceLocale);
     const partPath = path.join(tmpDir, `${prefix}_e_${i}.mp3`);
     await fs.promises.writeFile(partPath, part.buffer);
     partFiles.push(partPath);
@@ -1550,6 +1562,12 @@ async function startServer(): Promise<void> {
           id: 'edge',
           name: 'Microsoft Edge Neural TTS (Miễn phí · Chất lượng cao)',
           voices: [
+            { id: 'en-US-AvaMultilingualNeural', label: 'Ava Multilingual (1 giọng đọc mọi ngôn ngữ · Nữ)', lang: 'multi' },
+            { id: 'en-US-AndrewMultilingualNeural', label: 'Andrew Multilingual (1 giọng đọc mọi ngôn ngữ · Nam)', lang: 'multi' },
+            { id: 'en-US-EmmaMultilingualNeural', label: 'Emma Multilingual (1 giọng đọc mọi ngôn ngữ · Nữ)', lang: 'multi' },
+            { id: 'en-US-BrianMultilingualNeural', label: 'Brian Multilingual (1 giọng đọc mọi ngôn ngữ · Nam)', lang: 'multi' },
+            { id: 'fr-FR-VivienneMultilingualNeural', label: 'Vivienne Multilingual (1 giọng Pháp/Anh/Việt/Nhật · Nữ)', lang: 'multi' },
+            { id: 'ko-KR-HyunsuMultilingualNeural', label: 'Hyunsu Multilingual (1 giọng Hàn/Anh/Việt · Nam)', lang: 'multi' },
             { id: 'en-US-JennyNeural', label: 'Jenny (US Female · Tự nhiên)', lang: 'en-US' },
             { id: 'en-US-GuyNeural', label: 'Guy (US Male · Rõ ràng)', lang: 'en-US' },
             { id: 'en-US-AriaNeural', label: 'Aria (US Female · Biểu cảm)', lang: 'en-US' },
@@ -1632,6 +1650,9 @@ async function startServer(): Promise<void> {
             ? 'en-US'
             : 'vi-VN';
       const autoSplitLanguages = body?.autoSplitLanguages !== false;
+      const singleVoiceMultilingual =
+        body?.singleVoiceMultilingual === true || isMultilingualVoiceId(voice);
+      const strictProvider = body?.strictProvider === true;
       const rate = Number(body?.rate ?? 1.0);
       const rawSegments = Array.isArray(body?.segments)
         ? body.segments
@@ -1719,6 +1740,10 @@ async function startServer(): Promise<void> {
         words: ReturnType<typeof interpolateWordTimings>;
       }> = [];
       let providerUsed = providerReq;
+      const providersUsedSet = new Set<string>();
+      let edgeAttempted = false;
+      let edgeFallbackToGoogle = false;
+      const edgeErrors: string[] = [];
       let cursor = 0;
       let anyWordBoundaries = false;
 
@@ -1735,9 +1760,13 @@ async function startServer(): Promise<void> {
         let used = spanProvider;
         const attemptOrder = Array.from(
           new Set(
-            spanProvider === 'auto'
-              ? ['edge', 'google', 'streamelements', ...(elevenLabsKey ? ['elevenlabs'] : []), ...(geminiKey ? ['gemini'] : [])]
-              : [spanProvider, 'edge', 'google', 'streamelements'],
+            strictProvider && spanProvider !== 'auto'
+              ? [spanProvider]
+              : spanProvider === 'auto'
+                ? ['edge', 'google', 'streamelements', ...(elevenLabsKey ? ['elevenlabs'] : []), ...(geminiKey ? ['gemini'] : [])]
+                : spanProvider === 'google'
+                  ? ['google', 'edge', 'streamelements']
+                  : [spanProvider, 'edge', 'google', 'streamelements'],
           ),
         );
         const attemptErrors: string[] = [];
@@ -1746,11 +1775,17 @@ async function startServer(): Promise<void> {
           hasHanziOnly && normalizeTtsLangCode(spanLang) !== 'zh' && normalizeTtsLangCode(spanLang) !== 'ja'
             ? 'zh'
             : spanLang;
+        const keepUnifiedVoice = singleVoiceMultilingual || isMultilingualVoiceId(spanVoice);
         const safeSpanVoice =
-          hasHanziOnly && detectVoiceLangCode(spanVoice) !== 'zh' && detectVoiceLangCode(spanVoice) !== 'ja'
+          !keepUnifiedVoice &&
+          hasHanziOnly &&
+          detectVoiceLangCode(spanVoice) !== 'zh' &&
+          detectVoiceLangCode(spanVoice) !== 'ja'
             ? pickEdgeVoiceForLang('zh', spanVoice)
             : spanVoice;
         const langCode = normalizeTtsLangCode(safeSpanLang);
+        const spanVoiceLocale = getLocaleForTtsLang(langCode);
+        let spanEdgeFailed = false;
 
         for (const p of attemptOrder) {
           try {
@@ -1760,13 +1795,14 @@ async function startServer(): Promise<void> {
               used = 'elevenlabs';
               break;
             } else if (p === 'edge') {
-              const edgeVoice = pickEdgeVoiceForLang(safeSpanLang, safeSpanVoice || voice);
+              edgeAttempted = true;
+              const edgeVoice = pickEdgeVoiceForLang(safeSpanLang, safeSpanVoice || voice, keepUnifiedVoice);
               let edgeOut: { buffer: Buffer; wordBoundaries: EdgeWordBoundary[] };
               try {
-                edgeOut = await synthesizeEdgeTtsBuffer(spanText, edgeVoice, spanRate, tmpDir, tag);
+                edgeOut = await synthesizeEdgeTtsBuffer(spanText, edgeVoice, spanRate, tmpDir, tag, spanVoiceLocale);
               } catch {
                 await new Promise((r) => setTimeout(r, 250));
-                edgeOut = await synthesizeEdgeTtsBuffer(spanText, edgeVoice, spanRate, tmpDir, `${tag}_r`);
+                edgeOut = await synthesizeEdgeTtsBuffer(spanText, edgeVoice, spanRate, tmpDir, `${tag}_r`, spanVoiceLocale);
               }
               buf = edgeOut.buffer;
               wordBoundaries = edgeOut.wordBoundaries;
@@ -1775,6 +1811,9 @@ async function startServer(): Promise<void> {
             } else if (p === 'google') {
               buf = await synthesizeGoogleTranslateTtsChunked(spanText, safeSpanLang || langCode, tmpDir, tag, spanRate);
               used = 'google';
+              if (spanEdgeFailed) {
+                edgeFallbackToGoogle = true;
+              }
               break;
             } else if (p === 'streamelements') {
               // StreamElements only supports English & Japanese Polly voices; skip for vi/zh/ko/fr/es so it never misreads them
@@ -1798,6 +1837,10 @@ async function startServer(): Promise<void> {
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             attemptErrors.push(`${p}: ${msg}`);
+            if (p === 'edge') {
+              spanEdgeFailed = true;
+              edgeErrors.push(msg);
+            }
           }
         }
 
@@ -1808,6 +1851,7 @@ async function startServer(): Promise<void> {
               : 'Không thể tạo giọng đọc từ các API TTS.',
           );
         }
+        providersUsedSet.add(used);
         return { buffer: buf, wordBoundaries, provider: used };
       };
 
@@ -1830,12 +1874,15 @@ async function startServer(): Promise<void> {
           primaryVoice: segPrimaryVoice,
           secondaryVoice,
           autoSplit: segAutoSplit,
+          singleVoiceMultilingual,
         });
 
         onProgress?.(
           Math.max(6, Math.round((i / rawSegments.length) * 84)),
           spans.length > 1
-            ? `Đang đọc song ngữ đoạn ${i + 1}/${rawSegments.length} (${spans.length} TTS riêng)...`
+            ? singleVoiceMultilingual
+              ? `Đang đọc đa ngữ 1 giọng đoạn ${i + 1}/${rawSegments.length} (${spans.length} cụm ngôn ngữ)...`
+              : `Đang đọc song ngữ đoạn ${i + 1}/${rawSegments.length} (${spans.length} TTS riêng)...`
             : `Đang đọc đoạn ${i + 1}/${rawSegments.length} (${segProvider === 'auto' ? 'Auto' : segProvider})...`,
         );
 
@@ -1881,14 +1928,14 @@ async function startServer(): Promise<void> {
             const wavBuf = await fs.promises.readFile(spanRawWavPath);
             const { samples, sampleRate } = parseWavBufferToMonoFloat32(wavBuf);
             const bounds = detectWavSpeechBounds(samples, sampleRate, {
-              leadPadSec: spans.length > 1 ? (sIdx === 0 ? 0.035 : 0.02) : 0.045,
-              tailPadSec: spans.length > 1 ? (sIdx === spans.length - 1 ? 0.075 : 0.025) : 0.09,
-              minSpeechSpanSec: 0.14,
+              leadPadSec: spans.length > 1 ? (sIdx === 0 ? 0.03 : 0.012) : 0.045,
+              tailPadSec: spans.length > 1 ? (sIdx === spans.length - 1 ? 0.07 : 0.018) : 0.09,
+              minSpeechSpanSec: spans.length > 1 ? 0.09 : 0.14,
             });
             const trimDur = bounds.speechEndSec - bounds.speechStartSec;
-            if (trimDur >= 0.1 && (bounds.speechStartSec > 0.015 || bounds.durationSec - bounds.speechEndSec > 0.02)) {
+            if (trimDur >= 0.08 && (bounds.speechStartSec > 0.012 || bounds.durationSec - bounds.speechEndSec > 0.016)) {
               trimStart = bounds.speechStartSec;
-              const fadeOutStart = Math.max(0, Number((trimDur - 0.012).toFixed(4)));
+              const fadeOutStart = Math.max(0, Number((trimDur - 0.008).toFixed(4)));
               await runProcess('ffmpeg', [
                 '-y',
                 '-ss',
@@ -1898,7 +1945,7 @@ async function startServer(): Promise<void> {
                 '-i',
                 spanRawWavPath,
                 '-af',
-                `afade=t=in:st=0:d=0.01,afade=t=out:st=${fadeOutStart}:d=0.012`,
+                `afade=t=in:st=0:d=0.008,afade=t=out:st=${fadeOutStart}:d=0.008`,
                 '-ar',
                 '24000',
                 '-ac',
@@ -2084,6 +2131,10 @@ async function startServer(): Promise<void> {
       return {
         ok: true,
         providerUsed,
+        providersUsed: Array.from(providersUsedSet),
+        edgeAttempted,
+        edgeFallbackToGoogle,
+        edgeErrors: edgeErrors.slice(0, 3),
         mimeType: 'audio/mpeg',
         audioBase64: finalBuf.toString('base64'),
         durationSec: totalDur,

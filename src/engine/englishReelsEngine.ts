@@ -1615,16 +1615,8 @@ export function buildEnglishReelsWebAiPrompt(params: {
       : undefined;
   const durationWordsEstimate = durationMinutes ? Math.round(durationMinutes * 125) : undefined;
   const durationDirective = durationMinutes
-    ? `- **THỜI LƯỢNG RENDER & CHIỀU SÂU MỤC TIÊU: ${durationMinutes} PHÚT (~${Math.round(durationMinutes * 60)} giây, tổng ~${durationWordsEstimate} từ lời đọc)**: ${
-        durationMinutes >= 3
-          ? 'KHÔNG được chạy vội cho đủ số lượng kiểu "1 từ + 1 ví dụ cụt lủn". Hãy đào sâu sư phạm cho TỪNG mục: giải thích TẠI SAO nghe tự nhiên (Sound More Natural), đối chiếu lỗi sai / câu cứng kiểu sách giáo khoa mà người học hay dùng nhầm, nêu rõ sắc thái & tình huống thực tế trong `explanationSpeech` và `translation` để video đạt đúng chiều sâu và độ dài ' +
-            durationMinutes +
-            ' phút.'
-          : durationMinutes <= 1
-            ? 'Giữ số thẻ súc tích, tinh gọn đúng trọng tâm nhưng vẫn nêu rõ lý do dùng tự nhiên để khớp khoảng thời lượng ngắn này.'
-            : 'Cân đối số thẻ `cards[]` và chiều sâu phân tích (giải thích lý do nghe tự nhiên + lỗi dễ nhầm + ngữ cảnh thực tế) để tổng thời gian đọc vừa vặn với thời lượng mong muốn.'
-      }`
-    : '';
+    ? `- **THỜI LƯỢNG TỐI THIỂU (MỨC SÀN — CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN): ${durationMinutes} PHÚT (~${Math.round(durationMinutes * 60)} giây, tối thiểu ~${durationWordsEstimate} từ lời đọc)**: Hãy để **số lượng mục kiến thức và chiều sâu phân tích** quyết định thời lượng thực tế của video (được phép dài hơn ${durationMinutes} phút để giảng giải trọn vẹn, TUYỆT ĐỐI KHÔNG cắt bớt xuống thấp hơn). **CHẤT LƯỢNG GIẢI THÍCH LÀ TIÊU CHÍ BẮT BUỘC**: tuyệt đối KHÔNG sinh câu cụt lủn, nửa vời hay kiểu "1 từ + 1 ví dụ sơ sài" vô nghĩa; mỗi mục phải phân tích rõ TẠI SAO nghe tự nhiên (Sound More Natural), đối chiếu lỗi sai / câu cứng nhắc dễ mắc, giải thích sắc thái & ngữ cảnh thực tế cùng câu ví dụ hoàn chỉnh trong \`explanationSpeech\` và \`translation\`.`
+    : `- **ƯU TIÊN CHIỀU SÂU KIẾN THỨC & CHẤT LƯỢNG GIẢI THÍCH (TIÊU CHÍ BẮT BUỘC)**: Hãy để số lượng mục kiến thức quyết định thời lượng video — tuyệt đối KHÔNG cắt ngắn thành các câu cụt lủn, thiếu chủ vị hay giải thích sơ sài vô nghĩa.`;
   const cleanedUserTitle = (params.title || '').trim();
   const isStaleDefaultTitle =
     !cleanedUserTitle ||
@@ -1692,8 +1684,8 @@ export function buildEnglishReelsWebAiPrompt(params: {
     '1. **Mở đầu (`type: "intro"`)**: Giới thiệu rõ **mục tiêu thực tế & đúng tên bài học** (VD: `"Welcome to today\'s lesson on <Exact Lesson Title>..."`). Chọn `visual.variant: "bs-card-header"` hoặc `"css-roadmap-steps"`.',
     '2. **Nội dung bài đọc / Từ vựng (`type: "vocab"`)**:',
     '   - **KHÔNG** nhồi nhét phiên âm `/IPA/` vào `ttsText` (tránh TTS đọc sai).',
-    `   - Ở trường \`"translation"\` và \`"explanationSpeech"\`, giải thích ngắn gọn từ khó & ngữ pháp bằng **${locale.targetLanguageLabel}** (tránh văn bản dài dòng khiến chữ bị tràn).`,
-    '   - Nếu nguồn có nhiều phần nhỏ, tách từng phần gọn gàng có lời dẫn chuyển phần giữa các phần (1–2 ý ngắn gọn mỗi card).',
+    `   - Ở trường \`"translation"\` và \`"explanationSpeech"\`, giải thích ĐẦY ĐỦ, SÂU SẮC ý nghĩa từ khó, sắc thái ngữ cảnh & cấu trúc ngữ pháp bằng **${locale.targetLanguageLabel}** (tránh câu cụt vô nghĩa; phần chữ hiển thị trên thẻ gọn rõ, còn phần giải thích chi tiết đưa vào \`explanationSpeech\`).`,
+    '   - Nếu nguồn có nhiều phần nhỏ / nhiều mục kiến thức, tách từng mục trọn vẹn có lời dẫn chuyển phần tự nhiên (không gộp vội hay cắt cụt câu).',
     ...quizPolicyBlock,
     '4. **Tổng kết (`type: "outro"`)**: Bắt buộc có lời đọc `"ttsText"` (và `"explanationSpeech"` nếu có giải thích) tổng kết đúng bài vừa học qua component `"css-bento-stats"` hoặc `"bs-list-group"`.',
     '',
@@ -2228,7 +2220,7 @@ export function buildAiCreatorWebAiPrompt(params: {
     `- **Target Language Being Taught**: **${langOption.label}**`,
     `- **Proficiency Level (${langOption.systemName})**: **${chosenLevel}** (${levelDesc})`,
     `- **Explanation Language**: **${explainLangName}**`,
-    `- **Target Video Duration**: **${durationLabel}** with **${count} core teaching items**`,
+    `- **Minimum Video Duration Floor (CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN)**: At least **${durationLabel}** with at least **${count} core teaching items** — let the number of knowledge points & explanation quality determine the final runtime (NEVER compress below this floor or sacrifice explanation completeness).`,
     `- **Video Frame Aspect**: ${aspectLabel}`,
     topicHint
       ? `- User topic / category direction: "${topicHint}". Craft the sharpest, most practical angle around this topic.`
@@ -2251,7 +2243,7 @@ export function buildAiCreatorWebAiPrompt(params: {
     `2. **Core Teaching Cards (\`${count}\` cards, \`type: "vocab"\`) — PEDAGOGICAL DEPTH FIRST**:`,
     `   - Ordered cleanly with \`"indexLabel": "01 / ${countPadded}"\` through \`"${countPadded} / ${countPadded}"\`.`,
     '   - Include natural **spoken transition phrases** inside `explanationSpeech` (or `speech` if single-voice) when advancing to the next section/nuance (e.g. "Next expression...", "Moving on to...") so transitions are NEVER silent!',
-    `   - **NEVER RUSH SHALLOW 1-WORD + 1-EXAMPLE CARDS**: For themes like "Sound More Natural with Phrasal Verbs", DO NOT superficially sprint through items just to hit a number. Give real teaching depth in \`explanationSpeech\` + \`visual.labels\` + \`translation\`: explain **WHY** native speakers find it natural, explicitly contrast **what learners mistakenly say or stiff textbook equivalents** ("Don\'t say X → Say Y because..."), clarify situational register/nuance (casual vs workplace), and calibrate explanation length across **${durationLabel}** (especially rich & thorough when target duration is 3–30 minutes!).`,
+    '   - **EXPLANATION QUALITY & KNOWLEDGE DEPTH ARE MANDATORY (CẤM CÂU CỤT VÔ NGHĨA)**: NEVER sprint through shallow 1-word + 1-truncated-example stubs or meaningless half-sentences! Every card MUST deliver complete, self-contained pedagogical value in `explanationSpeech` + `translation` + `visual.labels`: explain **WHY** native speakers find it natural, explicitly contrast **what learners mistakenly say or stiff textbook equivalents** ("Don\'t say X → Say Y because..."), clarify situational register/nuance, and use full, natural sentences. Let the **number of knowledge items** drive final video length (longer is always welcome; NEVER shorter/truncated!).',
     '   - If level is a progression (`N5→N1`, `A1→C2`, `HSK 1→6`, `TOPIK 1→6`), progress clearly from elementary (`01`) to advanced (`' + countPadded + '`).',
     params.includeQuiz
       ? `3. **Optional Quick Interactive Check (\`type: "quiz"\`, 1–2 concise cards)**: Place a quick 5-second check right after the items it tests (ONLY on key contrasts, NOT an unrelated quiz dumped out of nowhere).`
@@ -2926,7 +2918,7 @@ export function buildTranslationChallengePrompt(params: {
     `- **Target Language to Speak**: **${langOption.label}**`,
     `- **Source / Cue Language**: **${explainLangName}**`,
     `- **Difficulty Level (${langOption.systemName})**: **${chosenLevel}** (${levelDesc})`,
-    `- **Target Duration & Count**: **${durationMinutes} phút** (~${Math.round(durationMinutes * 60)} giây) with **${count} challenge sentences**`,
+    `- **Minimum Duration Floor & Knowledge Count (CHỈ ĐƯỢC DÀI HƠN, KHÔNG THẤP HƠN)**: At least **${durationMinutes} phút** (~${Math.round(durationMinutes * 60)} giây+) with at least **${count} challenge sentences** — let the quantity of knowledge points & explanation depth determine the final video duration (NEVER shorten below ${durationMinutes} phút or cut sentences into meaningless stubs!).`,
     `- **Think Countdown Per Sentence**: **${thinkSec} giây** (` + `"thinkSec": ${thinkSec}` + `)`,
     `- **Repeat Spoken Translations**: **${repeatCount} lần** (` + `"repeatCount": ${repeatCount}` + `)`,
     topicHint
@@ -2952,8 +2944,8 @@ export function buildTranslationChallengePrompt(params: {
     `   - \`"vocabNotes"\`: **CRITICAL** — Chọn **CHỈ 1** cụm từ vựng/idiom quan trọng nhất câu để chú thích ngắn gọn bằng **${explainLangName}** (VD \`${exampleVocabNotes}\`). Không lặp lại ở \`grammarNote\`.`,
     `   - \`"grammarNote"\`: Nếu \`"vocabNotes"\` đã có thì để rỗng \`""\` — chỉ điền tối đa 1 ghi chú ngắn gọn nhất trên thẻ.`,
     includeNuanceTip
-      ? `   - \`"explanationSpeech"\`: Rich, deeply helpful spoken nuance tip in **${explainLangName}** (played after the ${repeatCount} repeats) explaining **WHY** native speakers say it this way and what stiff literal mistake learners should avoid ("Don't translate word-by-word as X; natives say Y because...").`
-      : `   - \`"explanationSpeech"\`: "" (keep empty so audio focuses 100% on Prompt -> Countdown -> ${repeatCount}x Repeats).`,
+      ? `   - \`"explanationSpeech"\`: **MANDATORY QUALITY & DEPTH** — Rich, complete spoken nuance tip in **${explainLangName}** (played after the ${repeatCount} repeats) explaining **WHY** native speakers say it this way, situational context, and what stiff literal mistake learners should avoid ("Don't translate word-by-word as X; natives say Y because..."). NEVER write truncated or meaningless filler fragments.`
+      : `   - \`"explanationSpeech"\`: "" (keep empty so audio focuses 100% on Prompt -> Countdown -> ${repeatCount}x Repeats; ensure every \`sourcePrompt\` and \`answer\` is a complete, meaningful sentence).`,
     `   - \`"thinkSec": ${thinkSec}\`, \`"repeatCount": ${repeatCount}\``,
     `   - **100% THUẦN NGÔN NGỮ CHO TTS**: \`"speech"\` chỉ chứa đúng **${langOption.nativeName}** (không trộn tiếng Việt hay ký hiệu lạ); \`"explanationSpeech"\` chỉ chứa đúng **${explainLangName}** (không chêm cụm từ dài bằng ngoại ngữ khiến TTS đọc lệch giọng).`,
     `3. **Recap Outro Card (\`type: "outro"\`)**: \`"speech": ""\`, encouraging closing in \`"explanationSpeech"\` in **${explainLangName}**, and \`visual\` labels written in **${langOption.nativeName}**.`,
