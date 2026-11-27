@@ -1581,7 +1581,7 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
               className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors whitespace-nowrap"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>{isExportingVideo ? 'Đang render MP4...' : 'Render & Tải MP4'}</span>
+              <span>{isExportingVideo ? 'Đang render MP4...' : 'Render MP4'}</span>
             </button>
           )}
         </div>
@@ -1597,7 +1597,7 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
               >
                 <FileText className="w-3.5 h-3.5 text-indigo-600" />
                 <span>
-                  Mô tả &amp; Hashtag (.txt · {descriptionOutput.nativeLangCode.toUpperCase()})
+                  Mô tả &amp; Hashtag (.txt · {descriptionOutput.learningLangCode.toUpperCase()})
                 </span>
               </button>
               <div className="flex items-center gap-1.5">

@@ -30,7 +30,10 @@ import {
   TranscriptCue,
   WatermarkOutroConfig,
 } from './types';
-import { getCartoonAnimationsPromptBlock } from './cartoonAnimationDb';
+import {
+  getCartoonAnimationsPromptBlock,
+  resolveCartoonAnimationForSignal,
+} from './cartoonAnimationDb';
 import {
   getCatalogSummaryForPrompt,
   isKnownIllustrationVariant,
@@ -203,6 +206,10 @@ export interface ReelCardVisualConfig {
   highlightWord?: string;
   sceneIcon?: IllustrationSceneIcon;
   speechText?: string;
+  checklist?: Array<{ text: string; highlight?: string; ok?: boolean }>;
+  upgrades?: Array<{ prompt: string; upgrade: string; badgeColor?: string }>;
+  boxes?: Array<{ title: string; subtitle?: string; icon: 'dot' | 'surface' | 'cube' | 'check' | 'cross' | 'letter'; accent?: string }>;
+  nodes?: Array<{ label: string; sublabel?: string; color?: string; sceneIcon?: IllustrationSceneIcon }>;
   customPrimitives?: VectorPrimitive[];
 }
 
@@ -1734,12 +1741,26 @@ export function buildEnglishReelsWebAiPrompt(params: {
         ]
       : []),
     '      "visual": {',
-    '        "variant": "bs-card-header",',
-    '        "formula": "TODAY LESSON GOAL",',
-    '        "title": "<Tên bài học thực tế>",',
-    `        "subtitle": ${JSON.stringify(locale.introVisualSubtitle)},`,
-    '        "sceneIcon": "graduation"',
+    ...(params.compositionId === 'cartoon-host'
+      ? [
+          '        "variant": "contrast-pair-cards",',
+          '        "labels": ["<Mẫu tránh dùng>", "<Mẫu tự nhiên hơn>"]',
+        ]
+      : [
+          '        "variant": "bs-card-header",',
+          '        "formula": "TODAY LESSON GOAL",',
+          '        "title": "<Tên bài học thực tế>",',
+          `        "subtitle": ${JSON.stringify(locale.introVisualSubtitle)},`,
+          '        "sceneIcon": "graduation"',
+        ]),
     '      }',
+    ...(params.compositionId === 'cartoon-host'
+      ? [
+          ',',
+          '      "cartoonAction": "wave-hello",',
+          '      "cartoonMood": "happy"',
+        ]
+      : []),
     '    },',
     '    {',
     '      "type": "vocab",',
@@ -1748,12 +1769,22 @@ export function buildEnglishReelsWebAiPrompt(params: {
     '      "content": "<Câu hoặc từ vựng thực tế trích từ nguồn>",',
     `      "translation": ${JSON.stringify(locale.promptExampleVocabTranslation)},`,
     '      "ttsText": "<Câu hoặc từ vựng tự nhiên để đọc>",',
-    '      "visual": {',
-    '        "variant": "css-sticky-note",',
-    '        "title": "KEY VOCAB & GRAMMAR",',
-    `        "labels": ${JSON.stringify(locale.promptExampleStickyLabels)},`,
-    '        "sceneIcon": "book"',
-    '      }',
+    ...(params.compositionId === 'cartoon-host'
+      ? [
+          '      "cartoonAction": "point-up",',
+          '      "cartoonMood": "confident",',
+          '      "visual": {',
+          '        "labels": ["<Ý chính 1>", "<Ý chính 2>"]',
+          '      }',
+        ]
+      : [
+          '      "visual": {',
+          '        "variant": "css-sticky-note",',
+          '        "title": "KEY VOCAB & GRAMMAR",',
+          `        "labels": ${JSON.stringify(locale.promptExampleStickyLabels)},`,
+          '        "sceneIcon": "book"',
+          '      }',
+        ]),
     '    },',
     ...(includeQuiz !== 'none'
       ? [
@@ -1770,12 +1801,19 @@ export function buildEnglishReelsWebAiPrompt(params: {
           `      "explanation": ${JSON.stringify(locale.promptExampleExplanation)},`,
           '      "ttsText": "Now let\'s test what we just read! ... Question one: ... A, Option A. B, Option B. C, Option C. Take five seconds to think.",',
           '      "ttsAnswerText": "Time is up! The correct answer is B, Option B.",',
-          '      "visual": {',
-          '        "variant": "css-browser-mockup",',
-          `        "title": ${JSON.stringify(locale.promptExampleContextTitle)},`,
-          '        "speechText": "<Câu bằng chứng trích từ bài>",',
-          '        "sceneIcon": "book"',
-          '      }',
+          ...(params.compositionId === 'cartoon-host'
+            ? [
+                '      "cartoonAction": "thinking-chin",',
+                '      "cartoonMood": "curious"',
+              ]
+            : [
+                '      "visual": {',
+                '        "variant": "css-browser-mockup",',
+                `        "title": ${JSON.stringify(locale.promptExampleContextTitle)},`,
+                '        "speechText": "<Câu bằng chứng trích từ bài>",',
+                '        "sceneIcon": "book"',
+                '      }',
+              ]),
           '    },',
         ]
       : []),
@@ -1791,12 +1829,19 @@ export function buildEnglishReelsWebAiPrompt(params: {
           '      "explanationSpeech": "Tuyệt vời! Bạn vừa hoàn thành bài học về <Chủ đề thật>. Hãy lưu lại và luyện đọc to mỗi ngày nhé.",',
         ]
       : []),
-    '      "visual": {',
-    '        "variant": "css-bento-stats",',
-    '        "title": "Lesson Complete!",',
-    `        "labels": ${JSON.stringify(locale.promptExampleOutroLabels)},`,
-    '        "sceneIcon": "sparkles"',
-    '      }',
+    ...(params.compositionId === 'cartoon-host'
+      ? [
+          '      "cartoonAction": "clap-jump",',
+          '      "cartoonMood": "excited"',
+        ]
+      : [
+          '      "visual": {',
+          '        "variant": "css-bento-stats",',
+          '        "title": "Lesson Complete!",',
+          `        "labels": ${JSON.stringify(locale.promptExampleOutroLabels)},`,
+          '        "sceneIcon": "sparkles"',
+          '      }',
+        ]),
     '    }',
     '  ]',
     '}',
@@ -1806,6 +1851,8 @@ export function buildEnglishReelsWebAiPrompt(params: {
     '"""',
     (params.sourceText || '').trim().slice(0, 14000),
     '"""',
+    '',
+    'HÃY XUẤT KẾT QUẢ CUỐI CÙNG THÀNH **1 FILE `.json` HOÀN CHỈNH HỢP LỆ** (chỉ trả về dữ liệu file JSON, không giải thích dài dòng bên ngoài).',
   ]
     .filter(Boolean)
     .join('\n');
@@ -1813,6 +1860,7 @@ export function buildEnglishReelsWebAiPrompt(params: {
 
 export function buildAiCreatorWebAiPrompt(params: {
   topicHint?: string;
+  customInputLines?: string;
   learningLanguage?: LearningLanguageId;
   level?: string;
   durationMinutes?: number;
@@ -2170,6 +2218,11 @@ export function buildAiCreatorWebAiPrompt(params: {
       : '- User provided NO specific topic. Brainstorm at least 5 practical video ideas internally, pick the single highest-value concept calibrated strictly to level ' +
         chosenLevel +
         ', and output ONLY the final JSON (never output the brainstorming list).',
+    ...(params.customInputLines?.trim()
+      ? [
+          `- **USER SUBTITLE / SCRIPT PROVIDED BELOW**: Edit, polish, correct, and structure these lines into cohesive teaching cards matching the JSON schema:\n"""\n${params.customInputLines.trim().slice(0, 8000)}\n"""`,
+        ]
+      : []),
     '',
     '## 2. FORMAT & CONTENT DIVERSITY (7 FORMATS)',
     `- Format preference: ${chosenFormatInstruction}`,
@@ -2200,11 +2253,17 @@ export function buildAiCreatorWebAiPrompt(params: {
     '',
     '## 5. COMPONENT VARIETY & ANTI-REPETITION',
     `- ${compHint}`,
-    '- **STRICT ANTI-REPETITION RULE**: NEVER assign the same `visual.variant` to two consecutive cards!',
-    variantsListText,
-    `- Valid \`visual.sceneIcon\` names (NEVER invent outside this list): ${sceneIconsListText}`,
+    ...(params.compositionId === 'cartoon-host'
+      ? [
+          '- **CHẾ ĐỘ @Gimmys ĐANG BẬT**: BẮT BUỘC đặt `"compositionId": "cartoon-host"` ở JSON gốc và gắn `"cartoonAction"` + `"cartoonMood"` phù hợp từng card (KHÔNG dùng sai emotion vui lên thẻ cảnh báo/lỗi sai; dùng `worried`/`thinking-chin` cho thẻ lỗi sai và `happy`/`excited`/`clap-jump` cho khen ngợi/tổng kết).',
+        ]
+      : [
+          '- **STRICT ANTI-REPETITION RULE**: NEVER assign the same `visual.variant` to two consecutive cards!',
+          variantsListText,
+          `- Valid \`visual.sceneIcon\` names (NEVER invent outside this list): ${sceneIconsListText}`,
+        ]),
     '',
-    '## 6. STRICT JSON OUTPUT FORMAT (RETURN ONLY 1 VALID JSON OBJECT)',
+    '## 6. STRICT JSON OUTPUT FORMAT (EXPORT A VALID .JSON FILE)',
     '```json',
     '{',
     '  "mode": "vocab | phrases | phrasal_verbs | mistakes | grammar | comparisons | real_life",',
@@ -2219,7 +2278,13 @@ export function buildAiCreatorWebAiPrompt(params: {
         : `<Concrete Lesson Title Matching Generated ${langOption.nativeName} Content (${chosenLevel})>`,
     )},`,
     '  "cards": [',
-    ...exampleBlocks,
+    ...(params.compositionId === 'cartoon-host'
+      ? exampleBlocks.map((ln) =>
+          ln
+            .replace(/"variant": "bs-card-header",/g, '"variant": "contrast-pair-cards",')
+            .replace(/"variant": "css-magnifying-word",/g, '"variant": "cartoon-host", "cartoonAction": "point-up", "cartoonMood": "confident",'),
+        )
+      : exampleBlocks),
     '    {',
     '      "type": "outro",',
     '      "title": "Save & Practice Today",',
@@ -2234,16 +2299,25 @@ export function buildAiCreatorWebAiPrompt(params: {
           )},`,
         ]
       : []),
-    '      "visual": {',
-    '        "variant": "css-bento-stats",',
-    '        "title": "Ready to Use!",',
-    `        "labels": ${JSON.stringify(locale.promptExampleOutroLabels)},`,
-    '        "sceneIcon": "sparkles"',
-    '      }',
+    ...(params.compositionId === 'cartoon-host'
+      ? [
+          '      "cartoonAction": "clap-jump",',
+          '      "cartoonMood": "excited"',
+        ]
+      : [
+          '      "visual": {',
+          '        "variant": "css-bento-stats",',
+          '        "title": "Ready to Use!",',
+          `        "labels": ${JSON.stringify(locale.promptExampleOutroLabels)},`,
+          '        "sceneIcon": "sparkles"',
+          '      }',
+        ]),
     '    }',
     '  ]',
     '}',
     '```',
+    '',
+    'HÃY XUẤT KẾT QUẢ CUỐI CÙNG THÀNH **1 FILE `.json` HOÀN CHỈNH HỢP LỆ** (chỉ trả về dữ liệu file JSON, không giải thích ngoài JSON).',
   ].join('\n');
 }
 
@@ -2858,8 +2932,8 @@ export function buildTranslationChallengePrompt(params: {
     `   - \`"answer"\`: Natural spoken target sentence in **${langOption.nativeName}**.`,
     `   - \`"speech"\`: ${scriptPurityHint}`,
     `   - **NO FULL-SENTENCE PHONETIC / HIRAGANA**: Leave \`"phonetic": ""\` empty! Do NOT write full-sentence Hiragana, Furigana, Romaji, or IPA beneath the target sentence.`,
-    `   - \`"vocabNotes"\`: **CRITICAL** — Gloss 1–3 difficult/key words or idioms from \`"answer"\` into **${explainLangName}** (e.g. \`${exampleVocabNotes}\`).`,
-    `   - \`"grammarNote"\`: Ultra-concise 1-line structure/pattern takeaway in **${explainLangName}**.`,
+    `   - \`"vocabNotes"\`: **CRITICAL** — Chọn **CHỈ 1** cụm từ vựng/idiom quan trọng nhất câu để chú thích ngắn gọn bằng **${explainLangName}** (VD \`${exampleVocabNotes}\`). Không lặp lại ở \`grammarNote\`.`,
+    `   - \`"grammarNote"\`: Nếu \`"vocabNotes"\` đã có thì để rỗng \`""\` — chỉ điền tối đa 1 ghi chú ngắn gọn nhất trên thẻ.`,
     includeNuanceTip
       ? `   - \`"explanationSpeech"\`: Brief 1-sentence spoken tip in **${explainLangName}** explaining why native speakers say it this way (played after the ${repeatCount} repeats).`
       : `   - \`"explanationSpeech"\`: "" (keep empty so audio focuses 100% on Prompt -> Countdown -> ${repeatCount}x Repeats).`,
@@ -2869,18 +2943,22 @@ export function buildTranslationChallengePrompt(params: {
     '',
     TYPOGRAPHY_MOBILE_READABILITY_PROMPT_BLOCK,
     '',
-    '## 4. VISUAL VARIETY (ANTI-REPETITION)',
+    '## 4. VISUAL VARIETY & @GIMMYS COMPLIANCE',
     `- ${
       params.compositionId === 'cartoon-host'
-        ? `REQUIRED layout \`"compositionId": "cartoon-host"\` (@Gimmys Cartoon Host): Add optional \`"cartoonAction"\` / \`"cartoonMood"\` / \`"cartoonAnimationSpec"\` per card to drive Gimmy's expressions & gestures!\n${getCartoonAnimationsPromptBlock()}`
+        ? `REQUIRED layout \`"compositionId": "cartoon-host"\` (@Gimmys Cartoon Host): MUST set \`"compositionId": "cartoon-host"\`, and attach matching \`"cartoonAction"\` / \`"cartoonMood"\` / \`"cartoonAnimationSpec"\` per card (NEVER put happy/excited on mistake/avoid scenes!).\n${getCartoonAnimationsPromptBlock()}`
         : params.compositionId && params.compositionId !== 'ai-decide'
           ? `Set \`"compositionId": "${params.compositionId}"\` where helpful.`
           : 'Rotate visual components cleanly across cards (NEVER repeat same variant back-to-back).'
     }`,
-    variantsListText,
-    `- Valid \`visual.sceneIcon\` values: ${sceneIconsListText}`,
+    ...(params.compositionId === 'cartoon-host'
+      ? []
+      : [
+          variantsListText,
+          `- Valid \`visual.sceneIcon\` values: ${sceneIconsListText}`,
+        ]),
     '',
-    '## 5. STRICT JSON OUTPUT (RETURN ONLY 1 VALID JSON OBJECT)',
+    '## 5. STRICT JSON OUTPUT (EXPORT A COMPLETE .JSON FILE)',
     '```json',
     '{',
     '  "mode": "translation",',
@@ -2899,7 +2977,14 @@ export function buildTranslationChallengePrompt(params: {
     `      "title": ${JSON.stringify(`【Phản xạ ${chosenLevel}】"${exampleSource}" nói sao cho chuẩn?`)},`,
     '      "speech": "",',
     `      "explanationSpeech": ${JSON.stringify(`Thử thách phản xạ ${count} câu ${viLangName} thực tế. Nghe câu tiếng Việt và bật ra ngay trong ${thinkSec} giây nhé!`)},`,
-    `      "visual": { "variant": "bs-card-header", "formula": ${JSON.stringify(trLocale.introKicker(thinkSec, repeatCount))}, "title": ${JSON.stringify(trLocale.askTitle)}, "sceneIcon": "sparkles" }`,
+    ...(params.compositionId === 'cartoon-host'
+      ? [
+          '      "cartoonAction": "wave-hello",',
+          '      "cartoonMood": "happy"',
+        ]
+      : [
+          `      "visual": { "variant": "bs-card-header", "formula": ${JSON.stringify(trLocale.introKicker(thinkSec, repeatCount))}, "title": ${JSON.stringify(trLocale.askTitle)}, "sceneIcon": "sparkles" }`,
+        ]),
     '    },',
     '    {',
     '      "type": "translation",',
@@ -2909,13 +2994,20 @@ export function buildTranslationChallengePrompt(params: {
     '      "phonetic": "",',
     `      "speech": ${JSON.stringify(exampleTarget)},`,
     `      "vocabNotes": ${JSON.stringify(exampleVocabNotes)},`,
-    '      "grammarNote": "Cấu trúc tự nhiên hay dùng hàng ngày",',
+    '      "grammarNote": "",',
     ...(includeNuanceTip
       ? ['      "explanationSpeech": "Cách nói ngắn gọn và tự nhiên nhất khi giao tiếp ngoài đời.",']
       : ['      "explanationSpeech": "",']),
     `      "thinkSec": ${thinkSec},`,
     `      "repeatCount": ${repeatCount},`,
-    '      "visual": { "variant": "css-flashcard-flip", "title": "01 / ' + countPadded + '", "sceneIcon": "chat" }',
+    ...(params.compositionId === 'cartoon-host'
+      ? [
+          '      "cartoonAction": "point-up",',
+          '      "cartoonMood": "confident"',
+        ]
+      : [
+          '      "visual": { "variant": "css-flashcard-flip", "title": "01 / ' + countPadded + '", "sceneIcon": "chat" }',
+        ]),
     '    },',
     '    {',
     '      "type": "outro",',
@@ -2923,11 +3015,20 @@ export function buildTranslationChallengePrompt(params: {
     '      "speech": "",',
     '      "explanationSpeech": "Tuyệt vời! Hãy lưu lại video để luyện phản xạ nghe và bật câu mỗi ngày nhé!",',
     `      "translation": ${JSON.stringify(locale.promptExampleOutroTranslation)},`,
-    `      "visual": { "variant": "css-bento-stats", "title": ${JSON.stringify(trLocale.outroTitle)}, "labels": ${JSON.stringify(trLocale.outroLabels(count, thinkSec, repeatCount))}, "sceneIcon": "sparkles" }`,
+    ...(params.compositionId === 'cartoon-host'
+      ? [
+          '      "cartoonAction": "clap-jump",',
+          '      "cartoonMood": "excited"',
+        ]
+      : [
+          `      "visual": { "variant": "css-bento-stats", "title": ${JSON.stringify(trLocale.outroTitle)}, "labels": ${JSON.stringify(trLocale.outroLabels(count, thinkSec, repeatCount))}, "sceneIcon": "sparkles" }`,
+        ]),
     '    }',
     '  ]',
     '}',
     '```',
+    '',
+    'HÃY XUẤT KẾT QUẢ CUỐI CÙNG THÀNH **1 FILE `.json` HOÀN CHỈNH HỢP LỆ** (chỉ trả về file JSON, không kèm lời giải thích bên ngoài).',
   ].join('\n');
 }
 
@@ -4108,6 +4209,10 @@ function resolveVisualPayloadForReelCard(
     speechText: custom?.speechText || fallback.speechText || card.content,
     highlightWord: custom?.highlightWord || fallback.highlightWord || card.title,
     sceneIcon: custom?.sceneIcon || fallback.sceneIcon || ctxFallback.sceneIcon,
+    ...(custom?.checklist ? { checklist: custom.checklist } : {}),
+    ...(custom?.upgrades ? { upgrades: custom.upgrades } : {}),
+    ...(custom?.boxes ? { boxes: custom.boxes } : {}),
+    ...(custom?.nodes ? { nodes: custom.nodes } : {}),
     customPrimitives: custom?.customPrimitives,
   };
 
@@ -4650,7 +4755,7 @@ export function reelCardsToLessonProject(
         (card.type === 'intro'
           ? 'wave-hello'
           : card.type === 'outro'
-            ? 'celebrate-jump'
+            ? 'clap-jump'
             : card.type === 'quiz'
               ? 'thinking-chin'
               : /\b(avoid|wrong|don't|mistake|rude)\b|tránh|sai|cảnh báo/i.test(badgeTxt)
@@ -4658,12 +4763,29 @@ export function reelCardsToLessonProject(
                 : /\b(tip|idea|note|secret|mẹo)\b/i.test(badgeTxt)
                   ? 'approve-tip'
                   : 'point-up');
+      const badgeHint: 'check' | 'cross' | 'question' | 'tip' | null =
+        /\b(avoid|wrong|don't|mistake|rude)\b|ng|✖|✗|tránh|sai|cảnh báo/i.test(badgeTxt)
+          ? 'cross'
+          : card.type === 'quiz'
+            ? 'question'
+            : /\b(tip|idea|note|secret|mẹo)\b/i.test(badgeTxt)
+              ? 'tip'
+              : /\b(right|correct|natural|answer|native|✔|✓)\b/i.test(badgeTxt)
+                ? 'check'
+                : null;
+      const guarded = resolveCartoonAnimationForSignal({
+        spokenText: `${card.title || ''} ${card.content || ''} ${card.translation || ''}`,
+        activeBadge: badgeHint,
+        actionId: inferredAction,
+        explicitMood: card.cartoonMood,
+        inlineSpec: card.cartoonAnimationSpec,
+      });
       return {
         startTime: Number(win.start.toFixed(3)),
         endTime: Number(win.end.toFixed(3)),
-        actionId: inferredAction,
-        mood: card.cartoonMood,
-        spec: card.cartoonAnimationSpec,
+        actionId: guarded.matchedDef?.id || card.cartoonAction || inferredAction,
+        mood: guarded.params.mood,
+        spec: guarded.params,
       };
     });
 
@@ -4673,8 +4795,8 @@ export function reelCardsToLessonProject(
       label: 'Nhân vật Hoạt Hình Lip-Sync (@Gimmys)',
       startTime: 0,
       endTime: totalDuration,
-      enterAnimation: 'fade-scale',
-      exitAnimation: 'fade-out',
+      enterAnimation: 'none',
+      exitAnimation: 'none',
       layout: {
         x: 540,
         y: resolvedSubtitleConfig.position === 'top' ? 1140 : hasQuiz ? 1105 : 1085,
@@ -4885,7 +5007,7 @@ export function reelCardsToLessonProject(
       const trLocale = getTranslationTargetLocale(card.learningLang || 'en');
       const totalRepeats = win.repeatCount || Math.max(1, card.repeatCount ?? 2);
 
-      // Top Roadmap Strip
+      // Top Roadmap Strip (forced onto 1 crisp horizontal line)
       if (activeProfile.showStrip) {
         elements.push({
           id: `reel-stage-${idx}`,
@@ -4895,9 +5017,10 @@ export function reelCardsToLessonProject(
           endTime: end,
           enterAnimation: 'fade-scale',
           exitAnimation: 'fade-out',
-          layout: { x: 540, y: activeProfile.stripY, width: 920, scale: 1, zIndex: 12 },
+          layout: { x: 540, y: activeProfile.stripY, width: 960, scale: 1, zIndex: 12 },
           props: {
             kind: 'comparison-strip',
+            singleRow: true,
             items: trLocale.stageSteps.map((sLbl, sIdx) => ({
               label: sLbl,
               activateAt:
@@ -5148,34 +5271,9 @@ export function reelCardsToLessonProject(
           });
         }
 
-        // Visual comparison / nuance tip card during reveal (omit heavy prop under cartoon-host)
-        if (compId !== 'cartoon-host') {
-          elements.push({
-            id: `reel-tr-ans-prop-${idx}`,
-            type: 'illustration-prop',
-            label: `Answer Visual #${idx + 1}`,
-            startTime: win.answerStart,
-            endTime: end,
-            enterAnimation: 'pop-up',
-            exitAnimation: 'fade-out',
-            layout: { x: 540, y: 505, width: 840, scale: 0.92, zIndex: 11 },
-            props: {
-              kind: 'illustration-prop',
-              variant: 'bs-alert-tip',
-              data: {
-                title: trLocale.sourceLabel(sourcePromptText),
-                speechText:
-                  [card.vocabNotes, card.grammarNote, card.explanationSpeech]
-                    .filter(Boolean)
-                    .join(' · ') || trLocale.defaultTip(totalRepeats),
-                highlightWord: trLocale.repeatChip(totalRepeats),
-                sceneIcon: 'sparkles',
-              },
-            },
-          });
-        }
-
-        // Revealed Target Translation Sentence Card (gloss vocab + grammar instead of full-sentence phonetic)
+        // Revealed Target Translation Sentence Card (single concise takeaway + largest prominent sentence)
+        const singleTakeaway =
+          card.vocabNotes?.trim() || card.grammarNote?.trim() || undefined;
         elements.push({
           id: `reel-tr-ans-card-${idx}`,
           type: 'sentence-card',
@@ -5186,17 +5284,15 @@ export function reelCardsToLessonProject(
           exitAnimation: 'fade-out',
           layout: {
             x: 540,
-            y: compId === 'cartoon-host' ? activeProfile.cardY : 865,
-            width: 880,
-            scale: compId === 'cartoon-host' ? 0.94 : 1,
+            y: compId === 'cartoon-host' ? activeProfile.cardY : 665,
+            width: 920,
+            scale: compId === 'cartoon-host' ? 0.96 : 1.04,
             zIndex: 22,
           },
           props: {
             kind: 'sentence-card',
             text: card.content,
-            subtext: [card.vocabNotes, card.grammarNote, sourcePromptText]
-              .filter(Boolean)
-              .join(' · '),
+            subtext: singleTakeaway,
             badge: 'check',
             stampText: trLocale.stamp(totalRepeats),
             stampColor: '#16A34A',

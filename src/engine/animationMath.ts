@@ -90,6 +90,19 @@ export function computeElementFrameState(
     return { visible: false, opacity: 0, scale: 0.9, translateY: 0, translateX: 0 };
   }
 
+  if (
+    element.props.kind === 'illustration-prop' &&
+    element.props.variant === 'cartoon-host'
+  ) {
+    return {
+      visible: true,
+      opacity: 1,
+      scale: element.layout.scale || 1,
+      translateY: 0,
+      translateX: 0,
+    };
+  }
+
   const elapsed = time - element.startTime;
   const remaining = element.endTime - time;
   const lifespan = Math.max(0.12, element.endTime - element.startTime);
@@ -102,7 +115,7 @@ export function computeElementFrameState(
   let translateY = 0;
   let translateX = 0;
 
-  if (elapsed < safeEnter && safeEnter > 0) {
+  if (elapsed < safeEnter && safeEnter > 0 && element.enterAnimation !== 'none') {
     const p = elapsed / safeEnter;
     const easedCubic = easeOutCubic(p);
     const easedQuint = easeOutQuint(p);
@@ -127,7 +140,7 @@ export function computeElementFrameState(
         translateY += (1 - easedQuint) * 12;
         break;
     }
-  } else if (remaining < safeExit && safeExit > 0) {
+  } else if (remaining < safeExit && safeExit > 0 && element.exitAnimation !== 'none') {
     const p = remaining / safeExit; // 1 -> 0
     const eased = easeInOutCubic(p);
     opacity = eased;

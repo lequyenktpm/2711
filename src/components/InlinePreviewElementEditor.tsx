@@ -723,13 +723,31 @@ export const InlinePreviewElementEditor: React.FC<InlinePreviewElementEditorProp
 
       {/* Comparison Strip Editor */}
       {selectedElement.props.kind === 'comparison-strip' && (
-        <div className="rounded-lg bg-white border border-slate-200 p-2.5 space-y-1.5">
-          <div className="text-[10.5px] font-bold text-slate-700">Các mục trên thanh đối chiếu</div>
+        <div className="rounded-lg bg-white border border-slate-200 p-2.5 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[10.5px] font-bold text-slate-700">Các mục trên thanh đối chiếu</div>
+            <label className="inline-flex items-center gap-1.5 text-[10.5px] font-medium text-slate-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={Boolean(selectedElement.props.singleRow)}
+                onChange={(e) => {
+                  const prev = selectedElement.props;
+                  if (prev.kind !== 'comparison-strip') return;
+                  onUpdateElement(selectedElement.id, {
+                    props: { ...prev, singleRow: e.target.checked },
+                  });
+                }}
+                className="rounded border-slate-300 text-indigo-600"
+              />
+              <span>1 hàng ngang gọn</span>
+            </label>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
             {selectedElement.props.items.map((it, idx) => (
               <div key={idx} className="flex items-center gap-1.5">
                 <input
                   type="text"
+                  aria-label={`Nhãn mục ${idx + 1}`}
                   value={it.label}
                   onChange={(e) => {
                     const prev = selectedElement.props;
@@ -745,6 +763,7 @@ export const InlinePreviewElementEditor: React.FC<InlinePreviewElementEditorProp
                 />
                 <input
                   type="text"
+                  aria-label={`Nhãn phụ mục ${idx + 1}`}
                   value={it.sublabel ?? ''}
                   placeholder="Phụ"
                   onChange={(e) => {
@@ -766,80 +785,265 @@ export const InlinePreviewElementEditor: React.FC<InlinePreviewElementEditorProp
       )}
 
       {/* Illustration Prop Editor (non-cartoon-host) */}
-      {selectedElement.props.kind === 'illustration-prop' && !isCartoonHost && (
-        <div className="rounded-lg bg-white border border-slate-200 p-2.5 space-y-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <div>
-              <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">
-                Mẫu minh họa
-              </label>
-              <select
-                value={selectedElement.props.variant}
-                onChange={(e) => {
-                  const prev = selectedElement.props;
-                  if (prev.kind !== 'illustration-prop') return;
-                  onUpdateElement(selectedElement.id, {
-                    label: `Minh họa: ${e.target.value}`,
-                    props: { ...prev, variant: e.target.value as IllustrationVariant },
-                  });
-                }}
-                className="w-full px-2 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg"
-              >
-                {vectorCatalog.map((v) => (
-                  <option key={v.variant} value={v.variant}>
-                    {v.label} ({v.variant})
-                  </option>
-                ))}
-              </select>
+      {selectedElement.props.kind === 'illustration-prop' && !isCartoonHost && (() => {
+        const illProps = selectedElement.props;
+        if (illProps.kind !== 'illustration-prop') return null;
+        const d = illProps.data ?? {};
+        return (
+          <div className="rounded-lg bg-white border border-slate-200 p-2.5 space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">
+                  Mẫu minh họa
+                </label>
+                <select
+                  aria-label="Mẫu minh họa"
+                  value={illProps.variant}
+                  onChange={(e) => {
+                    onUpdateElement(selectedElement.id, {
+                      label: `Minh họa: ${e.target.value}`,
+                      props: { ...illProps, variant: e.target.value as IllustrationVariant },
+                    });
+                  }}
+                  className="w-full px-2 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg"
+                >
+                  {vectorCatalog.map((v) => (
+                    <option key={v.variant} value={v.variant}>
+                      {v.label} ({v.variant})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">
+                  Tiêu đề Component
+                </label>
+                <input
+                  type="text"
+                  aria-label="Tiêu đề Component"
+                  value={d.title ?? ''}
+                  onChange={(e) => {
+                    onUpdateElement(selectedElement.id, {
+                      props: { ...illProps, data: { ...d, title: e.target.value } },
+                    });
+                  }}
+                  className="w-full px-2 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">
-                Tiêu đề Component
-              </label>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <input
                 type="text"
-                value={selectedElement.props.data?.title ?? ''}
+                aria-label="Phụ đề minh họa"
+                value={d.subtitle ?? ''}
                 onChange={(e) => {
-                  const prev = selectedElement.props;
-                  if (prev.kind !== 'illustration-prop') return;
                   onUpdateElement(selectedElement.id, {
-                    props: { ...prev, data: { ...(prev.data ?? {}), title: e.target.value } },
+                    props: { ...illProps, data: { ...d, subtitle: e.target.value } },
                   });
                 }}
-                className="w-full px-2 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg"
+                placeholder="Phụ đề / mô tả"
+                className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg"
+              />
+              <input
+                type="text"
+                aria-label="Nội dung minh họa"
+                value={d.speechText ?? ''}
+                onChange={(e) => {
+                  onUpdateElement(selectedElement.id, {
+                    props: { ...illProps, data: { ...d, speechText: e.target.value } },
+                  });
+                }}
+                placeholder="Nội dung / câu ví dụ minh họa"
+                className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg"
               />
             </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <input
+                type="text"
+                aria-label="Từ nhấn mạnh minh họa"
+                value={d.highlightWord ?? ''}
+                onChange={(e) => {
+                  onUpdateElement(selectedElement.id, {
+                    props: { ...illProps, data: { ...d, highlightWord: e.target.value } },
+                  });
+                }}
+                placeholder="Từ nhấn mạnh / badge"
+                className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg"
+              />
+              <input
+                type="text"
+                aria-label="Công thức hoặc nhãn phụ"
+                value={d.formula ?? ''}
+                onChange={(e) => {
+                  onUpdateElement(selectedElement.id, {
+                    props: { ...illProps, data: { ...d, formula: e.target.value } },
+                  });
+                }}
+                placeholder="Công thức / Formula"
+                className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg"
+              />
+              <input
+                type="text"
+                aria-label="Danh sách nhãn phân cách dấu phẩy"
+                value={(d.labels ?? []).join(', ')}
+                onChange={(e) => {
+                  const nextLabels = e.target.value
+                    .split(',')
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                  onUpdateElement(selectedElement.id, {
+                    props: { ...illProps, data: { ...d, labels: nextLabels } },
+                  });
+                }}
+                placeholder="Nhãn A, Nhãn B, ..."
+                className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg"
+              />
+            </div>
+
+            {Array.isArray(d.checklist) && d.checklist.length > 0 && (
+              <div className="space-y-1 pt-1 border-t border-slate-100">
+                <div className="text-[10px] font-semibold text-slate-600">Danh sách mục (Checklist)</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  {d.checklist.map((item, idx) => (
+                    <input
+                      key={idx}
+                      type="text"
+                      aria-label={`Mục checklist ${idx + 1}`}
+                      value={item.text}
+                      onChange={(e) => {
+                        const nextList = d.checklist!.map((it, i) =>
+                          i === idx ? { ...it, text: e.target.value } : it,
+                        );
+                        onUpdateElement(selectedElement.id, {
+                          props: { ...illProps, data: { ...d, checklist: nextList } },
+                        });
+                      }}
+                      className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {Array.isArray(d.upgrades) && d.upgrades.length > 0 && (
+              <div className="space-y-1 pt-1 border-t border-slate-100">
+                <div className="text-[10px] font-semibold text-slate-600">Cặp nâng cấp (Basic → Natural)</div>
+                {d.upgrades.map((up, idx) => (
+                  <div key={idx} className="grid grid-cols-2 gap-1.5">
+                    <input
+                      type="text"
+                      aria-label={`Mẫu cơ bản ${idx + 1}`}
+                      value={up.prompt}
+                      onChange={(e) => {
+                        const nextUp = d.upgrades!.map((it, i) =>
+                          i === idx ? { ...it, prompt: e.target.value } : it,
+                        );
+                        onUpdateElement(selectedElement.id, {
+                          props: { ...illProps, data: { ...d, upgrades: nextUp } },
+                        });
+                      }}
+                      className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
+                    />
+                    <input
+                      type="text"
+                      aria-label={`Mẫu tự nhiên ${idx + 1}`}
+                      value={up.upgrade}
+                      onChange={(e) => {
+                        const nextUp = d.upgrades!.map((it, i) =>
+                          i === idx ? { ...it, upgrade: e.target.value } : it,
+                        );
+                        onUpdateElement(selectedElement.id, {
+                          props: { ...illProps, data: { ...d, upgrades: nextUp } },
+                        });
+                      }}
+                      className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {Array.isArray(d.boxes) && d.boxes.length > 0 && (
+              <div className="space-y-1 pt-1 border-t border-slate-100">
+                <div className="text-[10px] font-semibold text-slate-600">Các ô đối chiếu (Boxes)</div>
+                {d.boxes.map((bx, idx) => (
+                  <div key={idx} className="grid grid-cols-2 gap-1.5">
+                    <input
+                      type="text"
+                      aria-label={`Tiêu đề ô ${idx + 1}`}
+                      value={bx.title}
+                      onChange={(e) => {
+                        const nextBoxes = d.boxes!.map((it, i) =>
+                          i === idx ? { ...it, title: e.target.value } : it,
+                        );
+                        onUpdateElement(selectedElement.id, {
+                          props: { ...illProps, data: { ...d, boxes: nextBoxes } },
+                        });
+                      }}
+                      className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
+                    />
+                    <input
+                      type="text"
+                      aria-label={`Phụ đề ô ${idx + 1}`}
+                      value={bx.subtitle ?? ''}
+                      onChange={(e) => {
+                        const nextBoxes = d.boxes!.map((it, i) =>
+                          i === idx ? { ...it, subtitle: e.target.value } : it,
+                        );
+                        onUpdateElement(selectedElement.id, {
+                          props: { ...illProps, data: { ...d, boxes: nextBoxes } },
+                        });
+                      }}
+                      className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {Array.isArray(d.nodes) && d.nodes.length > 0 && (
+              <div className="space-y-1 pt-1 border-t border-slate-100">
+                <div className="text-[10px] font-semibold text-slate-600">Các nút nội dung (Nodes)</div>
+                {d.nodes.map((nd, idx) => (
+                  <div key={idx} className="grid grid-cols-2 gap-1.5">
+                    <input
+                      type="text"
+                      aria-label={`Nhãn node ${idx + 1}`}
+                      value={nd.label}
+                      onChange={(e) => {
+                        const nextNodes = d.nodes!.map((it, i) =>
+                          i === idx ? { ...it, label: e.target.value } : it,
+                        );
+                        onUpdateElement(selectedElement.id, {
+                          props: { ...illProps, data: { ...d, nodes: nextNodes } },
+                        });
+                      }}
+                      className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
+                    />
+                    <input
+                      type="text"
+                      aria-label={`Phụ đề node ${idx + 1}`}
+                      value={nd.sublabel ?? ''}
+                      placeholder="Phụ đề"
+                      onChange={(e) => {
+                        const nextNodes = d.nodes!.map((it, i) =>
+                          i === idx ? { ...it, sublabel: e.target.value } : it,
+                        );
+                        onUpdateElement(selectedElement.id, {
+                          props: { ...illProps, data: { ...d, nodes: nextNodes } },
+                        });
+                      }}
+                      className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <input
-              type="text"
-              value={selectedElement.props.data?.subtitle ?? ''}
-              onChange={(e) => {
-                const prev = selectedElement.props;
-                if (prev.kind !== 'illustration-prop') return;
-                onUpdateElement(selectedElement.id, {
-                  props: { ...prev, data: { ...(prev.data ?? {}), subtitle: e.target.value } },
-                });
-              }}
-              placeholder="Phụ đề / mô tả"
-              className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg"
-            />
-            <input
-              type="text"
-              value={selectedElement.props.data?.speechText ?? ''}
-              onChange={(e) => {
-                const prev = selectedElement.props;
-                if (prev.kind !== 'illustration-prop') return;
-                onUpdateElement(selectedElement.id, {
-                  props: { ...prev, data: { ...(prev.data ?? {}), speechText: e.target.value } },
-                });
-              }}
-              placeholder="Nội dung minh họa"
-              className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg"
-            />
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 3D Shape Editor */}
       {selectedElement.props.kind === 'shape-3d' && (

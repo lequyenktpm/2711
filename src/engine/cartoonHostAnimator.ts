@@ -5,6 +5,7 @@ import {
 import type { ExportAspectRatioId } from './mp4Config';
 import type {
   CartoonAccessory,
+  CartoonAnimationKeyframe,
   CartoonAnimationParams,
   CartoonExpressionMood,
   CartoonEyeStyle,
@@ -101,6 +102,18 @@ export interface CartoonLipSyncFrame {
   rightHandPointMix: number;
   /** 0 = spread fingers, 1 = compact hip-resting fingers */
   rightHandCompactMix: number;
+  /** Keyframe-driven left arm kinematics for 2-hand actions like clap-jump */
+  leftElbowX?: number;
+  leftElbowY?: number;
+  leftWristX?: number;
+  leftWristY?: number;
+  leftHandAngle?: number;
+  /** 0..1 crouch knee bend */
+  kneeBend: number;
+  /** Vertical jump/crouch offset in local character coords */
+  jumpOffsetY: number;
+  /** 0..1 clapping palm contact impact burst */
+  clapImpact: number;
   /** Active or fading-out reaction badge near gesturing hand */
   badgeGlyph: 'check' | 'cross' | 'question' | 'tip' | null;
   badgeEmoji?: string;
@@ -277,6 +290,16 @@ function getRightArmTargetPose(
         wx: 194 + sway * 0.3,
         wy: -136 + bob,
         handAngle: -Math.PI * 0.4,
+        pointMix: 0,
+        compactMix: 0,
+      };
+    case 'clap-jump':
+      return {
+        ex: 132,
+        ey: -42,
+        wx: 18,
+        wy: -110,
+        handAngle: -Math.PI * 0.5,
         pointMix: 0,
         compactMix: 0,
       };
@@ -561,6 +584,12 @@ const ARM_POSES: Record<CartoonGestureMode, ArmPose> = {
     rightShoulder: -0.65,
     rightElbow: -0.88,
   },
+  'clap-jump': {
+    leftShoulder: 1.12,
+    leftElbow: 0.85,
+    rightShoulder: -1.12,
+    rightElbow: -0.85,
+  },
 };
 
 const NEGATIVE_CONTEXT_REGEX =
@@ -647,6 +676,7 @@ function classifyMoodAndGesture(
       explicitMood: context.explicitMood,
       spokenText: combined,
       inlineSpec: context.customSpec,
+      activeBadge: context.activeBadge,
     });
     return {
       mood: resolved.params.mood,
@@ -1106,11 +1136,14 @@ export function computeSpeechLipSyncState(
 
   // Subtle outward arc boost mid-transition so the wrist never slices across the torso/head silhouette
   const arcSwing = Math.sin(Math.PI * clamp01(gestureBlend)) * 24;
-  const rightElbowX = lerp(armFrom.ex, armTo.ex, gestureBlend) + arcSwing * 0.65;
-  const rightElbowY = lerp(armFrom.ey, armTo.ey, gestureBlend);
-  const rightWristX = Math.max(116, lerp(armFrom.wx, armTo.wx, gestureBlend) + arcSwing);
-  const rightWristY = lerp(armFrom.wy, armTo.wy, gestureBlend);
-  const rightHandAngle = lerpAngle(armFrom.handAngle, armTo.handAngle, gestureBlend);
+  let rightElbowX = lerp(armFrom.ex, armTo.ex, gestureBlend) + arcSwing * 0.65;
+  let rightElbowY = lerp(armFrom.ey, armTo.ey, gestureBlend);
+  let rightWristX =
+    currentState.gestureMode === 'clap-jump'
+      ? lerp(armFrom.wx, armTo.wx, gestureBlend)
+      : Math.max(116, lerp(armFrom.wx, armTo.wx, gestureBlend) + arcSwing);
+  let rightWristY = lerp(armFrom.wy, armTo.wy, gestureBlend);
+  let rightHandAngle = lerpAngle(armFrom.handAngle, armTo.handAngle, gestureBlend);
   const rightHandPointMix = lerp(armFrom.pointMix, armTo.pointMix, gestureBlend);
   const rightHandCompactMix = lerp(armFrom.compactMix, armTo.compactMix, gestureBlend);
 
@@ -1149,18 +1182,19 @@ export function computeSpeechLipSyncState(
   const mood = currentState.mood;
   const breathY = Math.sin(tAnim * 1.8) * 2.8 * bounceMult;
   const excitedHop =
-    mood === 'excited' || currentState.gestureMode === 'fist-pump'
+    (mood === 'excited' || currentState.gestureMode === 'fist-pump') &&
+    currentState.gestureMode !== 'clap-jump'
       ? -Math.abs(Math.sin(tAnim * 4.2)) * 8 * bounceMult
       : 0;
   const speakBounceY = isSpeaking
     ? Math.sin(tAnim * 6.2) * 1.3 * bounceMult * clamp01(mouthOpen * 1.5)
     : 0;
-  const headBobY = breathY + speakBounceY + excitedHop;
+  let headBobY = breathY + speakBounceY + excitedHop;
 
   const squashAmt = clampRange(currentState.params.bodySquashStretch ?? 0.04, 0, 0.35);
   const squashWave = Math.sin(tAnim * 3.6) * squashAmt;
-  const bodySquashX = 1 - squashWave * 0.55;
-  const bodySquashY = 1 + squashWave * 0.65;
+  let bodySquashX = 1 - squashWave * 0.55;
+  let bodySquashY = 1 + squashWave * 0.65;
 
   const targetDir = context?.targetDirection ?? 'none';
   const mFrom = moodMetrics(prevState.mood, prevTargetDir, tAnim, isSpeaking, mouthOpen);
@@ -1173,10 +1207,109 @@ export function computeSpeechLipSyncState(
   const smileBias = lerp(mFrom.smileBias, mTo.smileBias, gestureBlend);
   const browLift = lerp(mFrom.browLift, mTo.browLift, gestureBlend);
   const explicitTiltRad = ((currentState.params.headTiltDeg ?? 0) * Math.PI) / 180;
-  const headTiltRad =
+  let headTiltRad =
     Math.sin(tAnim * 0.95) * 0.022 +
     lerp(mFrom.headTiltExtra, mTo.headTiltExtra, gestureBlend) +
     explicitTiltRad * 0.7;
+
+  // Keyframe Sequence Evaluation (e.g. 5-frame crouch -> jump -> touch clap -> cheering -> landing squash)
+  let kneeBend = 0;
+  let jumpOffsetY = 0;
+  let clapImpact = 0;
+  let leftElbowX: number | undefined;
+  let leftElbowY: number | undefined;
+  let leftWristX: number | undefined;
+  let leftWristY: number | undefined;
+  let leftHandAngleOut: number | undefined;
+  let activeEyeStyle = currentState.params.eyeStyle;
+  let activeMouthStyle = currentState.params.mouthStyle;
+
+  const resolvedSequenceKeyframes: CartoonAnimationKeyframe[] | undefined =
+    currentState.params.keyframes && currentState.params.keyframes.length > 0
+      ? currentState.params.keyframes
+      : currentState.gestureMode === 'clap-jump'
+        ? resolveCartoonAnimationForSignal({ actionId: 'clap-jump' }).params.keyframes
+        : undefined;
+
+  if (resolvedSequenceKeyframes && resolvedSequenceKeyframes.length > 0) {
+    const seqDur = Math.max(0.4, currentState.params.sequenceDurationSec ?? 1.5);
+    const shouldLoop = currentState.params.loopSequence !== false;
+    const rawCycle = tAnim / seqDur;
+    const seqPhase = shouldLoop ? rawCycle - Math.floor(rawCycle) : clamp01(rawCycle);
+
+    const kfs = resolvedSequenceKeyframes;
+    let kfA = kfs[0];
+    let kfB = kfs[kfs.length - 1];
+    let localFrac = 0;
+
+    if (kfs.length === 1) {
+      kfA = kfs[0];
+      kfB = kfs[0];
+    } else if (seqPhase <= kfs[0].at) {
+      kfA = kfs[0];
+      kfB = kfs[1];
+      localFrac = 0;
+    } else if (seqPhase >= kfs[kfs.length - 1].at) {
+      kfA = kfs[kfs.length - 1];
+      kfB = shouldLoop ? kfs[0] : kfs[kfs.length - 1];
+      const wrapSpan = shouldLoop ? Math.max(0.02, 1 - kfA.at + kfB.at) : 1;
+      localFrac = shouldLoop ? smoothstep((seqPhase - kfA.at) / wrapSpan) : 1;
+    } else {
+      for (let ki = 0; ki < kfs.length - 1; ki++) {
+        if (seqPhase >= kfs[ki].at && seqPhase <= kfs[ki + 1].at) {
+          kfA = kfs[ki];
+          kfB = kfs[ki + 1];
+          const span = Math.max(0.01, kfB.at - kfA.at);
+          localFrac = smoothstep((seqPhase - kfA.at) / span);
+          break;
+        }
+      }
+    }
+
+    jumpOffsetY = lerp(kfA.jumpOffsetY ?? 0, kfB.jumpOffsetY ?? 0, localFrac) * Math.max(0.45, Math.min(1.5, bounceMult));
+    kneeBend = clamp01(lerp(kfA.kneeBend ?? 0, kfB.kneeBend ?? 0, localFrac));
+    clapImpact = clamp01(lerp(kfA.clapImpact ?? 0, kfB.clapImpact ?? 0, localFrac));
+
+    const lwx = lerp(kfA.leftWristX ?? -124, kfB.leftWristX ?? -124, localFrac);
+    const lwy = lerp(kfA.leftWristY ?? 150, kfB.leftWristY ?? 150, localFrac);
+    const rwx = lerp(kfA.rightWristX ?? 124, kfB.rightWristX ?? 124, localFrac);
+    const rwy = lerp(kfA.rightWristY ?? 150, kfB.rightWristY ?? 150, localFrac);
+
+    leftWristX = lwx;
+    leftWristY = lwy;
+    // Elbow gracefully tracks outward arc except when hands come inward to touch at center
+    leftElbowX = Math.min(-72, lwx * 0.45 - 92);
+    leftElbowY = lerp(18, lwy, 0.56) + 28;
+    leftHandAngleOut = lerpAngle(kfA.leftHandAngle ?? -Math.PI * 0.5, kfB.leftHandAngle ?? -Math.PI * 0.5, localFrac);
+
+    rightWristX = rwx;
+    rightWristY = rwy;
+    rightElbowX = Math.max(72, rwx * 0.45 + 92);
+    rightElbowY = lerp(18, rwy, 0.56) + 28;
+    rightHandAngle = lerpAngle(kfA.rightHandAngle ?? -Math.PI * 0.5, kfB.rightHandAngle ?? -Math.PI * 0.5, localFrac);
+
+    if (typeof kfA.bodySquashX === 'number' || typeof kfB.bodySquashX === 'number') {
+      bodySquashX = lerp(kfA.bodySquashX ?? 1, kfB.bodySquashX ?? 1, localFrac);
+    }
+    if (typeof kfA.bodySquashY === 'number' || typeof kfB.bodySquashY === 'number') {
+      bodySquashY = lerp(kfA.bodySquashY ?? 1, kfB.bodySquashY ?? 1, localFrac);
+    }
+    if (typeof kfA.headTiltDeg === 'number' || typeof kfB.headTiltDeg === 'number') {
+      headTiltRad = (lerp(kfA.headTiltDeg ?? 0, kfB.headTiltDeg ?? 0, localFrac) * Math.PI) / 180;
+    }
+
+    const activeKf = localFrac < 0.5 ? kfA : kfB;
+    if (activeKf.eyeStyle) activeEyeStyle = activeKf.eyeStyle;
+    // Preserve live lip-sync when speaking, otherwise use keyframe mouth (e.g., big cheer mouth on frame 4)
+    if (!isSpeaking && activeKf.mouthStyle) {
+      activeMouthStyle = activeKf.mouthStyle;
+      if (activeKf.mouthStyle === 'big-grin') {
+        mouthOpen = Math.max(mouthOpen, 0.34);
+        mouthWidth = 1.18;
+      }
+    }
+    headBobY = jumpOffsetY + speakBounceY;
+  }
 
   return {
     isSpeaking,
@@ -1208,14 +1341,22 @@ export function computeSpeechLipSyncState(
     rightHandAngle,
     rightHandPointMix,
     rightHandCompactMix,
+    leftElbowX,
+    leftElbowY,
+    leftWristX,
+    leftWristY,
+    leftHandAngle: leftHandAngleOut,
+    kneeBend,
+    jumpOffsetY,
+    clapImpact,
     badgeGlyph,
     badgeEmoji: currentState.params.badgeEmoji,
     badgeOpacity,
     badgeScale,
     gestureMode: currentState.gestureMode,
     actionId: currentState.actionId,
-    eyeStyle: currentState.params.eyeStyle,
-    mouthStyle: currentState.params.mouthStyle,
+    eyeStyle: activeEyeStyle,
+    mouthStyle: activeMouthStyle,
     fxOverlay: currentState.params.fxOverlay,
     accessory: currentState.params.accessory,
     blushIntensity: currentState.params.blushIntensity,

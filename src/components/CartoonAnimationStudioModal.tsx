@@ -74,6 +74,7 @@ const GESTURE_OPTIONS: { id: CartoonGestureMode; label: string }[] = [
   { id: 'hold-mic', label: 'Cầm micro thuyết trình (Hold Mic)' },
   { id: 'explain', label: 'Mở tay giải thích (Explain)' },
   { id: 'present', label: 'Đứng chào chỉnh tề (Present)' },
+  { id: 'clap-jump', label: 'Khuỵu gối bật nhảy & Vỗ tay 5-Frame (Clap & Jump)' },
 ];
 
 const EYE_OPTIONS: { id: CartoonEyeStyle; label: string }[] = [

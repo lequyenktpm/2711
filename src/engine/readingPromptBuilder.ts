@@ -403,7 +403,7 @@ ${sourceBlock}
 - TUYỆT ĐỐI KHÔNG đưa các dòng nhãn bài tập ("Practice Reading...", "Exercise 1", "Part 1") hoặc tiêu đề markdown \`##\` vào trường \`text\`. Chỉ giữ các câu đọc hoàn chỉnh.
 - Mỗi câu viết trên **1 dòng riêng** (ngăn cách bằng \\n), KHÔNG đánh số thứ tự, KHÔNG gắn timestamp, KHÔNG markdown (\`**\`, \`*\`), KHÔNG emoji, để app đọc TTS & chạy con trỏ chỉ chữ chính xác từng từ.
 
-# ĐỊNH DẠNG ĐẦU RA BẮT BUỘC (CHỈ TRẢ VỀ 1 KHỐI JSON)
+# ĐỊNH DẠNG ĐẦU RA BẮT BUỘC (XUẤT RA FILE .JSON)
 \`\`\`json
 {
   "title": "Tiêu đề ngắn gọn, khơi gợi tò mò & cảm xúc 100% bằng ${meta.nativeName} (VD: '${meta.exampleTitle}')",
@@ -411,7 +411,8 @@ ${sourceBlock}
   "level": "${level}",
   "text": "${meta.exampleText}"
 }
-\`\`\``;
+\`\`\`
+Hãy xuất toàn bộ kết quả dưới dạng **1 file \`.json\` hợp lệ hoàn chỉnh** (chỉ trả về JSON, không kèm lời giải thích bên ngoài).`;
 }
 
 export function parseReadingWebAiResponse(

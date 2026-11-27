@@ -3186,11 +3186,12 @@ test('Phản Xạ Dịch Câu: prompt, curated/custom card builder, AI JSON pars
   );
 
   const ansCard = proj169.elements.find((el) => el.id.includes('reel-tr-ans-card-'))!;
-  const ansProp = proj169.elements.find((el) => el.id.includes('reel-tr-ans-prop-'))!;
+  const ansProp = proj169.elements.find((el) => el.id.includes('reel-tr-ans-prop-'));
+  assert.equal(ansProp, undefined, 'Duplicate Phase 3 Prompt prop must be omitted');
   const revealMidTime = (ansCard.startTime + ansCard.endTime) / 2;
   const layoutPhase3 = resolveElementLayoutForAspect(proj169.elements, revealMidTime, '16:9');
-  assert.ok(layoutPhase3.get(ansProp.id)!.x < 960, '16:9 Phase 3 nuance prop must land on left column');
-  assert.ok(layoutPhase3.get(ansCard.id)!.x > 960, '16:9 Phase 3 answer card must land on right column');
+  assert.ok(layoutPhase3.get(ansCard.id)!.x >= 500, '16:9 Phase 3 prominent answer card must stay framed in canvas');
+  assert.equal(findVisualOverlaps(proj169.elements).length, 0);
 });
 
 test('plain KineticSub composition & subtitle position/size controls work across 9:16 and 16:9', () => {
@@ -3528,8 +3529,8 @@ test('DEFAULT_BGM_PRESET is soft-rain at 3% volume and extractCountdownWindowsFr
   }
 });
 
-test('buildVideoDescription produces localized descriptions, chapters, and hashtags matching learner native language', () => {
-  // 1. Japanese learner studying English — training-guide style
+test('buildVideoDescription produces localized descriptions, chapters, and hashtags matching learning language', () => {
+  // 1. Studying English — training-guide style outputs English description, chapters, and hashtags
   const jaGuide = buildVideoDescription({
     title: '【このペースで言える？】英会話のための瞬間英作文',
     nativeLang: '日本語',
@@ -3539,19 +3540,19 @@ test('buildVideoDescription produces localized descriptions, chapters, and hasht
     itemCount: 12,
     thinkSec: 5,
     hasCountdown: true,
-    topicHint: '瞬間英作文 日常英会話',
+    topicHint: 'English Speaking Practice',
   });
   assert.equal(jaGuide.nativeLangCode, 'ja');
   assert.equal(jaGuide.learningLangCode, 'en');
   assert.equal(jaGuide.styleUsed, 'training-guide');
-  assert.ok(jaGuide.description.includes('ご視聴ありがとうございます'));
-  assert.ok(jaGuide.description.includes('📝 おすすめの学習方法'));
-  assert.ok(jaGuide.description.includes('00:00 はじめ'));
-  assert.ok(jaGuide.hashtags.some((h) => h.includes('英語') || h.includes('瞬間英作文')));
+  assert.ok(jaGuide.description.includes('Thanks for watching!'));
+  assert.ok(jaGuide.description.includes('📝 Recommended Practice Method'));
+  assert.ok(jaGuide.description.includes('00:00 Intro'));
+  assert.ok(jaGuide.hashtags.includes('#LearnEnglish'));
   assert.ok(jaGuide.txtContent.includes(jaGuide.title));
   assert.ok(jaGuide.txtContent.includes(jaGuide.hashtagsLine));
 
-  // 2. Vietnamese learner studying Japanese — hook-bullets style + JLPT tag
+  // 2. Studying Japanese — hook-bullets style outputs Japanese description + #N1 + #日本語学習
   const viHook = buildVideoDescription({
     title: '【N1 nói vậy sao?】Phản xạ tiếng Nhật công sở',
     nativeLang: 'Tiếng Việt',
@@ -3564,11 +3565,11 @@ test('buildVideoDescription produces localized descriptions, chapters, and hasht
   });
   assert.equal(viHook.nativeLangCode, 'vi');
   assert.equal(viHook.learningLangCode, 'ja');
-  assert.ok(viHook.description.includes('✔ Luyện tư duy phản xạ tiếng Nhật'));
-  assert.ok(viHook.hashtags.includes('#HocTiengNhat'));
+  assert.ok(viHook.description.includes('✔ 日本語脳'));
+  assert.ok(viHook.hashtags.includes('#日本語学習'));
   assert.ok(viHook.hashtags.includes('#N1'));
 
-  // 3. English learner studying Chinese — phrase-pack style
+  // 3. Studying Chinese — phrase-pack style outputs Chinese description + #中文学习
   const enPack = buildVideoDescription({
     title: 'Essential Mandarin Phrases for Daily Life',
     nativeLang: 'English',
@@ -3579,8 +3580,8 @@ test('buildVideoDescription produces localized descriptions, chapters, and hasht
   });
   assert.equal(enPack.nativeLangCode, 'en');
   assert.equal(enPack.learningLangCode, 'zh');
-  assert.ok(enPack.description.includes('25 essential everyday Chinese phrases'));
-  assert.ok(enPack.hashtags.includes('#LearnChinese'));
+  assert.ok(enPack.description.includes('精选 25 个'));
+  assert.ok(enPack.hashtags.includes('#中文学习'));
   assert.ok(enPack.hashtags.length <= 10);
 });
 

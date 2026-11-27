@@ -415,5 +415,6 @@ Trả về **DUY NHẤT 1 KHỐI JSON HỢP LỆ** (không viết thêm giải t
     { "shape": "text", "x": 180, "y": 90, "text": "Confident Answer", "fill": "#15803D", "fontSize": 30, "fontWeight": 700, "align": "center" }
   ]
 }
-\`\`\``;
+\`\`\`
+Hãy xuất kết quả dưới dạng **1 file \`.json\` hoàn chỉnh hợp lệ** (chỉ trả về file JSON/code block JSON, không giải thích dài dòng bên ngoài).`;
 }

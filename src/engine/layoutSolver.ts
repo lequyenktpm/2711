@@ -88,7 +88,9 @@ export function estimateElementHalfExtents(el: SceneElement): {
   switch (el.props.kind) {
     case 'comparison-strip': {
       const items = el.props.items || [];
-      const isLongStack = items.some((i) => i.label.trim().length > 16) || items.length > 4;
+      const isLongStack =
+        !el.props.singleRow &&
+        (items.some((i) => i.label.trim().length > 16) || items.length > 4);
       if (isLongStack && items.length > 0) {
         const totalH = items.reduce((acc, item, idx) => {
           const fSize = item.label.length > 78 ? 25 : 28;
@@ -98,7 +100,7 @@ export function estimateElementHalfExtents(el: SceneElement): {
         }, 0);
         baseHalfH = Math.ceil(totalH / 2) + 8;
       } else {
-        baseHalfH = 60;
+        baseHalfH = el.props.singleRow ? 50 : 60;
       }
       break;
     }

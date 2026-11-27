@@ -823,7 +823,7 @@ export function buildVideoDescription(input: VideoDescriptionInput): VideoDescri
     styleUsed = 'hook-bullets';
   }
 
-  const labels = NATIVE_UI_LABELS[nativeLangCode] ?? NATIVE_UI_LABELS.vi;
+  const labels = NATIVE_UI_LABELS[detectedLearning] ?? NATIVE_UI_LABELS.en;
   const chapters = buildChapters(
     input.project,
     cues,
@@ -834,7 +834,7 @@ export function buildVideoDescription(input: VideoDescriptionInput): VideoDescri
   const description = buildLocalizedDescription({
     style: styleUsed,
     title: displayTitle,
-    nativeLang: nativeLangCode,
+    nativeLang: detectedLearning,
     learningLang: detectedLearning,
     itemCount,
     thinkSec: input.thinkSec ?? 5,
@@ -845,7 +845,7 @@ export function buildVideoDescription(input: VideoDescriptionInput): VideoDescri
 
   const hashtags = buildHashtags({
     title: displayTitle,
-    nativeLang: nativeLangCode,
+    nativeLang: detectedLearning,
     learningLang: detectedLearning,
     topicHint: input.topicHint,
     hasCountdown,

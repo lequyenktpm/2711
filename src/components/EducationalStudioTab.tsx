@@ -704,6 +704,11 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
   const [showMergeOutroPreview, setShowMergeOutroPreview] = useState(false);
   const [durationMode, setDurationMode] = useState<'loop-video' | 'shortest'>('shortest');
   const [mergeOutputName, setMergeOutputName] = useState('');
+  const [mergeAiScript, setMergeAiScript] = useState('');
+  const [mergeAiJson, setMergeAiJson] = useState('');
+  const [mergeAiError, setMergeAiError] = useState<string | null>(null);
+  const [mergeAiNotice, setMergeAiNotice] = useState<string | null>(null);
+  const [copiedMergePrompt, setCopiedMergePrompt] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
   const [mergeProgress, setMergeProgress] = useState(0);
   const [mergeStatus, setMergeStatus] = useState<string>('');
@@ -974,6 +979,11 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
   );
   const [kmVoiceStart, setKmVoiceStart] = useState(0);
   const [kmOutputName, setKmOutputName] = useState('');
+  const [kmAiScript, setKmAiScript] = useState('');
+  const [kmAiJson, setKmAiJson] = useState('');
+  const [kmAiError, setKmAiError] = useState<string | null>(null);
+  const [kmAiNotice, setKmAiNotice] = useState<string | null>(null);
+  const [copiedKmPrompt, setCopiedKmPrompt] = useState(false);
   const [isRenderingKm, setIsRenderingKm] = useState(false);
   const [kmProgress, setKmProgress] = useState(0);
   const [kmStatus, setKmStatus] = useState('');
@@ -1025,6 +1035,143 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
       size: kmSubSize,
     });
     setKmAssContent(ass);
+  };
+
+  const buildEduWebAiPrompt = (modeLabel: string, rawScript: string, fallbackTitle: string) => {
+    const cleanScript = rawScript.trim();
+    return [
+      `# VAI TRÒ: BIÊN TẬP VIÊN NỘI DUNG VIDEO GIÁO DỤC (${modeLabel})`,
+      'Hãy biên tập, sửa lỗi chính tả, tối ưu ngắt câu phụ đề/script bên dưới và đặt tiêu đề ngắn gọn cuốn hút đúng ngôn ngữ bài học.',
+      '',
+      '# NỘI DUNG SUBTITLE / SCRIPT ĐẦU VÀO',
+      cleanScript
+        ? `"""\n${cleanScript.slice(0, 12000)}\n"""`
+        : `(Chưa nhập script — hãy sáng tạo 1 đoạn hội thoại/bài giảng ngắn gọn chủ đề "${fallbackTitle || 'Daily Speaking Practice'}")`,
+      '',
+      '# ĐỊNH DẠNG JSON CỐ ĐỊNH CẦN TRẢ VỀ (XUẤT RA FILE .JSON)',
+      '```json',
+      '{',
+      '  "title": "<Tiêu đề ngắn gọn, đúng ngôn ngữ đang học>",',
+      '  "watermarkText": "@MyLearningChannel",',
+      '  "outroLine1": "<Lời chào kết thúc bằng đúng ngôn ngữ học>",',
+      '  "outroLine2": "<Lời kêu gọi luyện tập/follow ngắn gọn>",',
+      '  "srt": "1\\n00:00:00,200 --> 00:00:03,400\\n<Câu phụ đề 1 đã biên tập>\\n\\n2\\n00:00:03,600 --> 00:00:07,000\\n<Câu phụ đề 2 đã biên tập>",',
+      '  "lines": ["<Câu 1>", "<Câu 2>"]',
+      '}',
+      '```',
+      'HÃY XUẤT KẾT QUẢ CUỐI CÙNG DƯỚI DẠNG **1 FILE `.json` HỢP LỆ HOÀN CHỈNH** (chỉ trả về JSON, không giải thích dài dòng bên ngoài).',
+    ].join('\n');
+  };
+
+  const applyEduWebAiJson = (rawJson: string, target: 'merge' | 'karaoke') => {
+    const setErr = target === 'merge' ? setMergeAiError : setKmAiError;
+    const setNotice = target === 'merge' ? setMergeAiNotice : setKmAiNotice;
+    setErr(null);
+    setNotice(null);
+    const stripped = rawJson
+      .trim()
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```\s*$/i, '')
+      .trim();
+    const match = stripped.match(/\{[\s\S]*\}/);
+    if (!match) {
+      setErr('Không tìm thấy JSON hợp lệ. Hãy dán toàn bộ JSON AI trả về hoặc nạp file .json.');
+      return;
+    }
+    try {
+      const obj = JSON.parse(match[0]) as {
+        title?: string;
+        outputName?: string;
+        watermarkText?: string;
+        outroLine1?: string;
+        outroLine2?: string;
+        srt?: string;
+        text?: string;
+        lines?: string[];
+        cues?: Array<{ start?: number; end?: number; text?: string }>;
+        cards?: Array<{ ttsText?: string; content?: string; title?: string }>;
+        source_segments?: Array<{ start?: number; end?: number; text?: string }>;
+      };
+
+      const nextTitle = (obj.outputName || obj.title || '').trim();
+      if (nextTitle) {
+        if (target === 'merge') setMergeOutputName(nextTitle);
+        else setKmOutputName(nextTitle);
+      }
+      if (obj.watermarkText || obj.outroLine1 || obj.outroLine2) {
+        setWatermarkOutro((prev) => ({
+          ...prev,
+          ...(obj.watermarkText ? { watermarkText: obj.watermarkText, watermarkEnabled: true } : {}),
+          ...(obj.outroLine1 ? { outroLine1: obj.outroLine1 } : {}),
+          ...(obj.outroLine2 ? { outroLine2: obj.outroLine2 } : {}),
+        }));
+      }
+
+      const toSrtTimestamp = (sec: number) => {
+        const clamped = Math.max(0, sec);
+        const h = Math.floor(clamped / 3600);
+        const m = Math.floor((clamped % 3600) / 60);
+        const s = Math.floor(clamped % 60);
+        const ms = Math.round((clamped - Math.floor(clamped)) * 1000);
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
+      };
+
+      let resolvedSrt = '';
+      if (typeof obj.srt === 'string' && obj.srt.trim()) {
+        resolvedSrt = obj.srt.trim();
+      } else if (Array.isArray(obj.cues) && obj.cues.length > 0) {
+        resolvedSrt = obj.cues
+          .map((c, idx) => {
+            const st = typeof c.start === 'number' ? c.start : idx * 3;
+            const en = typeof c.end === 'number' ? c.end : st + 2.8;
+            return `${idx + 1}\n${toSrtTimestamp(st)} --> ${toSrtTimestamp(en)}\n${String(c.text || '').trim()}`;
+          })
+          .filter(Boolean)
+          .join('\n\n');
+      } else if (Array.isArray(obj.source_segments) && obj.source_segments.length > 0) {
+        resolvedSrt = obj.source_segments
+          .map((c, idx) => {
+            const st = typeof c.start === 'number' ? c.start : idx * 3;
+            const en = typeof c.end === 'number' ? c.end : st + 2.8;
+            return `${idx + 1}\n${toSrtTimestamp(st)} --> ${toSrtTimestamp(en)}\n${String(c.text || '').trim()}`;
+          })
+          .filter(Boolean)
+          .join('\n\n');
+      } else if (Array.isArray(obj.cards) && obj.cards.length > 0) {
+        resolvedSrt = obj.cards
+          .map((c, idx) => `${idx + 1}\n${toSrtTimestamp(idx * 3)} --> ${toSrtTimestamp(idx * 3 + 2.8)}\n${String(c.content || c.ttsText || c.title || '').trim()}`)
+          .join('\n\n');
+      } else if (Array.isArray(obj.lines) && obj.lines.length > 0) {
+        resolvedSrt = obj.lines
+          .map((l, idx) => `${idx + 1}\n${toSrtTimestamp(idx * 3)} --> ${toSrtTimestamp(idx * 3 + 2.8)}\n${String(l).trim()}`)
+          .join('\n\n');
+      } else if (typeof obj.text === 'string' && obj.text.trim()) {
+        resolvedSrt = obj.text
+          .split(/\r?\n+/)
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .map((l, idx) => `${idx + 1}\n${toSrtTimestamp(idx * 3)} --> ${toSrtTimestamp(idx * 3 + 2.8)}\n${l}`)
+          .join('\n\n');
+      }
+
+      if (resolvedSrt) {
+        setKmSrtInput(resolvedSrt);
+        setKmAssContent(
+          buildEduKaraokeAss(resolvedSrt, {
+            effectId: kmStyleId,
+            activeColorOverride: kmHighlightColor,
+            position: kmSubPosition,
+            size: kmSubSize,
+          }),
+        );
+      }
+
+      setNotice(
+        `Đã nạp JSON AI Web${nextTitle ? ` ("${nextTitle}")` : ''}${resolvedSrt ? ' kèm phụ đề SRT/ASS' : ''}!`,
+      );
+    } catch {
+      setErr('Lỗi phân tích JSON. Vui lòng kiểm tra lại cấu trúc JSON AI trả về.');
+    }
   };
 
   const handleCancelKaraokeMix = () => {
@@ -3231,6 +3378,93 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
                   </div>
                 )}
 
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-900">
+                      Trợ lý AI Web · Nhập Subtitle / Script → Prompt (.json) → Nạp Thẻ &amp; Kịch bản từ JSON AI Web
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(
+                          buildEduWebAiPrompt('Ghép Video + Audio', mergeAiScript, mergeOutputName || mergeVideoFile?.name || ''),
+                        );
+                        setCopiedMergePrompt(true);
+                        setTimeout(() => setCopiedMergePrompt(false), 1800);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
+                    >
+                      {copiedMergePrompt ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedMergePrompt ? 'Đã chép Prompt!' : 'Sao chép Prompt AI Web (.json)'}</span>
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-slate-700">1. Nhập Subtitle / Script gửi AI biên tập</span>
+                        <PasteButton onPaste={setMergeAiScript} title="Dán nhanh subtitle/script" />
+                      </div>
+                      <textarea
+                        rows={3}
+                        value={mergeAiScript}
+                        onChange={(e) => setMergeAiScript(e.target.value)}
+                        placeholder="Dán subtitle hoặc kịch bản thô để tạo prompt gửi ChatGPT/Gemini biên tập..."
+                        className="w-full p-2 text-[11px] font-mono bg-white border border-slate-200 rounded-lg"
+                      />
+                    </div>
+                    <div className="space-y-1 flex flex-col">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-slate-700">2. Kết quả JSON từ AI Web</span>
+                        <div className="flex items-center gap-1.5">
+                          <PasteButton
+                            onPaste={(txt) => {
+                              setMergeAiJson(txt);
+                              setMergeAiError(null);
+                            }}
+                            title="Dán nhanh JSON"
+                          />
+                          <label className="inline-flex items-center gap-1 px-2 py-1 text-[10.5px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100 cursor-pointer">
+                            <Upload className="w-3 h-3" />
+                            <span>Tải file .json</span>
+                            <input
+                              type="file"
+                              accept=".json,application/json,text/plain"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const f = e.target.files?.[0];
+                                e.target.value = '';
+                                if (!f) return;
+                                setMergeAiJson(await f.text());
+                                setMergeAiError(null);
+                              }}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                      <textarea
+                        rows={2}
+                        value={mergeAiJson}
+                        onChange={(e) => {
+                          setMergeAiJson(e.target.value);
+                          setMergeAiError(null);
+                        }}
+                        placeholder='Dán hoặc tải file .json từ AI Web vào đây...'
+                        className="w-full flex-1 p-2 text-[11px] font-mono bg-white border border-slate-200 rounded-lg"
+                      />
+                      <button
+                        type="button"
+                        disabled={!mergeAiJson.trim()}
+                        onClick={() => applyEduWebAiJson(mergeAiJson, 'merge')}
+                        className="w-full py-1.5 text-[11px] font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        Nạp Thẻ &amp; Kịch bản từ JSON AI Web
+                      </button>
+                    </div>
+                  </div>
+                  {mergeAiError && <p className="text-[11px] text-rose-700">{mergeAiError}</p>}
+                  {mergeAiNotice && <p className="text-[11px] text-emerald-700 font-medium">{mergeAiNotice}</p>}
+                </div>
+
                 {renderOutputFolderControl()}
 
                 <WatermarkOutroSection
@@ -3881,6 +4115,98 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
                   </div>
                 </div>
 
+                {/* Trợ lý AI Web biên tập Subtitle / Script -> JSON */}
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-900">
+                      Trợ lý AI Web · Nhập Subtitle / Script → Prompt (.json) → Nạp Thẻ &amp; Kịch bản từ JSON AI Web
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(
+                          buildEduWebAiPrompt(
+                            'Phụ Đề Karaoke & Mix Âm Thanh',
+                            kmAiScript.trim() || kmSrtInput,
+                            kmOutputName || kmVideoFile?.name || '',
+                          ),
+                        );
+                        setCopiedKmPrompt(true);
+                        setTimeout(() => setCopiedKmPrompt(false), 1800);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
+                    >
+                      {copiedKmPrompt ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedKmPrompt ? 'Đã chép Prompt!' : 'Sao chép Prompt AI Web (.json)'}</span>
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-slate-700">1. Nhập Subtitle / Script gửi AI biên tập</span>
+                        <PasteButton onPaste={setKmAiScript} title="Dán nhanh subtitle/script" />
+                      </div>
+                      <textarea
+                        rows={3}
+                        value={kmAiScript}
+                        onChange={(e) => setKmAiScript(e.target.value)}
+                        placeholder="Nhập hoặc dán subtitle/script muốn AI biên tập chuẩn Karaoke (bỏ trống sẽ lấy từ ô SRT bên dưới)..."
+                        className="w-full p-2 text-[11px] font-mono bg-white border border-slate-200 rounded-lg"
+                      />
+                    </div>
+                    <div className="space-y-1 flex flex-col">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-slate-700">2. Kết quả JSON từ AI Web</span>
+                        <div className="flex items-center gap-1.5">
+                          <PasteButton
+                            onPaste={(txt) => {
+                              setKmAiJson(txt);
+                              setKmAiError(null);
+                            }}
+                            title="Dán nhanh JSON"
+                          />
+                          <label className="inline-flex items-center gap-1 px-2 py-1 text-[10.5px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100 cursor-pointer">
+                            <Upload className="w-3 h-3" />
+                            <span>Tải file .json</span>
+                            <input
+                              type="file"
+                              accept=".json,application/json,text/plain"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const f = e.target.files?.[0];
+                                e.target.value = '';
+                                if (!f) return;
+                                setKmAiJson(await f.text());
+                                setKmAiError(null);
+                              }}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                      <textarea
+                        rows={2}
+                        value={kmAiJson}
+                        onChange={(e) => {
+                          setKmAiJson(e.target.value);
+                          setKmAiError(null);
+                        }}
+                        placeholder='Dán hoặc tải file .json từ AI Web vào đây...'
+                        className="w-full flex-1 p-2 text-[11px] font-mono bg-white border border-slate-200 rounded-lg"
+                      />
+                      <button
+                        type="button"
+                        disabled={!kmAiJson.trim()}
+                        onClick={() => applyEduWebAiJson(kmAiJson, 'karaoke')}
+                        className="w-full py-1.5 text-[11px] font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        Nạp Thẻ &amp; Kịch bản từ JSON AI Web
+                      </button>
+                    </div>
+                  </div>
+                  {kmAiError && <p className="text-[11px] text-rose-700">{kmAiError}</p>}
+                  {kmAiNotice && <p className="text-[11px] text-emerald-700 font-medium">{kmAiNotice}</p>}
+                </div>
+
                 {/* SRT / ASS Text */}
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -4144,7 +4470,7 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
                       className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
                     >
                       <Sparkles className="w-4 h-4" />
-                      <span>Add Karaoke + Export MP4</span>
+                      <span>Render Video (.mp4)</span>
                     </button>
                   )}
                 </div>
@@ -4489,17 +4815,35 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
                         </div>
 
                         <div className="space-y-1.5 flex flex-col">
-                          <div className="flex items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
                             <label htmlFor="paste-web-ai-reading" className="text-[11px] font-semibold text-slate-700">
-                              2. Dán kết quả JSON (hoặc đoạn văn) từ Web AI rồi bấm Áp dụng:
+                              2. Dán hoặc nạp file .json kết quả từ Web AI:
                             </label>
-                            <PasteButton
-                              onPaste={(txt) => {
-                                setPastedReadingAiResponse(txt);
-                                setPastedReadingAiError(null);
-                              }}
-                              title="Dán nhanh kết quả JSON / đoạn văn"
-                            />
+                            <div className="flex items-center gap-1.5">
+                              <PasteButton
+                                onPaste={(txt) => {
+                                  setPastedReadingAiResponse(txt);
+                                  setPastedReadingAiError(null);
+                                }}
+                                title="Dán nhanh kết quả JSON / đoạn văn"
+                              />
+                              <label className="inline-flex items-center gap-1 px-2 py-1 text-[10.5px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100 cursor-pointer">
+                                <Upload className="w-3 h-3" />
+                                <span>Tải file .json</span>
+                                <input
+                                  type="file"
+                                  accept=".json,application/json,text/plain"
+                                  className="hidden"
+                                  onChange={async (e) => {
+                                    const f = e.target.files?.[0];
+                                    e.target.value = '';
+                                    if (!f) return;
+                                    setPastedReadingAiResponse(await f.text());
+                                    setPastedReadingAiError(null);
+                                  }}
+                                />
+                              </label>
+                            </div>
                           </div>
                           <textarea
                             id="paste-web-ai-reading"
@@ -4522,7 +4866,7 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
                               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-[11px] font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700"
                             >
                               <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>Áp dụng vào Sách</span>
+                              <span>Nạp Thẻ &amp; Kịch bản từ JSON AI Web</span>
                             </button>
                           </div>
                         </div>
@@ -5208,7 +5552,7 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
                             className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
                           >
                             <Sparkles className="w-4 h-4" />
-                            <span>Xuất Reading Along MP4</span>
+                            <span>Render Reading Along MP4</span>
                           </button>
                         )}
 

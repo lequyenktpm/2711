@@ -98,6 +98,154 @@ export function getEffectiveOutroSeconds(
   return hasContent ? Math.max(0, Math.min(10, Number(wm.outroSeconds) || 0)) : 0;
 }
 
+function enforceNonOverlappingResolvedLayouts(
+  elements: SceneElement[],
+  layoutMap: Map<string, ElementLayout>,
+  time: number,
+  aspectRatio: ExportAspectRatioId,
+  subtitleConfig?: SubtitleDisplayConfig,
+): Map<string, ElementLayout> {
+  const stage = getStageDimensionsForAspect(aspectRatio);
+  const visible = elements.filter((el) => time >= el.startTime - 0.01 && time <= el.endTime + 0.01);
+  if (visible.length <= 1) return layoutMap;
+
+  const getBounds = (el: SceneElement, l: ElementLayout) => {
+    const ext = estimateElementHalfExtents({ ...el, layout: l });
+    const halfW = Math.min(stage.width * 0.48, ext.halfW);
+    const halfH = ext.halfH;
+    return {
+      left: l.x - halfW,
+      right: l.x + halfW,
+      top: l.y - halfH,
+      bottom: l.y + halfH,
+      halfW,
+      halfH,
+    };
+  };
+
+  const karaokeEls = visible.filter((el) => el.type === 'karaoke-card');
+  const hostEl = visible.find(
+    (el) => el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host',
+  );
+  const pos = subtitleConfig?.position;
+
+  let safeTop = 58;
+  let safeBottom = stage.height - 64;
+  for (const kEl of karaokeEls) {
+    const kLay = layoutMap.get(kEl.id) || kEl.layout;
+    const kb = getBounds(kEl, kLay);
+    if (pos === 'top' || kLay.y < stage.height * 0.34) {
+      safeTop = Math.max(safeTop, kb.bottom + 14);
+    } else if (!pos || pos === 'bottom' || kLay.y > stage.height * 0.66) {
+      safeBottom = Math.min(safeBottom, kb.top - 14);
+    }
+  }
+
+  // Keep elements within horizontal bounds first (unless manually positioned)
+  for (const el of visible) {
+    if (el.layout.manualPosition) continue;
+    const lay = layoutMap.get(el.id) || el.layout;
+    const b = getBounds(el, lay);
+    let nextX = lay.x;
+    if (b.left < 16) nextX += 16 - b.left;
+    if (b.right > stage.width - 16) nextX -= b.right - (stage.width - 16);
+    if (nextX !== lay.x) {
+      layoutMap.set(el.id, { ...lay, x: Math.round(nextX) });
+    }
+  }
+
+  // Resolve vertical overlaps among non-karaoke, non-host elements that horizontally overlap
+  const stackables = visible
+    .filter(
+      (el) =>
+        !el.layout.manualPosition &&
+        el.type !== 'karaoke-card' &&
+        !(el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host'),
+    )
+    .sort((a, b) => {
+      const la = layoutMap.get(a.id) || a.layout;
+      const lb = layoutMap.get(b.id) || b.layout;
+      return la.y - lb.y;
+    });
+
+  const minGap = 14;
+  for (let i = 0; i < stackables.length; i++) {
+    const currEl = stackables[i];
+    let currLay = layoutMap.get(currEl.id) || currEl.layout;
+    let currB = getBounds(currEl, currLay);
+
+    // Clamp top within safeTop
+    if (currB.top < safeTop) {
+      currLay = { ...currLay, y: Math.round(currLay.y + (safeTop - currB.top)) };
+      layoutMap.set(currEl.id, currLay);
+      currB = getBounds(currEl, currLay);
+    }
+
+    for (let j = 0; j < i; j++) {
+      const prevEl = stackables[j];
+      const prevLay = layoutMap.get(prevEl.id) || prevEl.layout;
+      const prevB = getBounds(prevEl, prevLay);
+      const xOverlap = Math.min(currB.right, prevB.right) - Math.max(currB.left, prevB.left);
+      if (xOverlap > 28 && currB.top < prevB.bottom + minGap) {
+        const pushDown = prevB.bottom + minGap - currB.top;
+        currLay = { ...currLay, y: Math.round(currLay.y + pushDown) };
+        layoutMap.set(currEl.id, currLay);
+        currB = getBounds(currEl, currLay);
+      }
+    }
+
+    // Check against cartoon-host (vertical stack in 9:16 & 4:5)
+    if (hostEl && !hostEl.layout.manualPosition && (aspectRatio === '9:16' || aspectRatio === '4:5')) {
+      const hostLay = layoutMap.get(hostEl.id) || hostEl.layout;
+      const hostTop = hostLay.y - Math.round(335 * (hostLay.scale || 1));
+      const hostMaxBottom = Math.min(stage.height - 40, safeBottom);
+      if (currB.bottom + 14 > hostTop) {
+        // Compress host slightly if needed, or gently shrink current card
+        const newHostTop = currB.bottom + 16;
+        const availForHost = hostMaxBottom - newHostTop;
+        if (availForHost >= 320) {
+          const nextHostScale = Math.max(
+            0.44,
+            Math.min(hostLay.scale || 0.9, Number((availForHost / (335 + 346)).toFixed(3))),
+          );
+          const nextHostY = Math.min(
+            hostMaxBottom - Math.round(346 * nextHostScale),
+            newHostTop + Math.round(335 * nextHostScale),
+          );
+          layoutMap.set(hostEl.id, { ...hostLay, y: nextHostY, scale: nextHostScale });
+        }
+      }
+    }
+  }
+
+  // Final pass: keep bottom of stackables inside safeBottom by scaling down only if overflowing bottom
+  for (const el of stackables) {
+    let lay = layoutMap.get(el.id) || el.layout;
+    let b = getBounds(el, lay);
+    const maxBottomLimit =
+      hostEl && (aspectRatio === '9:16' || aspectRatio === '4:5')
+        ? Math.min(
+            safeBottom,
+            (layoutMap.get(hostEl.id) || hostEl.layout).y -
+              Math.round(335 * ((layoutMap.get(hostEl.id) || hostEl.layout).scale || 1)) -
+              12,
+          )
+        : safeBottom;
+    if (b.bottom > maxBottomLimit && maxBottomLimit > safeTop + 120) {
+      const currentH = Math.max(40, b.bottom - b.top);
+      const availH = Math.max(64, maxBottomLimit - Math.max(safeTop, b.top));
+      const ratio = Math.max(0.54, Math.min(1, availH / currentH));
+      const nextScale = Number(((lay.scale || 1) * ratio).toFixed(3));
+      const nextHalfH = Math.round(b.halfH * ratio);
+      const nextY = Math.max(safeTop + nextHalfH, Math.min(maxBottomLimit - nextHalfH, lay.y));
+      lay = { ...lay, scale: nextScale, y: Math.round(nextY) };
+      layoutMap.set(el.id, lay);
+    }
+  }
+
+  return layoutMap;
+}
+
 export function resolveElementLayoutForAspect(
   elements: SceneElement[],
   time: number,
@@ -294,7 +442,7 @@ export function resolveElementLayoutForAspect(
       }
       out.set(el.id, el.layout);
     }
-    return out;
+    return enforceNonOverlappingResolvedLayouts(elements, out, time, aspectRatio, subtitleConfig);
   }
 
   const visible = elements.filter((el) => time >= el.startTime - 0.01 && time <= el.endTime + 0.01);
@@ -471,7 +619,7 @@ export function resolveElementLayoutForAspect(
           scale: 0.76,
         });
       }
-      return out;
+      return enforceNonOverlappingResolvedLayouts(elements, out, time, aspectRatio, subtitleConfig);
     }
 
     // 1:1 Square (1080 x 1080): Two-column split (Gimmy left pointing right, cards right)
@@ -548,7 +696,7 @@ export function resolveElementLayoutForAspect(
         scale: 0.72,
       });
     }
-    return out;
+    return enforceNonOverlappingResolvedLayouts(elements, out, time, aspectRatio, subtitleConfig);
   }
 
   if (aspectRatio === '1:1' || aspectRatio === '4:5') {
@@ -579,7 +727,7 @@ export function resolveElementLayoutForAspect(
         scale: Number((el.layout.scale * Math.max(0.8, Math.sqrt(yScale))).toFixed(3)),
       });
     }
-    return out;
+    return enforceNonOverlappingResolvedLayouts(elements, out, time, aspectRatio, subtitleConfig);
   }
 
   // 16:9 Widescreen (1920 x 1080) dedicated responsive choreography for Cartoon Host (@Gimmys)
@@ -691,7 +839,7 @@ export function resolveElementLayoutForAspect(
         scale: 0.88,
       });
     }
-    return out;
+    return enforceNonOverlappingResolvedLayouts(elements, out, time, aspectRatio, subtitleConfig);
   }
 
   // 16:9 Widescreen (1920 x 1080) adaptive layout for standard compositions
@@ -870,7 +1018,7 @@ export function resolveElementLayoutForAspect(
     });
   }
 
-  return out;
+  return enforceNonOverlappingResolvedLayouts(elements, out, time, aspectRatio, subtitleConfig);
 }
 
 const FONT_DISPLAY = '"Outfit", "Plus Jakarta Sans", "Noto Sans JP", "Noto Sans SC", "Noto Sans KR", "Hiragino Sans", "Yu Gothic", "Meiryo", system-ui, sans-serif';
@@ -1243,12 +1391,17 @@ function drawCartoonHostCharacter(
 
   const lip = computeSpeechLipSyncState(cues, time, effectiveContext);
   const ink = '#0F172A';
+  const jumpOffsetY = lip.jumpOffsetY || 0;
+  const kneeBend = clamp01(lip.kneeBend || 0);
+  const clapImpact = clamp01(lip.clapImpact || 0);
+  const jumpLift = Math.max(0, -jumpOffsetY);
 
   ctx.save();
-  // Apply squash & stretch anchored around the character's shoes (y = 340)
-  ctx.translate(0, 340);
+  // Apply squash & stretch anchored around the character's current foot height
+  const squashAnchorY = 340 + jumpOffsetY;
+  ctx.translate(0, squashAnchorY);
   ctx.scale(lip.bodySquashX || 1, lip.bodySquashY || 1);
-  ctx.translate(0, -340);
+  ctx.translate(0, -squashAnchorY);
 
   const skinLight = '#ECC094';
 
@@ -1634,6 +1787,30 @@ function drawCartoonHostCharacter(
   const drawSmoothLeftArm = (sway: number) => {
     const sx = -78;
     const sy = 16;
+    const hasExplicitLeftArm =
+      lip.leftWristX !== undefined && lip.leftWristY !== undefined;
+
+    if (hasExplicitLeftArm) {
+      const ex = lip.leftElbowX ?? -135;
+      const ey = lip.leftElbowY ?? 95;
+      const wx = lip.leftWristX as number;
+      const wy = lip.leftWristY as number;
+      const handAngle = lip.leftHandAngle ?? Math.atan2(wy - ey, wx - ex);
+
+      ctx.save();
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 9.2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.quadraticCurveTo(ex, ey, wx, wy);
+      ctx.stroke();
+      ctx.restore();
+      drawCartoonHand(wx, wy, handAngle, -1, clapImpact > 0.25);
+      return;
+    }
+
     const openMix = clamp01((lip.leftShoulderAngle - 0.44) / 0.24);
     const smoothOpen = openMix * openMix * (3 - 2 * openMix);
 
@@ -1693,56 +1870,85 @@ function drawCartoonHostCharacter(
 
     drawHandPropAccessory(wx, wy, lip.rightHandAngle);
     drawBlendedRightHand(wx, wy, lip.rightHandAngle, lip.rightHandPointMix, lip.rightHandCompactMix);
-    drawHandReactionBadge(
-      wx,
-      wy,
-      lip.rightHandAngle,
-      lip.rightHandPointMix,
-      lip.badgeGlyph,
-      lip.badgeOpacity,
-      lip.badgeScale,
-      lip.badgeEmoji,
-    );
+    if (clapImpact <= 0.2) {
+      drawHandReactionBadge(
+        wx,
+        wy,
+        lip.rightHandAngle,
+        lip.rightHandPointMix,
+        lip.badgeGlyph,
+        lip.badgeOpacity,
+        lip.badgeScale,
+        lip.badgeEmoji,
+      );
+    }
+
+    if (clapImpact > 0.15) {
+      const clapCx = ((lip.leftWristX ?? 0) + wx) * 0.5;
+      const clapCy = ((lip.leftWristY ?? wy) + wy) * 0.5 - 6;
+      ctx.save();
+      ctx.globalAlpha *= clapImpact;
+      ctx.strokeStyle = '#FACC15';
+      ctx.lineWidth = 5.5;
+      ctx.lineCap = 'round';
+      for (let rayIdx = 0; rayIdx < 6; rayIdx++) {
+        const ang = (rayIdx / 6) * Math.PI * 2 + 0.35;
+        const rIn = 34;
+        const rOut = 58 + clapImpact * 14;
+        ctx.beginPath();
+        ctx.moveTo(clapCx + Math.cos(ang) * rIn, clapCy + Math.sin(ang) * rIn);
+        ctx.lineTo(clapCx + Math.cos(ang) * rOut, clapCy + Math.sin(ang) * rOut);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
   };
 
   drawFxOverlay();
 
-  // 0. Ground radial shadow under shoes
+  // 0. Ground radial shadow under shoes (stays on floor and shrinks smoothly while jumping)
   ctx.save();
-  const floorShadow = ctx.createRadialGradient(0, 344, 14, 0, 344, 165);
-  floorShadow.addColorStop(0, 'rgba(12, 62, 128, 0.28)');
-  floorShadow.addColorStop(0.6, 'rgba(12, 62, 128, 0.12)');
+  const shadowScale = Math.max(0.52, 1 - jumpLift / 220);
+  const floorShadow = ctx.createRadialGradient(0, 344, 14 * shadowScale, 0, 344, 165 * shadowScale);
+  floorShadow.addColorStop(0, `rgba(12, 62, 128, ${(0.28 * shadowScale).toFixed(2)})`);
+  floorShadow.addColorStop(0.6, `rgba(12, 62, 128, ${(0.12 * shadowScale).toFixed(2)})`);
   floorShadow.addColorStop(1, 'rgba(12, 62, 128, 0)');
   ctx.fillStyle = floorShadow;
   ctx.beginPath();
-  ctx.ellipse(0, 344, 165, 24, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 344, 165 * shadowScale, 24 * shadowScale, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  // 1. Thicker cartoon legs + larger oval shoes
+  // 1. Thicker cartoon legs + larger oval shoes (supports crouch knee bend & airborne jump lift)
   ctx.save();
   ctx.strokeStyle = ink;
   ctx.lineWidth = 9.6;
   ctx.lineCap = 'round';
+  const hipStartY = 194 + jumpOffsetY;
+  const airborneLift = jumpOffsetY < 0 ? jumpOffsetY * 0.92 : 0;
+  const footY = 335 + airborneLift;
+  const kneeOutOffset = kneeBend * 30;
+  const kneeMidY = (hipStartY + footY) * 0.52 + kneeBend * 14;
   ctx.beginPath();
-  ctx.moveTo(-44, 194);
-  ctx.quadraticCurveTo(-50, 266, -46, 335);
-  ctx.moveTo(44, 194);
-  ctx.quadraticCurveTo(50, 266, 46, 335);
+  ctx.moveTo(-44, hipStartY);
+  ctx.quadraticCurveTo(-50 - kneeOutOffset, kneeMidY, -46 - kneeBend * 4, footY);
+  ctx.moveTo(44, hipStartY);
+  ctx.quadraticCurveTo(50 + kneeOutOffset, kneeMidY, 46 + kneeBend * 4, footY);
   ctx.stroke();
 
+  const shoeTilt = jumpLift > 12 ? 0.08 : -0.16;
   ctx.fillStyle = ink;
   ctx.beginPath();
-  ctx.ellipse(-58, 339, 34, 13.5, -0.16, 0, Math.PI * 2);
+  ctx.ellipse(-58 - kneeBend * 4, footY + 4, 34, 13.5, shoeTilt, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.ellipse(58, 339, 34, 13.5, 0.16, 0, Math.PI * 2);
+  ctx.ellipse(58 + kneeBend * 4, footY + 4, 34, 13.5, -shoeTilt, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  // 2. Breathing torso & contextual arms
+  // 2. Breathing torso & contextual arms (follows jumpOffsetY + headBobY)
   ctx.save();
-  ctx.translate(0, lip.headBobY);
+  ctx.translate(0, lip.headBobY + jumpOffsetY);
 
   const lSway = Math.sin(time * 1.35) * 4;
 
@@ -3180,7 +3386,9 @@ function drawComparisonStrip(
     }
   });
 
-  const isLongStack = props.items.some((item) => item.label.trim().length > 16) || count > 4;
+  const isLongStack =
+    !props.singleRow &&
+    (props.items.some((item) => item.label.trim().length > 16) || count > 4);
 
   if (isLongStack) {
     const rowW = Math.min(1200, safeStripW);
@@ -3279,27 +3487,28 @@ function drawComparisonStrip(
   // Unified @englishpracticing168 frosted capsule housing all tabs inside one cohesive header bar
   const outerPadX = 14;
   const outerW = safeStripW + outerPadX * 2;
-  const outerH = 120;
+  const isSingleRow = Boolean(props.singleRow);
+  const outerH = isSingleRow ? 92 : 120;
   fillCardWithShadow(
     ctx,
     -outerW / 2,
     -outerH / 2,
     outerW,
     outerH,
-    40,
+    isSingleRow ? 32 : 40,
     'rgba(255, 255, 255, 0.92)',
     0.08,
   );
   ctx.save();
   ctx.strokeStyle = '#E2E8F0';
   ctx.lineWidth = 2;
-  drawRoundedRectPath(ctx, -outerW / 2, -outerH / 2, outerW, outerH, 40);
+  drawRoundedRectPath(ctx, -outerW / 2, -outerH / 2, outerW, outerH, isSingleRow ? 32 : 40);
   ctx.stroke();
   ctx.restore();
 
-  const gap = 12;
+  const gap = isSingleRow ? 8 : 12;
   const itemW = (safeStripW - gap * (count - 1)) / count;
-  const itemH = 96;
+  const itemH = isSingleRow ? 72 : 96;
   const startX = -safeStripW / 2;
   const startY = -itemH / 2;
 
@@ -3323,19 +3532,19 @@ function drawComparisonStrip(
         startY,
         itemW,
         itemH,
-        28,
+        isSingleRow ? 22 : 28,
         '#FFFFFF',
         0.1,
       );
       ctx.fillStyle = hexToRgba(accent, 0.1);
-      drawRoundedRectPath(ctx, -itemW / 2, startY, itemW, itemH, 28);
+      drawRoundedRectPath(ctx, -itemW / 2, startY, itemW, itemH, isSingleRow ? 22 : 28);
       ctx.fill();
       ctx.strokeStyle = accent;
       ctx.lineWidth = 3.5;
       ctx.stroke();
     } else {
       ctx.fillStyle = 'rgba(241, 245, 249, 0.72)';
-      drawRoundedRectPath(ctx, -itemW / 2, startY, itemW, itemH, 28);
+      drawRoundedRectPath(ctx, -itemW / 2, startY, itemW, itemH, isSingleRow ? 22 : 28);
       ctx.fill();
     }
 
@@ -3349,14 +3558,14 @@ function drawComparisonStrip(
         ),
     );
 
-    const maxLabelW = Math.max(48, itemW - 24);
-    const fitted = fitWrappedTextBlock(ctx, item.label, maxLabelW, showSublabel ? 54 : 80, {
+    const maxLabelW = Math.max(44, itemW - (isSingleRow ? 14 : 24));
+    const fitted = fitWrappedTextBlock(ctx, item.label, maxLabelW, showSublabel ? 48 : isSingleRow ? 62 : 80, {
       fontWeight: 700,
       fontFamily: FONT_DISPLAY,
-      maxFontSize: 31,
-      minFontSize: 18,
-      lineHeightRatio: 1.18,
-      maxLines: 2,
+      maxFontSize: isSingleRow ? (count >= 4 ? 22 : 26) : 31,
+      minFontSize: isSingleRow ? 13 : 18,
+      lineHeightRatio: 1.16,
+      maxLines: isSingleRow ? 1 : 2,
     });
 
     ctx.textAlign = 'center';
@@ -6679,7 +6888,7 @@ function drawSentenceCard(
   const innerMaxW = Math.max(180, safeWidth - 88);
   const textLen = props.text.trim().length;
   const widthScale = Math.min(1, safeWidth / 760);
-  const baseHeadFont = textLen > 95 ? 36 : textLen > 52 ? 40 : 46;
+  const baseHeadFont = textLen > 95 ? 36 : textLen > 58 ? 42 : 48;
   const maxHeadFont = Math.max(22, Math.round(baseHeadFont * widthScale));
 
   const fittedHead = fitWrappedTextBlock(ctx, props.text, innerMaxW, 380, {
@@ -6693,7 +6902,7 @@ function drawSentenceCard(
   const lineH = fittedHead.lineHeight;
   const lines = fittedHead.lines;
 
-  const subFontSize = Math.max(19, Math.round(30 * widthScale));
+  const subFontSize = Math.max(17, Math.round(25 * widthScale));
   const subLineH = Math.round(subFontSize * 1.26);
   const fittedSub = props.subtext
     ? fitWrappedTextBlock(ctx, props.subtext, innerMaxW, 190, {
@@ -7736,6 +7945,77 @@ export function renderCartoonHostPreviewFrame(
   ctx.restore();
 }
 
+let staticBackdropCache: { key: string; canvas: HTMLCanvasElement } | null = null;
+
+function drawBaseThemeBackdrop(
+  targetCtx: CanvasRenderingContext2D,
+  palette: ThemePalette,
+  stageW: number,
+  stageH: number,
+  isCartoonBackdrop: boolean,
+) {
+  if (isCartoonBackdrop) {
+    const skyGrad = targetCtx.createLinearGradient(0, 0, 0, stageH);
+    skyGrad.addColorStop(0, '#78C6FF');
+    skyGrad.addColorStop(0.55, '#59B2FF');
+    skyGrad.addColorStop(1, '#82CCFF');
+    targetCtx.fillStyle = skyGrad;
+    targetCtx.fillRect(0, 0, stageW, stageH);
+
+    targetCtx.save();
+    const centerGlow = targetCtx.createRadialGradient(
+      stageW * 0.5,
+      stageH * 0.54,
+      60,
+      stageW * 0.5,
+      stageH * 0.54,
+      stageW * 0.72,
+    );
+    centerGlow.addColorStop(0, 'rgba(255, 255, 255, 0.20)');
+    centerGlow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    targetCtx.fillStyle = centerGlow;
+    targetCtx.fillRect(0, 0, stageW, stageH);
+    targetCtx.restore();
+    return;
+  }
+
+  const bgGrad = targetCtx.createLinearGradient(0, 0, 0, stageH);
+  bgGrad.addColorStop(0, palette.bgTop);
+  bgGrad.addColorStop(1, palette.bgBottom);
+  targetCtx.fillStyle = bgGrad;
+  targetCtx.fillRect(0, 0, stageW, stageH);
+
+  const g1x = Math.round(stageW * 0.19);
+  const g1y = Math.round(stageH * 0.17);
+  const glow1 = targetCtx.createRadialGradient(
+    g1x,
+    g1y,
+    40,
+    g1x,
+    g1y,
+    Math.round(Math.max(stageW, stageH) * 0.34),
+  );
+  glow1.addColorStop(0, palette.glowA);
+  glow1.addColorStop(1, 'rgba(255,255,255,0)');
+  targetCtx.fillStyle = glow1;
+  targetCtx.fillRect(0, 0, stageW, stageH);
+
+  const g2x = Math.round(stageW * 0.81);
+  const g2y = Math.round(stageH * 0.74);
+  const glow2 = targetCtx.createRadialGradient(
+    g2x,
+    g2y,
+    40,
+    g2x,
+    g2y,
+    Math.round(Math.max(stageW, stageH) * 0.36),
+  );
+  glow2.addColorStop(0, palette.glowB);
+  glow2.addColorStop(1, 'rgba(255,255,255,0)');
+  targetCtx.fillStyle = glow2;
+  targetCtx.fillRect(0, 0, stageW, stageH);
+}
+
 export function renderProjectFrame(
   ctx: CanvasRenderingContext2D,
   project: LessonProject,
@@ -7747,33 +8027,87 @@ export function renderProjectFrame(
   const stageW = stage.width;
   const stageH = stage.height;
 
-  // 1. Background gradient
-  const bgGrad = ctx.createLinearGradient(0, 0, 0, stageH);
-  bgGrad.addColorStop(0, palette.bgTop);
-  bgGrad.addColorStop(1, palette.bgBottom);
-  ctx.fillStyle = bgGrad;
-  ctx.fillRect(0, 0, stageW, stageH);
-
-  // Soft ambient radial glows
-  const g1x = Math.round(stageW * 0.19);
-  const g1y = Math.round(stageH * 0.17);
-  const glow1 = ctx.createRadialGradient(g1x, g1y, 40, g1x, g1y, Math.round(Math.max(stageW, stageH) * 0.34));
-  glow1.addColorStop(0, palette.glowA);
-  glow1.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = glow1;
-  ctx.fillRect(0, 0, stageW, stageH);
-
-  const g2x = Math.round(stageW * 0.81);
-  const g2y = Math.round(stageH * 0.74);
-  const glow2 = ctx.createRadialGradient(g2x, g2y, 40, g2x, g2y, Math.round(Math.max(stageW, stageH) * 0.36));
-  glow2.addColorStop(0, palette.glowB);
-  glow2.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = glow2;
-  ctx.fillRect(0, 0, stageW, stageH);
-
   const introSec = getEffectiveIntroSeconds(project);
   const outroSec = getEffectiveOutroSeconds(project);
   const lessonTime = Math.max(0, time - introSec);
+
+  // Determine whether learning content is currently on screen so background dims softly for readability
+  const isLearningMomentActive =
+    time >= introSec &&
+    project.elements.some((el) => {
+      if (lessonTime < el.startTime || lessonTime > el.endTime) return false;
+      if (el.type === 'karaoke-card' || el.type === 'sentence-card') return true;
+      return false;
+    });
+
+  const bg = project.backgroundImage;
+  const isCartoonBackdrop = project.compositionId === 'cartoon-host' && !bg;
+  const staticBgImg =
+    bg && !(bg.kind === 'preset' || (!bg.kind && bg.presetId && !bg.dataUrl && !bg.videoUrl)) && !(bg.kind === 'video' && bg.videoUrl) && bg.dataUrl
+      ? getCachedBgImage(bg.dataUrl)
+      : null;
+
+  const canCacheBackdrop =
+    typeof document !== 'undefined' &&
+    (!bg || Boolean(staticBgImg));
+
+  if (canCacheBackdrop) {
+    const baseScrim = bg ? bg.scrimOpacity ?? 0.22 : 0;
+    const focusScrim = bg
+      ? bg.learningScrimOpacity ?? Math.min(0.85, Math.max(baseScrim, baseScrim + 0.2))
+      : 0;
+    const effectiveScrim = bg ? clamp01(isLearningMomentActive ? focusScrim : baseScrim) : 0;
+    const bgCacheKey = [
+      stageW,
+      stageH,
+      project.theme,
+      isCartoonBackdrop ? 'cartoon' : 'std',
+      bg?.dataUrl ? `${bg.dataUrl.slice(0, 64)}:${bg.dataUrl.length}:${bg.fit || 'cover'}:${effectiveScrim.toFixed(2)}` : 'none',
+    ].join('|');
+
+    if (!staticBackdropCache || staticBackdropCache.key !== bgCacheKey) {
+      const offscreen =
+        staticBackdropCache?.canvas &&
+        staticBackdropCache.canvas.width === stageW &&
+        staticBackdropCache.canvas.height === stageH
+          ? staticBackdropCache.canvas
+          : document.createElement('canvas');
+      offscreen.width = stageW;
+      offscreen.height = stageH;
+      const offCtx = offscreen.getContext('2d');
+      if (offCtx) {
+        drawBaseThemeBackdrop(offCtx, palette, stageW, stageH, isCartoonBackdrop);
+        if (staticBgImg) {
+          offCtx.save();
+          drawLoadedImageCover(
+            offCtx,
+            staticBgImg,
+            staticBgImg.naturalWidth || stageW,
+            staticBgImg.naturalHeight || stageH,
+            stageW,
+            stageH,
+            bg?.fit || 'cover',
+          );
+          offCtx.restore();
+          if (effectiveScrim > 0.01) {
+            offCtx.save();
+            offCtx.fillStyle = `rgba(10, 15, 28, ${effectiveScrim})`;
+            offCtx.fillRect(0, 0, stageW, stageH);
+            offCtx.restore();
+          }
+        }
+        staticBackdropCache = { key: bgCacheKey, canvas: offscreen };
+      }
+    }
+
+    if (staticBackdropCache && staticBackdropCache.key === bgCacheKey) {
+      ctx.drawImage(staticBackdropCache.canvas, 0, 0);
+    } else {
+      drawBaseThemeBackdrop(ctx, palette, stageW, stageH, isCartoonBackdrop);
+    }
+  } else {
+    drawBaseThemeBackdrop(ctx, palette, stageW, stageH, isCartoonBackdrop);
+  }
 
   const drawWatermarkCornerOverlay = () => {
     const wm = project.watermark;
@@ -7805,18 +8139,8 @@ export function renderProjectFrame(
     ctx.restore();
   };
 
-  // Determine whether learning content is currently on screen so background dims softly for readability
-  const isLearningMomentActive =
-    time >= introSec &&
-    project.elements.some((el) => {
-      if (lessonTime < el.startTime || lessonTime > el.endTime) return false;
-      if (el.type === 'karaoke-card' || el.type === 'sentence-card') return true;
-      return false;
-    });
-
-  // Optional preset / uploaded video / uploaded image background
-  const bg = project.backgroundImage;
-  if (bg) {
+  // Dynamic preset / uploaded video / uncached image background
+  if (bg && !canCacheBackdrop) {
     let drewCustomBg = false;
     if ((bg.kind === 'preset' || (!bg.kind && bg.presetId && !bg.dataUrl && !bg.videoUrl)) && bg.presetId) {
       const presetMeta = getBackgroundPresetMeta(bg.presetId);
@@ -7897,31 +8221,6 @@ export function renderProjectFrame(
         ctx.restore();
       }
     }
-  }
-
-  if (project.compositionId === 'cartoon-host' && !project.backgroundImage) {
-    // Crisp bright sky-blue gradient backdrop matching Gimmy's visual style
-    const skyGrad = ctx.createLinearGradient(0, 0, 0, stageH);
-    skyGrad.addColorStop(0, '#78C6FF');
-    skyGrad.addColorStop(0.55, '#59B2FF');
-    skyGrad.addColorStop(1, '#82CCFF');
-    ctx.fillStyle = skyGrad;
-    ctx.fillRect(0, 0, stageW, stageH);
-
-    ctx.save();
-    const centerGlow = ctx.createRadialGradient(
-      stageW * 0.5,
-      stageH * 0.54,
-      60,
-      stageW * 0.5,
-      stageH * 0.54,
-      stageW * 0.72,
-    );
-    centerGlow.addColorStop(0, 'rgba(255, 255, 255, 0.20)');
-    centerGlow.addColorStop(1, 'rgba(255, 255, 255, 0)');
-    ctx.fillStyle = centerGlow;
-    ctx.fillRect(0, 0, stageW, stageH);
-    ctx.restore();
   }
 
   // Optional Intro Card overlay during [0, introSec)
@@ -8239,10 +8538,11 @@ function estimateElementBoxDimensions(
     const items = Array.isArray(el.props.items) ? el.props.items : [];
     const itemsLen = items.length;
     const isLongStack =
-      el.id.startsWith('reel-quiz-opts-') ||
-      items.some((item) => item.label.trim().length > 16) ||
-      itemsLen > 4;
-    const computedH = isLongStack ? Math.max(150, itemsLen * 88 + 20) : 124;
+      !el.props.singleRow &&
+      (el.id.startsWith('reel-quiz-opts-') ||
+        items.some((item) => item.label.trim().length > 16) ||
+        itemsLen > 4);
+    const computedH = isLongStack ? Math.max(150, itemsLen * 88 + 20) : el.props.singleRow ? 96 : 124;
     return {
       width,
       height: isLongStack ? Math.max(activeLayout.height ?? 0, computedH) : (activeLayout.height ?? computedH),

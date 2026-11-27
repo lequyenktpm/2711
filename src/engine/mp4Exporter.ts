@@ -596,6 +596,7 @@ async function exportWithServerFfmpeg(
   onProgress: (info: ExportVideoProgress) => void,
   signal?: AbortSignal,
   customFileBase?: string,
+  skipDownload?: boolean,
 ): Promise<ExportVideoResult> {
   checkAborted(signal);
   await ensureProjectAssetsLoaded(project);
@@ -721,9 +722,14 @@ async function exportWithServerFfmpeg(
 
     const mp4Blob = await finishRes.blob();
     const fileName = `${exportBaseName}.mp4`;
-    triggerBlobDownload(mp4Blob, fileName);
+    if (!skipDownload) {
+      triggerBlobDownload(mp4Blob, fileName);
+    }
 
-    onProgress({ progress: 1, stageLabel: 'Đã tải xong file MP4!' });
+    onProgress({
+      progress: 1,
+      stageLabel: skipDownload ? 'Đã render xong MP4 (đang lưu vào thư mục output)!' : 'Đã tải xong file MP4!',
+    });
     return {
       format: 'mp4',
       fileName,
@@ -754,6 +760,7 @@ async function exportProjectToWebmFallback(
   encoding: ResolvedMp4Encoding,
   onProgress: (info: ExportVideoProgress) => void,
   signal?: AbortSignal,
+  skipDownload?: boolean,
 ): Promise<ExportVideoResult> {
   checkAborted(signal);
   await ensureProjectAssetsLoaded(project);
@@ -845,7 +852,9 @@ async function exportProjectToWebmFallback(
 
     const blob = new Blob(chunks, { type: 'video/webm' });
     const fileName = `${sanitizeFileBase(project.title || project.id)}.webm`;
-    triggerBlobDownload(blob, fileName);
+    if (!skipDownload) {
+      triggerBlobDownload(blob, fileName);
+    }
     return {
       format: 'webm',
       fileName,
@@ -951,13 +960,21 @@ export async function exportProjectToVideo(
       onProgress,
       options?.signal,
       options?.customFileBase,
+      options?.skipDownload,
     );
     return await finalizeArchive(serverRes);
   } catch (err) {
     if (err instanceof ExportAbortedError || options?.signal?.aborted) {
       throw new ExportAbortedError();
     }
-    const webmRes = await exportProjectToWebmFallback(effectiveProject, audioFile, encoding, onProgress, options?.signal);
+    const webmRes = await exportProjectToWebmFallback(
+      effectiveProject,
+      audioFile,
+      encoding,
+      onProgress,
+      options?.signal,
+      options?.skipDownload,
+    );
     return await finalizeArchive(webmRes);
   }
 }

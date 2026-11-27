@@ -10,7 +10,11 @@ import {
   StoryboardV19Document,
   StoryboardV19Element,
 } from './storyboardV19';
-import { TranscriptCue } from './types';
+import {
+  DEFAULT_CARTOON_ANIMATION_PARAMS,
+  enforceContextualCartoonMood,
+} from './cartoonAnimationDb';
+import { CartoonExpressionMood, TranscriptCue } from './types';
 import { isKnownIllustrationVariant } from './vectorComponentDb';
 
 export type ValidationSeverity = 'error' | 'warning';
@@ -389,6 +393,97 @@ export function validateStoryboardDocument(
             message: `Variant "${variant}" ở element "${elId}" không có trong Kho Component.`,
           });
         }
+      }
+
+      // 3b. Validate cartoon emotion consistency against negative/positive badges & speech text
+      const dataObj = el.data as Record<string, unknown> | undefined;
+      const badgeRaw =
+        (typeof el.style?.badge === 'string' && el.style.badge) ||
+        (typeof dataObj?.badge === 'string' && dataObj.badge) ||
+        '';
+      const badgeLower = badgeRaw.trim().toLowerCase();
+      const normalizedBadge: 'check' | 'cross' | 'question' | 'tip' | null =
+        badgeLower === 'cross' || /avoid|wrong|\bng\b|✖|✗|mistake|tránh|sai/.test(badgeLower)
+          ? 'cross'
+          : badgeLower === 'check' || /✔|✓|right|natural|correct/.test(badgeLower)
+            ? 'check'
+            : badgeLower === 'tip' || /tip|mẹo/.test(badgeLower)
+              ? 'tip'
+              : badgeLower === 'question' || /\?/.test(badgeLower)
+                ? 'question'
+                : null;
+      const contextText = [
+        typeof el.content === 'string' ? el.content : '',
+        typeof el.data?.title === 'string' ? el.data.title : '',
+        typeof el.data?.speechText === 'string' ? el.data.speechText : '',
+        Array.isArray(el.data?.labels) ? el.data.labels.join(' ') : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
+
+      const explicitMood =
+        (typeof (el as { cartoonMood?: unknown }).cartoonMood === 'string' &&
+          ((el as { cartoonMood?: string }).cartoonMood || '').trim()) ||
+        (typeof el.data?.cartoonMood === 'string' && el.data.cartoonMood.trim()) ||
+        '';
+      if (explicitMood) {
+        const safeParams = enforceContextualCartoonMood(
+          {
+            ...DEFAULT_CARTOON_ANIMATION_PARAMS,
+            mood: explicitMood as CartoonExpressionMood,
+          },
+          contextText,
+          normalizedBadge,
+        );
+        if (safeParams.mood !== explicitMood) {
+          pushIssue({
+            code: 'CARTOON_EMOTION_MISMATCH',
+            severity: 'error',
+            sceneId,
+            elementId: elId,
+            message: `Cảm xúc nhân vật cartoonMood="${explicitMood}" tại "${elId}" mâu thuẫn với ngữ cảnh/nhãn ("${badgeRaw || contextText.slice(0, 40)}"). Nên đổi sang "${safeParams.mood}".`,
+          });
+        }
+      }
+
+      const rawSegments = dataObj?.cartoonActionSegments;
+      if (Array.isArray(rawSegments)) {
+        rawSegments.forEach((rawSeg, segIdx) => {
+          if (!rawSeg || typeof rawSeg !== 'object') return;
+          const seg = rawSeg as Record<string, unknown>;
+          const segMood = typeof seg.mood === 'string' ? seg.mood.trim() : '';
+          if (!segMood) return;
+          const sStart = typeof seg.startTime === 'number' ? seg.startTime : 0;
+          const sEnd = typeof seg.endTime === 'number' ? seg.endTime : sStart + 3;
+          const overlappingCues = cues
+            .filter((c) => c.end > sStart && c.start < sEnd)
+            .map((c) => c.text)
+            .join(' ');
+          const segContext = [
+            typeof seg.signal === 'string' ? seg.signal : '',
+            overlappingCues,
+            contextText,
+          ]
+            .filter(Boolean)
+            .join(' ');
+          const safeSegParams = enforceContextualCartoonMood(
+            {
+              ...DEFAULT_CARTOON_ANIMATION_PARAMS,
+              mood: segMood as CartoonExpressionMood,
+            },
+            segContext,
+            normalizedBadge,
+          );
+          if (safeSegParams.mood !== segMood) {
+            pushIssue({
+              code: 'CARTOON_EMOTION_MISMATCH',
+              severity: 'error',
+              sceneId,
+              elementId: `${elId}#seg${segIdx + 1}`,
+              message: `Cảm xúc segment cartoonMood="${segMood}" tại "${elId}" mâu thuẫn với ngữ cảnh ("${segContext.slice(0, 50)}"). Nên đổi sang "${safeSegParams.mood}".`,
+            });
+          }
+        });
       }
 
       // 4. Validate normalized 0..1 position & Karaoke safe zone

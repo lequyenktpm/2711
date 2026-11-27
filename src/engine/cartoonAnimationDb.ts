@@ -1,6 +1,7 @@
 import {
   CartoonAccessory,
   CartoonAnimationDefinition,
+  CartoonAnimationKeyframe,
   CartoonAnimationParams,
   CartoonExpressionMood,
   CartoonEyeStyle,
@@ -438,6 +439,120 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       bodySquashStretch: 0.04,
     },
   },
+  {
+    id: 'clap-jump',
+    label: 'Khuỵu gối bật nhảy vỗ tay 5 nhịp (Clap Jump 👏)',
+    category: 'emphasis',
+    description:
+      'Chuỗi 5 keyframe thật: khuỵu gối lấy đà -> bật nhảy giơ hai tay -> hai lòng bàn tay chạm vỗ -> tiếp tục vỗ trên không reo vui -> tiếp đất squash nhẹ dang tay cười rạng rỡ.',
+    keywords: ['clap', 'applause', 'bravo', 'jump clap', 'congrats', 'vỗ tay', 'bật nhảy', 'khen ngợi'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'excited',
+      gestureMode: 'clap-jump',
+      eyeStyle: 'star',
+      mouthStyle: 'lip-sync',
+      fxOverlay: 'sparkles',
+      accessory: 'none',
+      badgeGlyph: 'check',
+      badgeEmoji: '👏',
+      speed: 1.0,
+      bounceIntensity: 1.25,
+      headTiltDeg: 3,
+      blushIntensity: 0.55,
+      bodySquashStretch: 0.1,
+      sequenceDurationSec: 1.5,
+      loopSequence: true,
+      keyframes: [
+        {
+          at: 0,
+          label: 'Frame 1: Khuỵu gối, hai tay đưa xuống lấy đà',
+          jumpOffsetY: 38,
+          kneeBend: 0.92,
+          leftWristX: -124,
+          leftWristY: 162,
+          leftHandAngle: Math.PI * 0.62,
+          rightWristX: 124,
+          rightWristY: 162,
+          rightHandAngle: Math.PI * 0.38,
+          clapImpact: 0,
+          mouthStyle: 'smile',
+          bodySquashX: 1.09,
+          bodySquashY: 0.91,
+          headTiltDeg: -4,
+        },
+        {
+          at: 0.22,
+          label: 'Frame 2: Bật nhảy lên, hai tay giơ cao',
+          jumpOffsetY: -94,
+          kneeBend: 0.14,
+          leftWristX: -112,
+          leftWristY: -176,
+          leftHandAngle: -Math.PI * 0.56,
+          rightWristX: 112,
+          rightWristY: -176,
+          rightHandAngle: -Math.PI * 0.44,
+          clapImpact: 0,
+          mouthStyle: 'big-grin',
+          bodySquashX: 0.93,
+          bodySquashY: 1.08,
+          headTiltDeg: 3,
+        },
+        {
+          at: 0.44,
+          label: 'Frame 3: Hai lòng bàn tay chạm nhau vỗ tay',
+          jumpOffsetY: -116,
+          kneeBend: 0.1,
+          leftWristX: -10,
+          leftWristY: -108,
+          leftHandAngle: -Math.PI * 0.5,
+          rightWristX: 10,
+          rightWristY: -108,
+          rightHandAngle: -Math.PI * 0.5,
+          clapImpact: 1,
+          mouthStyle: 'big-grin',
+          bodySquashX: 0.96,
+          bodySquashY: 1.04,
+          headTiltDeg: 5,
+        },
+        {
+          at: 0.68,
+          label: 'Frame 4: Tiếp tục vỗ tay trên không, miệng mở reo vui',
+          jumpOffsetY: -88,
+          kneeBend: 0.16,
+          leftWristX: -14,
+          leftWristY: -116,
+          leftHandAngle: -Math.PI * 0.5,
+          rightWristX: 14,
+          rightWristY: -116,
+          rightHandAngle: -Math.PI * 0.5,
+          clapImpact: 0.92,
+          mouthStyle: 'lip-sync',
+          bodySquashX: 0.97,
+          bodySquashY: 1.03,
+          headTiltDeg: 6,
+        },
+        {
+          at: 0.94,
+          label: 'Frame 5: Tiếp đất squash nhẹ, hai tay dang ra cười rạng rỡ',
+          jumpOffsetY: 16,
+          kneeBend: 0.46,
+          leftWristX: -194,
+          leftWristY: -26,
+          leftHandAngle: -Math.PI * 0.82,
+          rightWristX: 194,
+          rightWristY: -26,
+          rightHandAngle: -0.56,
+          clapImpact: 0,
+          mouthStyle: 'big-grin',
+          bodySquashX: 1.11,
+          bodySquashY: 0.89,
+          headTiltDeg: 2,
+        },
+      ],
+    },
+  },
 ];
 
 const listeners = new Set<() => void>();
@@ -474,6 +589,7 @@ const VALID_GESTURES = new Set<CartoonGestureMode>([
   'facepalm',
   'fist-pump',
   'hold-mic',
+  'clap-jump',
 ]);
 
 const VALID_MOODS = new Set<CartoonExpressionMood>([
@@ -562,10 +678,14 @@ function normalizeMoodAlias(rawMood: string): string {
 
 function normalizeGestureAlias(rawGesture: string): string {
   switch (rawGesture) {
+    case 'clap-jump':
+    case 'clap':
+    case 'clap-hands':
+    case 'applause':
+      return 'clap-jump';
     case 'celebrate':
     case 'celebrate-arms':
     case 'celebrate-jump':
-    case 'clap-hands':
     case 'dance-grooving':
       return 'cheer';
     case 'warn-shake':
@@ -620,6 +740,68 @@ function normalizeFxAlias(rawFx: string): string {
   }
 }
 
+function sanitizeKeyframes(raw: unknown): CartoonAnimationKeyframe[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const cleaned: CartoonAnimationKeyframe[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const obj = item as Record<string, unknown>;
+    const at =
+      typeof obj.at === 'number' && Number.isFinite(obj.at)
+        ? Math.max(0, Math.min(1, obj.at))
+        : cleaned.length / Math.max(1, raw.length - 1);
+    const kf: CartoonAnimationKeyframe = {
+      at,
+      ...(typeof obj.label === 'string' && obj.label.trim() ? { label: obj.label.trim() } : {}),
+      ...(typeof obj.jumpOffsetY === 'number' && Number.isFinite(obj.jumpOffsetY)
+        ? { jumpOffsetY: Math.max(-180, Math.min(80, obj.jumpOffsetY)) }
+        : {}),
+      ...(typeof obj.kneeBend === 'number' && Number.isFinite(obj.kneeBend)
+        ? { kneeBend: Math.max(0, Math.min(1, obj.kneeBend)) }
+        : {}),
+      ...(typeof obj.leftWristX === 'number' && Number.isFinite(obj.leftWristX)
+        ? { leftWristX: Math.max(-240, Math.min(20, obj.leftWristX)) }
+        : {}),
+      ...(typeof obj.leftWristY === 'number' && Number.isFinite(obj.leftWristY)
+        ? { leftWristY: Math.max(-220, Math.min(240, obj.leftWristY)) }
+        : {}),
+      ...(typeof obj.leftHandAngle === 'number' && Number.isFinite(obj.leftHandAngle)
+        ? { leftHandAngle: obj.leftHandAngle }
+        : {}),
+      ...(typeof obj.rightWristX === 'number' && Number.isFinite(obj.rightWristX)
+        ? { rightWristX: Math.max(-20, Math.min(280, obj.rightWristX)) }
+        : {}),
+      ...(typeof obj.rightWristY === 'number' && Number.isFinite(obj.rightWristY)
+        ? { rightWristY: Math.max(-220, Math.min(240, obj.rightWristY)) }
+        : {}),
+      ...(typeof obj.rightHandAngle === 'number' && Number.isFinite(obj.rightHandAngle)
+        ? { rightHandAngle: obj.rightHandAngle }
+        : {}),
+      ...(typeof obj.clapImpact === 'number' && Number.isFinite(obj.clapImpact)
+        ? { clapImpact: Math.max(0, Math.min(1, obj.clapImpact)) }
+        : {}),
+      ...(typeof obj.mouthStyle === 'string' && VALID_MOUTHS.has(obj.mouthStyle as CartoonMouthStyle)
+        ? { mouthStyle: obj.mouthStyle as CartoonMouthStyle }
+        : {}),
+      ...(typeof obj.eyeStyle === 'string' && VALID_EYES.has(obj.eyeStyle as CartoonEyeStyle)
+        ? { eyeStyle: obj.eyeStyle as CartoonEyeStyle }
+        : {}),
+      ...(typeof obj.bodySquashX === 'number' && Number.isFinite(obj.bodySquashX)
+        ? { bodySquashX: Math.max(0.75, Math.min(1.25, obj.bodySquashX)) }
+        : {}),
+      ...(typeof obj.bodySquashY === 'number' && Number.isFinite(obj.bodySquashY)
+        ? { bodySquashY: Math.max(0.75, Math.min(1.25, obj.bodySquashY)) }
+        : {}),
+      ...(typeof obj.headTiltDeg === 'number' && Number.isFinite(obj.headTiltDeg)
+        ? { headTiltDeg: Math.max(-25, Math.min(25, obj.headTiltDeg)) }
+        : {}),
+    };
+    cleaned.push(kf);
+  }
+  if (cleaned.length === 0) return undefined;
+  return cleaned.sort((a, b) => a.at - b.at);
+}
+
 export function sanitizeCartoonAnimationParams(
   raw: unknown,
   fallback: CartoonAnimationParams = DEFAULT_CARTOON_ANIMATION_PARAMS,
@@ -650,6 +832,8 @@ export function sanitizeCartoonAnimationParams(
       : badgeRaw === null || badgeRaw === 'none'
         ? null
         : fallback.badgeGlyph;
+
+  const keyframes = sanitizeKeyframes(obj.keyframes) ?? fallback.keyframes;
 
   return {
     mood: VALID_MOODS.has(moodStr as CartoonExpressionMood)
@@ -697,6 +881,17 @@ export function sanitizeCartoonAnimationParams(
       typeof obj.bodySquashStretch === 'number' && Number.isFinite(obj.bodySquashStretch)
         ? Math.max(0, Math.min(0.35, Number(obj.bodySquashStretch.toFixed(2))))
         : fallback.bodySquashStretch,
+    ...(keyframes ? { keyframes } : {}),
+    ...(typeof obj.sequenceDurationSec === 'number' && Number.isFinite(obj.sequenceDurationSec)
+      ? { sequenceDurationSec: Math.max(0.4, Math.min(8, Number(obj.sequenceDurationSec.toFixed(2)))) }
+      : fallback.sequenceDurationSec !== undefined
+        ? { sequenceDurationSec: fallback.sequenceDurationSec }
+        : {}),
+    ...(typeof obj.loopSequence === 'boolean'
+      ? { loopSequence: obj.loopSequence }
+      : fallback.loopSequence !== undefined
+        ? { loopSequence: fallback.loopSequence }
+        : {}),
   };
 }
 
@@ -984,13 +1179,68 @@ export function restoreBuiltInCartoonAnimation(id: string): void {
   });
 }
 
+const STRICT_NEGATIVE_TEXT_RE =
+  /\b(avoid|wrong|mistake|rude|never say|don't say|do not say|stop saying|too blunt|incorrect)\b|(?:^|[\s「『(【])NG(?:$|[\s」』)】:：!])|tránh|lỗi sai|đừng nói|thô lỗ/iu;
+const STRICT_POSITIVE_TEXT_RE =
+  /\b(natural|correct|use this instead|much better|polite|native|right way)\b|nên dùng|tự nhiên|chuẩn bản xứ|lịch sự/iu;
+
+/**
+ * Prevents contradictory expressions such as smiling/celebrating over an AVOID/NG warning card
+ * or looking worried/sad over a praised/natural answer card.
+ */
+export function enforceContextualCartoonMood(
+  params: CartoonAnimationParams,
+  spokenText?: string,
+  badge?: 'check' | 'cross' | 'question' | 'tip' | 'none' | null,
+): CartoonAnimationParams {
+  const txt = (spokenText || '').trim();
+  const isNeg = badge === 'cross' || (badge !== 'check' && STRICT_NEGATIVE_TEXT_RE.test(txt));
+  const isPos = badge === 'check' || (badge !== 'cross' && !isNeg && STRICT_POSITIVE_TEXT_RE.test(txt));
+
+  if (
+    isNeg &&
+    (params.mood === 'happy' ||
+      params.mood === 'excited' ||
+      params.mood === 'proud' ||
+      params.gestureMode === 'clap-jump' ||
+      params.gestureMode === 'cheer' ||
+      params.gestureMode === 'thumbs-up')
+  ) {
+    return {
+      ...params,
+      mood: 'worried',
+      gestureMode: 'warn-avoid',
+      eyeStyle: 'focused',
+      mouthStyle: 'wavy-nervous',
+      fxOverlay: 'warning-bolt',
+      badgeGlyph: 'cross',
+      keyframes: undefined,
+    };
+  }
+
+  if (isPos && (params.mood === 'worried' || params.mood === 'sad' || params.gestureMode === 'warn-avoid')) {
+    return {
+      ...params,
+      mood: 'happy',
+      gestureMode: 'thumbs-up',
+      eyeStyle: 'happy-arc',
+      mouthStyle: 'big-grin',
+      fxOverlay: 'check-burst',
+      badgeGlyph: 'check',
+    };
+  }
+
+  return params;
+}
+
 export function resolveCartoonAnimationForSignal(options: {
   actionId?: string;
   explicitMood?: CartoonExpressionMood;
   spokenText?: string;
   inlineSpec?: Partial<CartoonAnimationParams>;
+  activeBadge?: 'check' | 'cross' | 'question' | 'tip' | 'none' | null;
 }): { matchedDef?: CartoonAnimationDefinition; params: CartoonAnimationParams } {
-  const { actionId, explicitMood, spokenText, inlineSpec } = options;
+  const { actionId, explicitMood, spokenText, inlineSpec, activeBadge } = options;
   let matchedDef = getCartoonAnimationById(actionId);
 
   if (!matchedDef && spokenText) {
@@ -1013,7 +1263,10 @@ export function resolveCartoonAnimationForSignal(options: {
     baseParams,
   );
 
-  return { matchedDef, params: merged };
+  return {
+    matchedDef,
+    params: enforceContextualCartoonMood(merged, spokenText, activeBadge),
+  };
 }
 
 export function parseCartoonAnimationAiJson(rawInput: string): CartoonAnimationDefinition[] {
@@ -1071,14 +1324,18 @@ export function getCartoonAnimationsPromptBlock(): string {
     '',
     'CÁCH AI ĐIỀU KHIỂN HOẶC TỰ SÁNG TẠO HÀNH ĐỘNG CHO NHÂN VẬT HOẠT HÌNH:',
     '- Trên từng scene / card, có thể thêm "cartoonAction": "<id từ danh sách trên>" và/hoặc "cartoonMood": "happy|excited|curious|worried|surprised|proud|cool|sad|shy|neutral".',
-    '- HOẶC AI tự sáng tạo hành động/biểu cảm mới hoàn toàn bằng cách gắn "cartoonAnimationSpec": { "mood", "gestureMode", "eyeStyle", "mouthStyle", "fxOverlay", "accessory", "badgeGlyph", "badgeEmoji", "speed", "bounceIntensity", "headTiltDeg", "blushIntensity", "bodySquashStretch" }!',
+    '- **QUY TẮC CHỌN EMOTION NGHIÊM NGẶT (CẤM LỆCH CẢM XÚC)**:',
+    '  + Nội dung sai / tránh dùng / AVOID / NG → BẮT BUỘC dùng mood `"worried"` hoặc `"sad"`, action `"warn-avoid"` hoặc `"sad-oops"` (TUYỆT ĐỐI KHÔNG dùng `"happy"`/`"excited"`/`"clap-jump"`).',
+    '  + Nội dung khen thưởng / đáp án đúng / chúc mừng → dùng `"clap-jump"`, `"cheer"`, `"thumbs-up"` với mood `"excited"`/`"happy"`/`"proud"`.',
+    '  + Nội dung câu hỏi / suy nghĩ → `"thinking-chin"` / `"question"` với mood `"curious"`.',
+    '- Có thể gắn "keyframes": [{ at: 0..1, jumpOffsetY, kneeBend, leftWristX, leftWristY, rightWristX, rightWristY, clapImpact, mouthStyle, bodySquashX, bodySquashY }] để tạo chuỗi động tác nhiều frame thật sự (như `"clap-jump"`).',
     '- Nếu muốn đề xuất lưu hành động mới vào Database dùng lại lâu dài, có thể kèm mảng gốc "cartoonAnimations": [{ "id": "...", "label": "...", "category": "reaction", "keywords": ["..."], "params": { ... } }].',
   ].join('\n');
 }
 
 export function buildCartoonActionWebAiPrompt(concept: string, baseActionId?: string): string {
   const baseDef = baseActionId ? getCartoonAnimationById(baseActionId) : undefined;
-  const cleanConcept = concept.trim() || 'Nhân vật @Gimmys hào hứng nhảy lên vỗ tay chúc mừng người học vừa trả lời đúng';
+  const cleanConcept = concept.trim() || 'Nhân vật @Gimmys khuỵu gối bật nhảy lên vỗ tay chúc mừng người học vừa trả lời đúng';
 
   return [
     'Bạn là Đạo diễn Hoạt hình 2D & Biểu cảm Nhân vật cho ứng dụng học ngoại ngữ KineticSub (nhân vật mascot @Gimmys).',
@@ -1088,7 +1345,7 @@ export function buildCartoonActionWebAiPrompt(concept: string, baseActionId?: st
       : '',
     '',
     'QUY ƯỚC THAM SỐ HỆ THỐNG BẮT BUỘC:',
-    '- gestureMode: "present" | "explain" | "question" | "cheer" | "point-up" | "point-right" | "warn-avoid" | "approve-tip" | "wave" | "shrug" | "think-chin" | "thumbs-up" | "double-point" | "facepalm" | "fist-pump" | "hold-mic"',
+    '- gestureMode: "present" | "explain" | "question" | "cheer" | "point-up" | "point-right" | "warn-avoid" | "approve-tip" | "wave" | "shrug" | "think-chin" | "thumbs-up" | "double-point" | "facepalm" | "fist-pump" | "hold-mic" | "clap-jump"',
     '- mood: "neutral" | "happy" | "worried" | "curious" | "surprised" | "excited" | "sad" | "cool" | "proud" | "shy"',
     '- eyeStyle: "normal" | "happy-arc" | "wide-surprised" | "wink" | "star" | "focused" | "sleepy" | "heart" | "cool-shades"',
     '- mouthStyle: "lip-sync" | "smile" | "big-grin" | "o-shock" | "wavy-nervous" | "flat-serious" | "smirk"',
@@ -1096,34 +1353,36 @@ export function buildCartoonActionWebAiPrompt(concept: string, baseActionId?: st
     '- accessory: "none" | "badge-card" | "megaphone" | "pointer-stick" | "mic" | "graduation-cap" | "sunglasses"',
     '- badgeGlyph: "check" | "cross" | "question" | "tip" | null',
     '- badgeEmoji: 1 emoji ngắn (VD: "🔥", "🤯", "👏", "💯")',
-    '- speed: số thực 0.4..2.2 (1.0 là chuẩn)',
-    '- bounceIntensity: 0..2.0 | headTiltDeg: -25..25 | blushIntensity: 0..1 | bodySquashStretch: 0..0.35',
+    '- speed: số thực 0.4..2.2 | bounceIntensity: 0..2.0 | headTiltDeg: -25..25 | blushIntensity: 0..1 | bodySquashStretch: 0..0.35',
+    '- keyframes (tùy chọn cho động tác nhiều frame như khuỵu gối -> bật nhảy -> 2 tay chạm nhau vỗ tay -> tiếp đất): mảng `{ at: 0..1, jumpOffsetY, kneeBend, leftWristX, leftWristY, rightWristX, rightWristY, clapImpact, bodySquashX, bodySquashY }`, kèm `sequenceDurationSec` & `loopSequence: true`.',
     '',
-    'CHỈ TRẢ VỀ JSON HỢP LỆ THEO MẪU SAU (không viết giải thích dài dòng ngoài JSON):',
+    'BẮT BUỘC XUẤT RA FILE `.json` HOÀN CHỈNH (hoặc duy nhất 1 khối JSON chuẩn có thể tải xuống thành file `.json`, không giải thích ngoài JSON):',
     '```json',
     JSON.stringify(
       {
         cartoonAnimations: [
           {
-            id: 'ten-hanh-dong-slug',
-            label: 'Tên hiển thị Tiếng Việt + Emoji',
-            category: 'reaction',
-            description: 'Mô tả ngắn ngữ cảnh dùng hành động này',
-            keywords: ['từ khóa tiếng Anh', 'từ khóa tiếng Việt'],
+            id: 'clap-jump-custom',
+            label: 'Bật nhảy vỗ tay chúc mừng 👏',
+            category: 'emphasis',
+            description: 'Khuỵu gối lấy đà -> bật nhảy giơ tay -> 2 tay chạm nhau vỗ tay -> tiếp đất',
+            keywords: ['clap', 'congrats', 'vỗ tay', 'chúc mừng'],
             params: {
               mood: 'excited',
-              gestureMode: 'fist-pump',
+              gestureMode: 'clap-jump',
               eyeStyle: 'star',
-              mouthStyle: 'big-grin',
+              mouthStyle: 'lip-sync',
               fxOverlay: 'sparkles',
               accessory: 'none',
               badgeGlyph: 'check',
-              badgeEmoji: '🌟',
-              speed: 1.35,
-              bounceIntensity: 1.45,
-              headTiltDeg: 6,
-              blushIntensity: 0.6,
-              bodySquashStretch: 0.12,
+              badgeEmoji: '👏',
+              speed: 1.0,
+              bounceIntensity: 1.25,
+              headTiltDeg: 4,
+              blushIntensity: 0.55,
+              bodySquashStretch: 0.1,
+              sequenceDurationSec: 1.5,
+              loopSequence: true,
             },
           },
         ],

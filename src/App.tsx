@@ -1165,6 +1165,7 @@ export default function App() {
             signal: controller.signal,
             customFileBase: cleanFileBase,
             alsoSaveToServerOutput: true,
+            skipDownload: true,
             savePath: TAB_OUTPUT_SUBFOLDERS.studio,
             sourceTab: `Studio ${targetProject.aspectRatio || mp4Settings.aspectRatio || '9:16'}`,
             companionText: targetDescription.txtContent,

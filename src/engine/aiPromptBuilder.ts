@@ -509,5 +509,8 @@ ${
 \`\`\`
 
 # TRANSCRIPT THAM CHIẾU (${effectiveCues.length} CUES)
-${transcriptLines}`;
+${transcriptLines}
+
+# YÊU CẦU ĐẦU RA CUỐI CÙNG
+- Hãy xuất kết quả dưới dạng **DUY NHẤT 1 file \`.json\` (hoặc khối mã \`\`\`json hợp lệ để lưu thành file .json)** hoàn chỉnh, đúng chuẩn schema v1.9 ở trên, KHÔNG kèm giải thích thừa.`;
 }

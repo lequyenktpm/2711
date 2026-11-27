@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { computeElementFrameState } from '../animationMath';
 import { buildSceneGenerationPrompt } from '../aiPromptBuilder';
+import { resolveElementLayoutForAspect } from '../canvasRenderer';
 import {
   BUILTIN_CARTOON_ANIMATIONS,
   buildCartoonActionWebAiPrompt,
@@ -11,6 +13,7 @@ import {
   getCartoonAnimationsPromptBlock,
   getEffectiveCartoonAnimationCatalog,
   parseCartoonAnimationAiJson,
+  resolveCartoonAnimationForSignal,
   restoreBuiltInCartoonAnimation,
   upsertCartoonAnimation,
 } from '../cartoonAnimationDb';
@@ -27,6 +30,8 @@ import {
   parseEnglishReelsAiJson,
   reelCardsToLessonProject,
 } from '../englishReelsEngine';
+import { estimateElementHalfExtents } from '../layoutSolver';
+import { validateStoryboardDocument } from '../storyboardValidator';
 import type { SceneElement, TranscriptCue } from '../types';
 
 test('cartoonAnimationDb: catalog includes built-ins, CRUD works, and Web AI prompt/JSON round-trips', () => {
@@ -297,4 +302,210 @@ test('eduStudioEffects: hitTestReadingAlongZone classifies watermark, outro, int
   assert.equal(hitTestReadingAlongZone(baseOpts, 150, 130), 'badge');
   assert.equal(hitTestReadingAlongZone(baseOpts, 150, 175), 'title');
   assert.equal(hitTestReadingAlongZone(baseOpts, 250, 480), 'body');
+});
+
+test('cartoonHostAnimator: 5-frame clap-jump interpolates crouch, jump, center clap touch, cheering, and landing with lip-sync', () => {
+  const clapDef = getCartoonAnimationById('clap-jump');
+  assert.ok(clapDef, 'Built-in clap-jump preset must exist');
+  assert.equal(clapDef?.params.gestureMode, 'clap-jump');
+  assert.ok((clapDef?.params.keyframes?.length ?? 0) >= 5, 'clap-jump must define 5 keyframes');
+
+  const cues: TranscriptCue[] = [
+    { id: 'c1', start: 0, end: 2.0, text: 'Bravo! Great job speaking fluently!', words: [] },
+  ];
+  const spec = { ...clapDef!.params };
+
+  // Frame 1 (t ~ 0s): crouch kneeBend > 0.5, downward jumpOffsetY > 0
+  const f1 = computeSpeechLipSyncState(cues, 0.02, {
+    actionId: 'clap-jump',
+    customSpec: spec,
+  });
+  assert.ok(f1.kneeBend > 0.5, `Expected crouch kneeBend > 0.5, got ${f1.kneeBend}`);
+  assert.ok(f1.jumpOffsetY > 0, `Expected downward prep offset, got ${f1.jumpOffsetY}`);
+
+  // Frame 2 (t ~ 0.3s): airborne upward jumpOffsetY < -30
+  const f2 = computeSpeechLipSyncState(cues, 0.3, {
+    actionId: 'clap-jump',
+    customSpec: spec,
+  });
+  assert.ok(f2.jumpOffsetY < -30, `Expected airborne jumpOffsetY < -30, got ${f2.jumpOffsetY}`);
+
+  // Frame 3 (t = 0.66s = 0.44 * 1.5s): palms touch together near x=0 with clapImpact > 0.6 & speech lip-sync active
+  const f3 = computeSpeechLipSyncState(cues, 0.66, {
+    actionId: 'clap-jump',
+    customSpec: spec,
+  });
+  assert.equal(f3.isSpeaking, true);
+  assert.ok(
+    typeof f3.leftWristX === 'number' && Math.abs(f3.leftWristX - f3.rightWristX) <= 30,
+    `Expected clapping palms close in center, got L=${f3.leftWristX}, R=${f3.rightWristX}`,
+  );
+  assert.ok(f3.clapImpact >= 0.6, `Expected strong clapImpact >= 0.6, got ${f3.clapImpact}`);
+
+  // Frame 5 (t ~ 1.2s): landing squash + bright smile
+  const f5 = computeSpeechLipSyncState(cues, 1.2, {
+    actionId: 'clap-jump',
+    customSpec: spec,
+  });
+  assert.ok(f5.kneeBend >= 0.25, `Expected landing kneeBend >= 0.25, got ${f5.kneeBend}`);
+});
+
+test('cartoonHost scene continuity, mood guard, @Gimmys prompts, translation card cleanup, and multi-aspect non-overlap', () => {
+  // 1. Cartoon host stays steady across scenes (no enter/exit blink)
+  const hostEl: SceneElement = {
+    id: 'reel-cartoon-host-main',
+    type: 'illustration-prop',
+    label: '@Gimmys',
+    startTime: 0,
+    endTime: 10,
+    enterAnimation: 'fade-scale',
+    exitAnimation: 'fade-out',
+    layout: { x: 540, y: 1220, width: 780, scale: 0.9, zIndex: 12 },
+    props: { kind: 'illustration-prop', variant: 'cartoon-host', data: {} },
+  };
+  const fsStart = computeElementFrameState(hostEl, 0.01);
+  const fsEnd = computeElementFrameState(hostEl, 9.99);
+  assert.equal(fsStart.visible, true);
+  assert.equal(fsStart.opacity, 1);
+  assert.equal(fsEnd.visible, true);
+  assert.equal(fsEnd.opacity, 1);
+
+  // 2. Contextual mood guard rejects mismatched happy mood on AVOID cues
+  const guarded = resolveCartoonAnimationForSignal({
+    spokenText: 'Avoid this common mistake! Wrong expression.',
+    explicitMood: 'happy',
+  });
+  assert.notEqual(guarded.params.mood, 'happy');
+
+  const valIssues = validateStoryboardDocument(
+    {
+      compositionId: 'cartoon-host',
+      scenes: [
+        {
+          scene_id: 'sc1',
+          elements: [
+            {
+              element_id: 'bad-mood-host',
+              kind: 'illustration-prop',
+              variant: 'cartoon-host',
+              data: {
+                cartoonActionSegments: [
+                  {
+                    startTime: 0,
+                    endTime: 3,
+                    actionId: 'warn-shake',
+                    mood: 'happy',
+                    signal: 'AVOID NG Wrong phrase',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    },
+    [{ id: 'c1', start: 0, end: 3, text: 'Avoid saying this wrong phrase', words: [] }],
+  );
+  assert.ok(
+    valIssues.errors.some((e) => e.code === 'CARTOON_EMOTION_MISMATCH'),
+    'Validator should flag happy mood on AVOID segment',
+  );
+
+  // 3. @Gimmys prompts suppress Bootstrap/CSS card schemas & end with .json file instructions
+  const reelsGimmysPrompt = buildEnglishReelsWebAiPrompt({
+    sourceText: 'I was just about to text you.',
+    mode: 'vocab',
+    targetLang: '日本語',
+    compositionId: 'cartoon-host',
+  });
+  assert.match(reelsGimmysPrompt, /"compositionId": "cartoon-host"/);
+  assert.ok(!reelsGimmysPrompt.includes('"variant": "css-sticky-note"'));
+  assert.match(reelsGimmysPrompt, /\.json/i);
+
+  const creatorGimmysPrompt = buildAiCreatorWebAiPrompt({
+    learningLanguage: 'en',
+    targetLang: '日本語',
+    compositionId: 'cartoon-host',
+    customInputLines: 'I was just about to text you.',
+  });
+  assert.match(creatorGimmysPrompt, /USER SUBTITLE \/ SCRIPT/);
+  assert.match(creatorGimmysPrompt, /\.json/i);
+
+  // 4. Translation mode cleanup: singleRow roadmap strip, no duplicate Prompt box, single vocab/grammar note
+  const trProject = reelCardsToLessonProject(
+    [
+      {
+        id: 'tr-1',
+        type: 'translation',
+        badge: 'ANSWER · REPEAT',
+        title: 'be about to',
+        sourcePrompt: 'さっき連絡しようと思ってたところ。',
+        content: 'I was just about to text you.',
+        vocabNotes: 'be about to (まさに〜するところ) / text (メッセージを送る)',
+        grammarNote: 'be about to + 動詞の原形で「まさに〜するところ」。',
+        ttsText: 'I was just about to text you.',
+        thinkSec: 3,
+        repeatCount: 2,
+      },
+    ],
+    { title: 'Translation Test', compositionId: 'cartoon-host', aspectRatio: '9:16' },
+  );
+
+  const stageStrip = trProject.elements.find((e) => e.id.startsWith('reel-stage-'));
+  assert.ok(stageStrip && stageStrip.props.kind === 'comparison-strip');
+  if (stageStrip && stageStrip.props.kind === 'comparison-strip') {
+    assert.equal(stageStrip.props.singleRow, true, 'Translation roadmap strip must stay singleRow');
+  }
+  const dupPromptBox = trProject.elements.find((e) => e.id.startsWith('reel-tr-ans-prop-'));
+  assert.equal(dupPromptBox, undefined, 'Duplicate Prompt box in answer phase must be removed');
+
+  const ansCard = trProject.elements.find((e) => e.id.startsWith('reel-tr-ans-card-'));
+  assert.ok(ansCard && ansCard.props.kind === 'sentence-card');
+  if (ansCard && ansCard.props.kind === 'sentence-card') {
+    assert.ok(
+      ansCard.props.subtext && !ansCard.props.subtext.includes('さっき連絡しようと思ってたところ'),
+      'Answer card subtext must not repeat sourcePrompt',
+    );
+    assert.ok(
+      !ansCard.props.subtext?.includes('be about to + 動詞の原形'),
+      'Answer card subtext must include only 1 concise vocab/grammar note, not both repeated',
+    );
+  }
+
+  // 5. Multi-aspect resolveElementLayoutForAspect keeps overlapping elements separated
+  const overlapPair: SceneElement[] = [
+    {
+      id: 'el-a',
+      type: 'sentence-card',
+      label: 'A',
+      startTime: 0,
+      endTime: 4,
+      enterAnimation: 'none',
+      exitAnimation: 'none',
+      layout: { x: 540, y: 500, width: 820, scale: 1, zIndex: 10 },
+      props: { kind: 'sentence-card', text: 'First overlapping card with extra explanation text', subtext: 'Subtitle line one' },
+    },
+    {
+      id: 'el-b',
+      type: 'sentence-card',
+      label: 'B',
+      startTime: 0,
+      endTime: 4,
+      enterAnimation: 'none',
+      exitAnimation: 'none',
+      layout: { x: 540, y: 540, width: 820, scale: 1, zIndex: 11 },
+      props: { kind: 'sentence-card', text: 'Second overlapping card right below', subtext: 'Subtitle line two' },
+    },
+  ];
+  for (const ar of ['9:16', '16:9', '1:1', '4:5'] as const) {
+    const resolved = resolveElementLayoutForAspect(overlapPair, 1.0, ar);
+    const la = resolved.get('el-a')!;
+    const lb = resolved.get('el-b')!;
+    const extA = estimateElementHalfExtents({ ...overlapPair[0], layout: la });
+    const extB = estimateElementHalfExtents({ ...overlapPair[1], layout: lb });
+    assert.ok(
+      la.y + extA.halfH <= lb.y - extB.halfH + 4,
+      `Expected no vertical overlap on ${ar}: A bottom=${la.y + extA.halfH}, B top=${lb.y - extB.halfH}`,
+    );
+  }
 });

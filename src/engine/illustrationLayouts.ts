@@ -1196,8 +1196,8 @@ export function recomposeProjectWithStyle(
       label: 'Nhân vật Hoạt Hình Lip-Sync (@Gimmys)',
       startTime: 0,
       endTime: project.duration,
-      enterAnimation: 'fade-scale',
-      exitAnimation: 'fade-out',
+      enterAnimation: 'none',
+      exitAnimation: 'none',
       layout: {
         x: 540,
         y: subPos === 'top' ? 1135 : 1085,

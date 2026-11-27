@@ -62,8 +62,8 @@ export interface TranscriptCue {
   words: WordTiming[];
 }
 
-export type EnterAnimation = 'pop-up' | 'slide-up' | 'fade-scale' | 'drop-in';
-export type ExitAnimation = 'fade-out' | 'slide-down' | 'shrink';
+export type EnterAnimation = 'pop-up' | 'slide-up' | 'fade-scale' | 'drop-in' | 'none';
+export type ExitAnimation = 'fade-out' | 'slide-down' | 'shrink' | 'none';
 
 export type Shape3DType =
   | 'card_3d'
@@ -113,6 +113,8 @@ export interface WordStackRow {
 export interface ComparisonStripProps {
   kind: 'comparison-strip';
   items: ComparisonItem[];
+  /** Force all items onto one compact horizontal row instead of stacking vertically */
+  singleRow?: boolean;
 }
 
 export interface TopicPillProps {
@@ -302,7 +304,8 @@ export type CartoonGestureMode =
   | 'double-point'
   | 'facepalm'
   | 'fist-pump'
-  | 'hold-mic';
+  | 'hold-mic'
+  | 'clap-jump';
 
 export type CartoonExpressionMood =
   | 'neutral'
@@ -357,6 +360,29 @@ export type CartoonAccessory =
   | 'graduation-cap'
   | 'sunglasses';
 
+export interface CartoonAnimationKeyframe {
+  /** Normalized position 0..1 within sequenceDurationSec */
+  at: number;
+  label?: string;
+  /** Vertical jump offset in local px (negative = airborne up, positive = crouch lower) */
+  jumpOffsetY?: number;
+  /** 0..1 knee bend intensity (0 = straight legs, 1 = deep crouch) */
+  kneeBend?: number;
+  leftWristX?: number;
+  leftWristY?: number;
+  leftHandAngle?: number;
+  rightWristX?: number;
+  rightWristY?: number;
+  rightHandAngle?: number;
+  /** 0..1 clapping palm contact / impact sparks */
+  clapImpact?: number;
+  mouthStyle?: CartoonMouthStyle;
+  eyeStyle?: CartoonEyeStyle;
+  bodySquashX?: number;
+  bodySquashY?: number;
+  headTiltDeg?: number;
+}
+
 export interface CartoonAnimationParams {
   mood: CartoonExpressionMood;
   gestureMode: CartoonGestureMode;
@@ -371,6 +397,9 @@ export interface CartoonAnimationParams {
   headTiltDeg: number;
   blushIntensity: number;
   bodySquashStretch: number;
+  keyframes?: CartoonAnimationKeyframe[];
+  sequenceDurationSec?: number;
+  loopSequence?: boolean;
 }
 
 export interface CartoonActionSegment {

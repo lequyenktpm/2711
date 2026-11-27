@@ -354,6 +354,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
   const [creatorTopicHint, setCreatorTopicHint] = useState(
     () => initialReelsSaved?.creatorTopicHint || '',
   );
+  const [creatorScriptInput, setCreatorScriptInput] = useState('');
   const [creatorFormat, setCreatorFormat] = useState<CreatorFormatCategory>(
     () => initialReelsSaved?.creatorFormat || 'auto',
   );
@@ -1425,6 +1426,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         : reelCreationMode === 'creator'
           ? buildAiCreatorWebAiPrompt({
               topicHint: creatorTopicHint.trim() || undefined,
+              customInputLines: creatorScriptInput.trim() || undefined,
               learningLanguage: creatorLearningLang,
               level: creatorLevel,
               durationMinutes: creatorDurationMinutes,
@@ -1460,6 +1462,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       translationRepeatCount,
       translationIncludeNuance,
       creatorTopicHint,
+      creatorScriptInput,
       creatorLearningLang,
       creatorLevel,
       creatorDurationMinutes,
@@ -1579,7 +1582,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       }
     }
     const nextComp = parsed.compositionId || parsed.sceneJson?.compositionId;
-    if (nextComp) {
+    if (nextComp && selectedComposition !== 'cartoon-host') {
       setSelectedComposition(nextComp);
     }
     setLessonTitle(parsed.title);
@@ -2869,6 +2872,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           signal: controller.signal,
           customFileBase: cleanExportBase,
           alsoSaveToServerOutput: true,
+          skipDownload: true,
           savePath: TAB_OUTPUT_SUBFOLDERS.reels,
           sourceTab: 'English Reels',
           companionText: videoDescription.txtContent,
@@ -2925,7 +2929,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         }
       }
       const nextComp = parsed.compositionId || parsed.sceneJson?.compositionId;
-      if (nextComp) {
+      if (nextComp && selectedComposition !== 'cartoon-host') {
         setSelectedComposition(nextComp);
       }
       setLessonTitle(parsed.title);
@@ -3674,6 +3678,26 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                   </div>
                 </div>
 
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <label htmlFor="creator-script-input" className="text-[11px] font-semibold text-slate-700">
+                      Subtitle / Script đầu vào (tùy chọn — bỏ trống AI tự sáng tạo, điền vào để AI biên tập thành file JSON)
+                    </label>
+                    <PasteButton
+                      onPaste={(txt) => setCreatorScriptInput(txt)}
+                      title="Dán nhanh subtitle / script cho AI Creator"
+                    />
+                  </div>
+                  <textarea
+                    id="creator-script-input"
+                    rows={2}
+                    value={creatorScriptInput}
+                    onChange={(e) => setCreatorScriptInput(e.target.value)}
+                    placeholder="Nhập danh sách câu, subtitle hoặc kịch bản thô nếu muốn AI biên tập lại thành các thẻ JSON..."
+                    className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   <div>
                     <label
@@ -3862,7 +3886,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                         : 'Không cần API Key: AI Web sẽ lọc rác, nhận diện Reading/Quiz/Vocab, điền bản dịch và trả về đúng định dạng JSON của app.'}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <PasteButton
                     onPaste={(txt) => {
                       setPastedAiJson(txt);
@@ -3870,6 +3894,23 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                     }}
                     title="Dán nhanh JSON từ AI Web (thay thế ô bên dưới)"
                   />
+                  <label className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 cursor-pointer whitespace-nowrap shrink-0">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Tải file .json</span>
+                    <input
+                      type="file"
+                      accept=".json,application/json,text/plain"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = '';
+                        if (!f) return;
+                        const txt = await f.text();
+                        setPastedAiJson(txt);
+                        setAiJsonError(null);
+                      }}
+                    />
+                  </label>
                   <button
                     type="button"
                     onClick={() => void handleCopyPrompt()}
@@ -4865,6 +4906,10 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                         if (!card) return;
                         if (patch.props.kind === 'topic-pill') {
                           updateCard(targetCardIdx, { badge: patch.props.text });
+                        } else if (patch.props.kind === 'comparison-strip') {
+                          updateCardVisual(targetCardIdx, {
+                            labels: patch.props.items.map((item) => item.label).filter(Boolean),
+                          });
                         } else if (patch.props.kind === 'sentence-card') {
                           if (elId.startsWith('reel-tr-prompt-card-')) {
                             updateCard(targetCardIdx, {
@@ -4900,6 +4945,12 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                               subtitle: patch.props.data?.subtitle,
                               speechText: patch.props.data?.speechText,
                               highlightWord: patch.props.data?.highlightWord,
+                              formula: patch.props.data?.formula,
+                              labels: patch.props.data?.labels,
+                              checklist: patch.props.data?.checklist,
+                              upgrades: patch.props.data?.upgrades,
+                              boxes: patch.props.data?.boxes,
+                              nodes: patch.props.data?.nodes,
                             });
                           }
                         }
@@ -6257,7 +6308,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                   className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Render &amp; Tải MP4</span>
+                  <span>Render MP4</span>
                 </button>
               )}
             </div>
