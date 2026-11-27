@@ -221,13 +221,14 @@ interface AlignJobState {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ALLOWED_AUDIO_EXTS = new Set(['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.webm', '.flac', '.opus']);
 const ALLOWED_MEDIA_EXTS = new Set(['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.webm', '.mp4', '.mov', '.mkv', '.avi', '.m4v', '.mpeg', '.mpg']);
-const JOB_TTL_MS = 60 * 60 * 1000;
+const JOB_TTL_MS = 4 * 60 * 60 * 1000;
 const COMPONENTS_DATA_DIR = path.resolve('data');
 const COMPONENTS_DATA_FILE = path.join(COMPONENTS_DATA_DIR, 'custom-components.json');
 const CARTOON_ANIMATIONS_DATA_FILE = path.join(COMPONENTS_DATA_DIR, 'cartoon-animations.json');
 const RENDER_TMP_ROOT = path.resolve('.render-tmp');
 const STUDIO_TMP_ROOT = path.resolve('.studio-tmp');
 const OUTPUT_META_FILE = path.join(STUDIO_TMP_ROOT, 'output-meta.json');
+const BATCH_CHECKPOINT_FILE = path.join(STUDIO_TMP_ROOT, 'batch-checkpoint.json');
 
 interface OutputFileMeta {
   sourceTab: string;
@@ -1130,6 +1131,38 @@ async function startServer(): Promise<void> {
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Không đặt lại được cài đặt.' });
     }
+  });
+
+  app.get('/api/batch/checkpoint', async (_req, res) => {
+    try {
+      const raw = await fs.promises.readFile(BATCH_CHECKPOINT_FILE, 'utf8');
+      const parsed = JSON.parse(raw);
+      res.json({ ok: true, checkpoint: parsed && typeof parsed === 'object' ? parsed : null });
+    } catch {
+      res.json({ ok: true, checkpoint: null });
+    }
+  });
+
+  app.put('/api/batch/checkpoint', express.json({ limit: '16mb' }), async (req, res) => {
+    try {
+      const checkpoint = isPlainRecord(req.body?.checkpoint) ? req.body.checkpoint : null;
+      if (!checkpoint) {
+        res.status(400).json({ error: 'Checkpoint batch không hợp lệ.' });
+        return;
+      }
+      await fs.promises.mkdir(STUDIO_TMP_ROOT, { recursive: true });
+      const tmpPath = `${BATCH_CHECKPOINT_FILE}.tmp-${process.pid}-${Date.now()}`;
+      await fs.promises.writeFile(tmpPath, JSON.stringify(checkpoint), 'utf8');
+      await fs.promises.rename(tmpPath, BATCH_CHECKPOINT_FILE);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Không lưu được checkpoint batch.' });
+    }
+  });
+
+  app.delete('/api/batch/checkpoint', async (_req, res) => {
+    await fs.promises.unlink(BATCH_CHECKPOINT_FILE).catch(() => undefined);
+    res.json({ ok: true });
   });
 
   // ── Direct Output Folder Save / List / Preview / Open API ─────────────────
@@ -3569,6 +3602,7 @@ Return ONLY valid JSON with keys:
         activeJobProcs.set(job.id, proc);
         let stderr = '';
         proc.stderr.on('data', (chunk: Buffer) => {
+          job.createdAt = Date.now();
           stderr = (stderr + chunk.toString('utf8')).slice(-8000);
         });
         proc.on('error', (err) => {

@@ -49,6 +49,27 @@ function sanitizeFileBase(raw: string): string {
   return cleanOutputTitleStem(raw, 'KineticSub Video');
 }
 
+export type Mp4ExportStrategy = 'server-ffmpeg-first' | 'webcodecs-first';
+
+export function selectMp4ExportStrategy(
+  durationSec: number,
+  fps: number,
+): Mp4ExportStrategy {
+  const safeDur = Number.isFinite(durationSec) && durationSec > 0 ? durationSec : 0;
+  const safeFps = Number.isFinite(fps) && fps > 0 ? fps : 30;
+  const estFrames = Math.ceil(safeDur * safeFps);
+  // Long videos (e.g., 10-30 min) exhaust browser WebCodecs ArrayBufferTarget + OfflineAudioContext RAM;
+  // streaming JPEG frame batches to Server FFmpeg keeps browser memory ~50MB constant.
+  if (safeDur >= 180 || estFrames >= 5400) {
+    return 'server-ffmpeg-first';
+  }
+  return 'webcodecs-first';
+}
+
+export function shouldUseFastStartInMemory(durationSec: number): boolean {
+  return !(Number.isFinite(durationSec) && durationSec > 90);
+}
+
 function triggerBlobDownload(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -292,7 +313,7 @@ async function exportWithWebCodecsMp4(
           sampleRate: preparedAudio.spec.sampleRate,
         }
       : undefined,
-    fastStart: 'in-memory',
+    fastStart: shouldUseFastStartInMemory(project.duration) ? 'in-memory' : false,
   });
 
   let encoderError: unknown = null;
@@ -597,10 +618,19 @@ async function exportWithServerFfmpeg(
   signal?: AbortSignal,
   customFileBase?: string,
   skipDownload?: boolean,
+  options?: {
+    alsoSaveToServerOutput?: boolean;
+    savePath?: string;
+    sourceTab?: string;
+    companionText?: string;
+    directoryHandle?: any;
+    customRenderFrame?: (ctx: CanvasRenderingContext2D, time: number, width: number, height: number) => void;
+    onBeforeRenderFrame?: (time: number) => Promise<void>;
+  },
 ): Promise<ExportVideoResult> {
   checkAborted(signal);
   await ensureProjectAssetsLoaded(project);
-  onProgress({ progress: 0.01, stageLabel: 'Đang khởi tạo bộ dựng MP4 (FFmpeg)...' });
+  onProgress({ progress: 0.01, stageLabel: 'Đang khởi tạo bộ dựng MP4 (FFmpeg streaming)...' });
 
   const startRes = await fetch('/api/render/start', {
     method: 'POST',
@@ -672,8 +702,16 @@ async function exportWithServerFfmpeg(
     for (let i = 0; i < totalFrames; i++) {
       checkAborted(signal);
       const t = Math.min(project.duration, i / encoding.fps);
-      await seekProjectVideoAssets(project, t);
-      renderScaledProjectFrame(ctx, project, t, safeWidth, safeHeight);
+      if (options?.onBeforeRenderFrame) {
+        await options.onBeforeRenderFrame(t);
+      } else {
+        await seekProjectVideoAssets(project, t);
+      }
+      if (options?.customRenderFrame) {
+        options.customRenderFrame(ctx, t, safeWidth, safeHeight);
+      } else {
+        renderScaledProjectFrame(ctx, project, t, safeWidth, safeHeight);
+      }
       const jpeg = await canvasToJpegBlob(offscreenCanvas, 0.85);
 
       if (
@@ -708,10 +746,29 @@ async function exportWithServerFfmpeg(
     });
 
     const exportBaseName = sanitizeFileBase(customFileBase || project.title || project.id);
+    const txtBody = options?.companionText?.trim() || '';
+    const fileName = `${exportBaseName}.mp4`;
+    const txtFileName = `${exportBaseName}.txt`;
+    const directServerDisk =
+      Boolean(options?.alsoSaveToServerOutput) &&
+      Boolean(skipDownload) &&
+      !options?.directoryHandle;
+
+    const resolvedFolder = resolveTabOutputSubfolder(options?.sourceTab, options?.savePath);
     const finishRes = await fetch(`/api/render/${jobId}/finish`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileName: exportBaseName }),
+      body: JSON.stringify({
+        fileName: exportBaseName,
+        ...(directServerDisk
+          ? {
+              saveToDisk: true,
+              savePath: resolvedFolder,
+              sourceTab: options?.sourceTab,
+              companionText: txtBody || undefined,
+            }
+          : {}),
+      }),
       signal,
     });
 
@@ -720,8 +777,71 @@ async function exportWithServerFfmpeg(
       throw new Error((errBody as { error?: string }).error || 'FFmpeg không thể xuất MP4.');
     }
 
+    if (directServerDisk) {
+      const data = (await finishRes.json()) as {
+        savedPath?: string;
+        relativePath?: string;
+        bytes?: number;
+      };
+      onProgress({
+        progress: 1,
+        stageLabel: `Hoàn tất! Đã lưu: ${data.savedPath || fileName}`,
+      });
+      return {
+        format: 'mp4',
+        fileName,
+        byteLength: data.bytes ?? 0,
+        width: safeWidth,
+        height: safeHeight,
+        fps: encoding.fps,
+        qualityLabel: encoding.qualityLabel,
+        savedPath: data.savedPath,
+        relativePath: data.relativePath,
+      };
+    }
+
+    if (options?.directoryHandle && finishRes.body) {
+      onProgress({ progress: 0.96, stageLabel: `Đang ghi stream ${fileName} vào thư mục đã chọn...` });
+      const fileHandle = await options.directoryHandle.getFileHandle(fileName, { create: true });
+      const writable = await fileHandle.createWritable();
+      let writtenBytes = 0;
+      const reader = finishRes.body.getReader();
+      try {
+        while (true) {
+          checkAborted(signal);
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value && value.byteLength > 0) {
+            await writable.write(value);
+            writtenBytes += value.byteLength;
+          }
+        }
+        await writable.close();
+      } catch (err) {
+        await writable.abort().catch(() => undefined);
+        throw err;
+      }
+      if (txtBody) {
+        const txtHandle = await options.directoryHandle.getFileHandle(txtFileName, { create: true });
+        const txtWritable = await txtHandle.createWritable();
+        await txtWritable.write(new Blob([txtBody], { type: 'text/plain;charset=utf-8' }));
+        await txtWritable.close();
+      }
+      onProgress({ progress: 1, stageLabel: 'Hoàn tất lưu vào thư mục máy!' });
+      return {
+        format: 'mp4',
+        fileName,
+        byteLength: writtenBytes,
+        width: safeWidth,
+        height: safeHeight,
+        fps: encoding.fps,
+        qualityLabel: encoding.qualityLabel,
+        savedPath: `${options.directoryHandle.name}/${fileName}`,
+        relativePath: fileName,
+      };
+    }
+
     const mp4Blob = await finishRes.blob();
-    const fileName = `${exportBaseName}.mp4`;
     if (!skipDownload) {
       triggerBlobDownload(mp4Blob, fileName);
     }
@@ -938,7 +1058,33 @@ export async function exportProjectToVideo(
     return res;
   };
 
-  // 1. Primary path: 100% browser-native WebCodecs + mp4-muxer (zero server state, immune to multi-instance 404)
+  const strategy = selectMp4ExportStrategy(effectiveProject.duration, encoding.fps);
+
+  if (strategy === 'server-ffmpeg-first') {
+    try {
+      const serverRes = await exportWithServerFfmpeg(
+        effectiveProject,
+        audioFile,
+        encoding,
+        onProgress,
+        options?.signal,
+        options?.customFileBase,
+        options?.skipDownload,
+        options,
+      );
+      if (serverRes.savedPath) {
+        return serverRes;
+      }
+      return await finalizeArchive(serverRes);
+    } catch (err) {
+      if (err instanceof ExportAbortedError || options?.signal?.aborted) {
+        throw new ExportAbortedError();
+      }
+      console.warn('Streaming server FFmpeg failed for long video, falling back to WebCodecs:', err);
+    }
+  }
+
+  // Primary path for shorter clips (or fallback if server FFmpeg unavailable): 100% browser-native WebCodecs + mp4-muxer
   try {
     const webCodecsResult = await exportWithWebCodecsMp4(effectiveProject, audioFile, encoding, onProgress, options);
     if (webCodecsResult) {
@@ -951,7 +1097,7 @@ export async function exportProjectToVideo(
     console.warn('WebCodecs MP4 export failed, falling back to server/WebM:', err);
   }
 
-  // 2. Fallback path: Server FFmpeg or WebM MediaRecorder
+  // Fallback path: Server FFmpeg or WebM MediaRecorder
   try {
     const serverRes = await exportWithServerFfmpeg(
       effectiveProject,
@@ -961,7 +1107,11 @@ export async function exportProjectToVideo(
       options?.signal,
       options?.customFileBase,
       options?.skipDownload,
+      options,
     );
+    if (serverRes.savedPath) {
+      return serverRes;
+    }
     return await finalizeArchive(serverRes);
   } catch (err) {
     if (err instanceof ExportAbortedError || options?.signal?.aborted) {
@@ -1006,216 +1156,94 @@ export async function exportProjectToServerDisk(
   const targetFileName = `${baseName}.mp4`;
   const targetTxtName = `${baseName}.txt`;
   const txtBody = options?.companionText?.trim() || '';
+  const strategy = selectMp4ExportStrategy(effectiveProject.duration, encoding.fps);
 
-  // Primary WebCodecs path: Build finished MP4 locally in browser, then save directly to picked folder or /api/output/save
-  // Eliminates chunked frame uploads that triggered "HTTP 404: Render job not found"!
-  try {
-    onProgress({ progress: 0.01, stageLabel: 'Đang dựng MP4 WebCodecs tốc độ cao...' });
-    const webResult = await exportWithWebCodecsMp4(effectiveProject, audioFile, encoding, onProgress, {
-      signal: options?.signal,
-      skipDownload: true,
-      customFileBase: baseName,
+  // For short videos (<3 min): WebCodecs fast local encode -> save directly to disk
+  // For long videos (>=3 min): skip WebCodecs ArrayBufferTarget OOM and stream straight to Server FFmpeg below!
+  if (strategy === 'webcodecs-first') {
+    try {
+      onProgress({ progress: 0.01, stageLabel: 'Đang dựng MP4 WebCodecs tốc độ cao...' });
+      const webResult = await exportWithWebCodecsMp4(effectiveProject, audioFile, encoding, onProgress, {
+        signal: options?.signal,
+        skipDownload: true,
+        customFileBase: baseName,
+        customRenderFrame: options?.customRenderFrame,
+        onBeforeRenderFrame: options?.onBeforeRenderFrame,
+      });
+      if (webResult?.blob) {
+        if (options?.directoryHandle) {
+          onProgress({ progress: 0.97, stageLabel: `Đang ghi ${targetFileName} vào thư mục đã chọn...` });
+          const fileHandle = await options.directoryHandle.getFileHandle(targetFileName, { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(webResult.blob);
+          await writable.close();
+          if (txtBody) {
+            const txtHandle = await options.directoryHandle.getFileHandle(targetTxtName, { create: true });
+            const txtWritable = await txtHandle.createWritable();
+            await txtWritable.write(new Blob([txtBody], { type: 'text/plain;charset=utf-8' }));
+            await txtWritable.close();
+          }
+          // Also archive server-side output copy in background/fallback only if no local dir handle
+          onProgress({ progress: 1, stageLabel: 'Hoàn tất lưu vào thư mục máy!' });
+          return {
+            savedPath: `${options.directoryHandle.name}/${targetFileName}`,
+            relativePath: targetFileName,
+            fileName: targetFileName,
+            byteLength: webResult.blob.size,
+          };
+        }
+
+        onProgress({ progress: 0.97, stageLabel: `Đang lưu ${targetFileName} vào thư mục output...` });
+        const saved = await exportBlobToServerOutput(
+          webResult.blob,
+          targetFileName,
+          customSavePath,
+          options?.signal,
+          options?.sourceTab,
+        );
+        if (txtBody) {
+          await saveCompanionTextToServerOutput(
+            targetTxtName,
+            txtBody,
+            customSavePath,
+            options?.sourceTab,
+            options?.signal,
+          ).catch(() => null);
+        }
+        onProgress({ progress: 1, stageLabel: 'Hoàn tất lưu vào thư mục output!' });
+        return saved;
+      }
+    } catch (err) {
+      if (err instanceof ExportAbortedError || options?.signal?.aborted) {
+        throw new ExportAbortedError();
+      }
+      console.warn('WebCodecs disk export failed, falling back to server FFmpeg pipeline:', err);
+    }
+  }
+
+  // Streaming Server FFmpeg path (primary for >= 3 min videos, or fallback when WebCodecs unavailable)
+  const serverRes = await exportWithServerFfmpeg(
+    effectiveProject,
+    audioFile,
+    encoding,
+    onProgress,
+    options?.signal,
+    baseName,
+    true,
+    {
+      alsoSaveToServerOutput: true,
+      savePath: customSavePath,
+      sourceTab: options?.sourceTab,
+      companionText: txtBody || undefined,
+      directoryHandle: options?.directoryHandle,
       customRenderFrame: options?.customRenderFrame,
       onBeforeRenderFrame: options?.onBeforeRenderFrame,
-    });
-    if (webResult?.blob) {
-      if (options?.directoryHandle) {
-        onProgress({ progress: 0.97, stageLabel: `Đang ghi ${targetFileName} vào thư mục đã chọn...` });
-        const fileHandle = await options.directoryHandle.getFileHandle(targetFileName, { create: true });
-        const writable = await fileHandle.createWritable();
-        await writable.write(webResult.blob);
-        await writable.close();
-        if (txtBody) {
-          const txtHandle = await options.directoryHandle.getFileHandle(targetTxtName, { create: true });
-          const txtWritable = await txtHandle.createWritable();
-          await txtWritable.write(new Blob([txtBody], { type: 'text/plain;charset=utf-8' }));
-          await txtWritable.close();
-        }
-        onProgress({ progress: 1, stageLabel: 'Hoàn tất lưu vào thư mục máy!' });
-        return {
-          savedPath: `${options.directoryHandle.name}/${targetFileName}`,
-          relativePath: targetFileName,
-          fileName: targetFileName,
-          byteLength: webResult.blob.size,
-        };
-      }
-
-      onProgress({ progress: 0.97, stageLabel: `Đang lưu ${targetFileName} vào thư mục output...` });
-      const saved = await exportBlobToServerOutput(
-        webResult.blob,
-        targetFileName,
-        customSavePath,
-        options?.signal,
-        options?.sourceTab,
-      );
-      if (txtBody) {
-        await saveCompanionTextToServerOutput(
-          targetTxtName,
-          txtBody,
-          customSavePath,
-          options?.sourceTab,
-          options?.signal,
-        ).catch(() => null);
-      }
-      onProgress({ progress: 1, stageLabel: 'Hoàn tất lưu vào thư mục output!' });
-      return saved;
-    }
-  } catch (err) {
-    if (err instanceof ExportAbortedError || options?.signal?.aborted) {
-      throw new ExportAbortedError();
-    }
-    console.warn('WebCodecs disk export failed, falling back to server FFmpeg pipeline:', err);
-  }
-
-  // Fallback path for browsers lacking WebCodecs VideoEncoder/AudioEncoder
-  onProgress({ progress: 0.01, stageLabel: 'Đang khởi tạo job FFmpeg trên server...' });
-  const startRes = await fetch('/api/render/start', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fps: encoding.fps, crf: encoding.crf }),
-    signal: options?.signal,
-  });
-
-  if (!startRes.ok) {
-    throw new Error(`Server FFmpeg không khả dụng (HTTP ${startRes.status}).`);
-  }
-
-  const { jobId } = (await startRes.json()) as { jobId: string };
-
-  let offscreenCanvas: HTMLCanvasElement | null = null;
-
-  try {
-    if (audioFile) {
-      checkAborted(options?.signal);
-      onProgress({ progress: 0.04, stageLabel: 'Đang nạp Audio lên server...' });
-      const dotIdx = audioFile.name.lastIndexOf('.');
-      const ext = dotIdx >= 0 ? audioFile.name.slice(dotIdx) : '.mp3';
-
-      for (let offset = 0; offset < audioFile.size; offset += MAX_UPLOAD_CHUNK_BYTES) {
-        const slice = audioFile.slice(offset, offset + MAX_UPLOAD_CHUNK_BYTES);
-        const appendQuery = offset > 0 ? '?append=1' : '';
-        await postBinaryWithRetry(
-          `/api/render/${jobId}/audio${appendQuery}`,
-          slice,
-          {
-            'Content-Type': 'application/octet-stream',
-            'x-audio-ext': ext,
-          },
-          'Không thể tải file Audio lên máy chủ render',
-          options?.signal,
-        );
-      }
-    }
-
-    const safeWidth = encoding.width & ~1;
-    const safeHeight = encoding.height & ~1;
-    offscreenCanvas = document.createElement('canvas');
-    offscreenCanvas.width = safeWidth;
-    offscreenCanvas.height = safeHeight;
-    const ctx = offscreenCanvas.getContext('2d', { alpha: false });
-    if (!ctx) {
-      throw new Error('Không khởi tạo được Canvas 2D.');
-    }
-
-    const totalFrames = Math.max(1, Math.ceil(project.duration * encoding.fps));
-    let batch: Blob[] = [];
-    let batchBytes = 0;
-    let pendingUpload: Promise<Response | void> = Promise.resolve();
-
-    const flushBatch = async () => {
-      if (batch.length === 0) return;
-      const chunkBlob = new Blob(batch, { type: 'application/octet-stream' });
-      batch = [];
-      batchBytes = 0;
-      await pendingUpload;
-      pendingUpload = postBinaryWithRetry(
-        `/api/render/${jobId}/frames`,
-        chunkBlob,
-        { 'Content-Type': 'application/octet-stream' },
-        'Lỗi truyền khung hình lên server',
-        options?.signal,
-      );
-    };
-
-    for (let i = 0; i < totalFrames; i++) {
-      checkAborted(options?.signal);
-      const t = Math.min(project.duration, i / encoding.fps);
-      if (options?.onBeforeRenderFrame) {
-        await options.onBeforeRenderFrame(t);
-      } else {
-        await seekProjectVideoAssets(project, t);
-      }
-      if (options?.customRenderFrame) {
-        options.customRenderFrame(ctx, t, safeWidth, safeHeight);
-      } else {
-        renderScaledProjectFrame(ctx, project, t, safeWidth, safeHeight);
-      }
-      const jpeg = await canvasToJpegBlob(offscreenCanvas, 0.85);
-
-      if (
-        batch.length > 0 &&
-        (batch.length >= MAX_FRAMES_PER_BATCH || batchBytes + jpeg.size > MAX_UPLOAD_CHUNK_BYTES)
-      ) {
-        await flushBatch();
-        await new Promise((r) => setTimeout(r, 0));
-      }
-
-      batch.push(jpeg);
-      batchBytes += jpeg.size;
-
-      if (i % 6 === 0 || i === totalFrames - 1) {
-        onProgress({
-          progress: 0.05 + ((i + 1) / totalFrames) * 0.8,
-          stageLabel: `Đang vẽ frame ${i + 1}/${totalFrames}...`,
-        });
-      }
-
-      if (i === totalFrames - 1) {
-        await flushBatch();
-      }
-    }
-
-    await pendingUpload;
-    checkAborted(options?.signal);
-    onProgress({ progress: 0.9, stageLabel: 'FFmpeg đang xuất MP4 ra ổ cứng...' });
-
-    const resolvedFolder = resolveTabOutputSubfolder(options?.sourceTab, customSavePath);
-    const finishRes = await fetch(`/api/render/${jobId}/finish`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fileName: baseName,
-        saveToDisk: true,
-        savePath: resolvedFolder,
-        sourceTab: options?.sourceTab,
-        companionText: txtBody || undefined,
-      }),
-      signal: options?.signal,
-    });
-
-    if (!finishRes.ok) {
-      const errBody = await finishRes.json().catch(() => ({}));
-      throw new Error((errBody as { error?: string }).error || 'FFmpeg không thể lưu MP4.');
-    }
-
-    const data = (await finishRes.json()) as { savedPath: string; relativePath?: string; bytes: number };
-    onProgress({ progress: 1, stageLabel: 'Hoàn tất!' });
-    return {
-      savedPath: data.savedPath,
-      relativePath: data.relativePath,
-      fileName: targetFileName,
-      byteLength: data.bytes,
-    };
-  } catch (err) {
-    void fetch(`/api/render/${jobId}`, { method: 'DELETE' }).catch(() => undefined);
-    if (options?.signal?.aborted || (err instanceof Error && err.name === 'AbortError')) {
-      throw new ExportAbortedError();
-    }
-    throw err;
-  } finally {
-    if (offscreenCanvas) {
-      offscreenCanvas.width = 0;
-      offscreenCanvas.height = 0;
-    }
-  }
+    },
+  );
+  return {
+    savedPath: serverRes.savedPath || targetFileName,
+    relativePath: serverRes.relativePath,
+    fileName: serverRes.fileName || targetFileName,
+    byteLength: serverRes.byteLength,
+  };
 }

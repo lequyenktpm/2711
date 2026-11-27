@@ -28,5 +28,6 @@ if not exist "node_modules" (
 )
 
 set PORT=3030
+set DISABLE_HMR=true
 start "" http://localhost:3030
 npx tsx server.ts

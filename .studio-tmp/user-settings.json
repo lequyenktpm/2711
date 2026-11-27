@@ -1,5 +1,5 @@
 {
-  "activeTab": "edu-studio",
+  "activeTab": "studio",
   "studio": {
     "aspectRatio": "9:16",
     "resolution": "540p",
@@ -39,15 +39,15 @@
     "inlineRate": 1,
     "inlineWhisperSync": true
   },
-  "updatedAt": 1795786454233,
+  "updatedAt": 1795800824486,
   "reels": {
-    "reelCreationMode": "source",
+    "reelCreationMode": "translation",
     "creatorTopicHint": "",
     "creatorFormat": "auto",
-    "creatorLearningLang": "en",
-    "creatorLevel": "B1",
-    "creatorDurationMinutes": 1,
-    "creatorItemCount": 5,
+    "creatorLearningLang": "ja",
+    "creatorLevel": "N5",
+    "creatorDurationMinutes": 30,
+    "creatorItemCount": 60,
     "lessonTitle": "Hotel Check-in & Polite Requests",
     "rawText": "## Hotel Check-in & Polite Requests\nWhen arriving at a hotel, polite requests sound much warmer than direct commands.\n1. I'd like to check in under the name Alex Morgan.\n2. Could we have a quiet room on a higher floor?\n3. What time is breakfast served tomorrow morning?\n\nTrue / False Quiz\nQ1. Direct commands like \"Give me the room key\" always sound friendlier than \"Could I have\".\n(A) True\n(B) False\nAnswer: B\nExplanation: Modal verbs like \"Could I\" soften the request and sound polite in hospitality English.",
     "includeQuizInPrompt": "auto",
@@ -78,13 +78,13 @@
     "mp4Fps": 24,
     "previewViewMode": "video",
     "layoutOverridesByAspect": {},
-    "translationTopicHint": "",
+    "translationTopicHint": " Think in English Naturally | 99 Everyday Sentences to Improve Your Speaking",
     "translationCustomLines": "",
-    "translationLearningLang": "en",
+    "translationLearningLang": "ja",
     "translationLevel": "B1",
-    "translationDurationMinutes": 2,
-    "translationItemCount": 6,
-    "translationThinkSec": 4,
+    "translationDurationMinutes": 15,
+    "translationItemCount": 60,
+    "translationThinkSec": 5,
     "translationRepeatCount": 2,
     "translationIncludeNuance": true,
     "sourceDurationMinutes": 2,
@@ -137,7 +137,7 @@
         "mode": "vocab",
         "targetLang": "learning",
         "ttsProvider": "auto",
-        "ttsVoice": "en-US-JennyNeural",
+        "ttsVoice": "ja-JP-NanamiNeural",
         "enableDualTts": false,
         "splitAudioByRole": false,
         "explanationTtsVoice": "en-US-JennyNeural",
@@ -165,180 +165,7 @@
         "mp4Quality": "standard",
         "mp4Fps": 24,
         "previewViewMode": "video",
-        "layoutOverridesByAspect": {
-          "9:16": {
-            "reel-stage-0": {
-              "x": 540,
-              "y": 353,
-              "width": 920,
-              "scale": 0.9
-            },
-            "reel-stage-1": {
-              "x": 540,
-              "y": 353,
-              "width": 920,
-              "scale": 0.9
-            },
-            "reel-stage-2": {
-              "x": 540,
-              "y": 353,
-              "width": 920,
-              "scale": 0.9
-            },
-            "reel-stage-3": {
-              "x": 540,
-              "y": 353,
-              "width": 920,
-              "scale": 0.9
-            },
-            "reel-stage-4": {
-              "x": 540,
-              "y": 353,
-              "width": 920,
-              "scale": 0.9
-            },
-            "reel-stage-5": {
-              "x": 540,
-              "y": 353,
-              "width": 920,
-              "scale": 0.9
-            },
-            "reel-stage-6": {
-              "x": 540,
-              "y": 353,
-              "width": 920,
-              "scale": 0.9
-            },
-            "reel-stage-7": {
-              "x": 540,
-              "y": 353,
-              "width": 920,
-              "scale": 0.9
-            },
-            "reel-stage-8": {
-              "x": 540,
-              "y": 353,
-              "width": 920,
-              "scale": 0.9
-            },
-            "reel-stage-9": {
-              "x": 540,
-              "y": 353,
-              "width": 920,
-              "scale": 0.9
-            },
-            "reel-pill-0": {
-              "x": 540,
-              "y": 465,
-              "width": 640,
-              "scale": 0.92
-            },
-            "reel-pill-1": {
-              "x": 540,
-              "y": 465,
-              "width": 640,
-              "scale": 0.92
-            },
-            "reel-pill-2": {
-              "x": 540,
-              "y": 465,
-              "width": 640,
-              "scale": 0.92
-            },
-            "reel-pill-3": {
-              "x": 540,
-              "y": 465,
-              "width": 640,
-              "scale": 0.92
-            },
-            "reel-pill-4": {
-              "x": 540,
-              "y": 465,
-              "width": 640,
-              "scale": 0.92
-            },
-            "reel-pill-5": {
-              "x": 540,
-              "y": 465,
-              "width": 640,
-              "scale": 0.92
-            },
-            "reel-pill-6": {
-              "x": 540,
-              "y": 465,
-              "width": 640,
-              "scale": 0.92
-            },
-            "reel-pill-7": {
-              "x": 540,
-              "y": 465,
-              "width": 640,
-              "scale": 0.92
-            },
-            "reel-pill-8": {
-              "x": 540,
-              "y": 465,
-              "width": 640,
-              "scale": 0.92
-            },
-            "reel-pill-9": {
-              "x": 540,
-              "y": 465,
-              "width": 640,
-              "scale": 0.92
-            },
-            "reel-card-7": {
-              "x": 540,
-              "y": 660,
-              "width": 860,
-              "scale": 0.9
-            },
-            "reel-cartoon-host-main": {
-              "x": 540,
-              "y": 1169,
-              "width": 820,
-              "scale": 0.92
-            }
-          },
-          "16:9": {
-            "reel-pill-0": {
-              "x": 1365,
-              "y": 217,
-              "width": 740,
-              "scale": 0.88
-            },
-            "reel-pill-1": {
-              "x": 1365,
-              "y": 217,
-              "width": 740,
-              "scale": 0.88
-            },
-            "reel-pill-2": {
-              "x": 1365,
-              "y": 220,
-              "width": 740,
-              "scale": 0.88
-            },
-            "reel-pill-3": {
-              "x": 1365,
-              "y": 217,
-              "width": 740,
-              "scale": 0.88
-            },
-            "reel-pill-4": {
-              "x": 1365,
-              "y": 217,
-              "width": 740,
-              "scale": 0.88
-            },
-            "reel-pill-5": {
-              "x": 1365,
-              "y": 217,
-              "width": 740,
-              "scale": 0.88
-            }
-          }
-        },
+        "layoutOverridesByAspect": {},
         "enableCountdownSfx": true,
         "descriptionStyle": "auto",
         "enableLearningAudio": true
@@ -346,9 +173,9 @@
       "translation": {
         "includeQuizInPrompt": "auto",
         "mode": "vocab",
-        "targetLang": "Tiếng Việt",
+        "targetLang": "English",
         "ttsProvider": "auto",
-        "ttsVoice": "en-US-JennyNeural",
+        "ttsVoice": "ja-JP-NanamiNeural",
         "enableDualTts": false,
         "splitAudioByRole": false,
         "explanationTtsVoice": "en-US-JennyNeural",

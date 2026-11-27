@@ -132,6 +132,13 @@ import {
   USER_SETTINGS_HYDRATED_EVENT,
   USER_SETTINGS_RESET_EVENT,
 } from '../utils/studioSettingsStore';
+import {
+  checkRenderConcurrencyConflict,
+  finishRenderTaskSlot,
+  getRenderTasksSnapshot,
+  startRenderTaskSlot,
+  updateRenderTaskSlot,
+} from '../engine/renderTaskManager';
 import { ApiKeyInlineControl } from './ApiKeyInlineControl';
 import { emitOutputUpdated } from './GlobalOutputPanel';
 
@@ -812,10 +819,13 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
         if (!stRes.ok) return;
         const stData = (await stRes.json()) as { progress?: number; stageLabel?: string };
         if (typeof stData.progress === 'number' && stData.progress > 0) {
-          setMergeProgress(Math.min(99, Math.max(25, stData.progress)));
+          const pct = Math.min(99, Math.max(25, stData.progress));
+          setMergeProgress(pct);
+          updateRenderTaskSlot('edu:merge', { progress: pct / 100 });
         }
         if (stData.stageLabel) {
           setMergeStatus(`${progressPrefix}${stData.stageLabel}`);
+          updateRenderTaskSlot('edu:merge', { stageLabel: `${progressPrefix}${stData.stageLabel}` });
         }
       } catch {
         // ignore poll glitch
@@ -882,11 +892,30 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
     if (mergeMode === 'single' && (!mergeVideoFile || !mergeAudioFile)) return;
     if (mergeMode === 'batch' && batchMatchedPairs.matched.length === 0) return;
 
+    const conflict = checkRenderConcurrencyConflict(getRenderTasksSnapshot(), 'edu:merge');
+    if (conflict) {
+      setMergeError(conflict.message);
+      return;
+    }
+
     setMergeError(null);
     setMergeProgress(2);
     setIsMerging(true);
     const controller = new AbortController();
     mergeAbortRef.current = controller;
+    startRenderTaskSlot('edu:merge', {
+      kind: 'render',
+      title:
+        mergeMode === 'single'
+          ? mergeOutputName.trim() || mergeVideoFile?.name || 'Ghép Video'
+          : `Ghép Batch (${batchMatchedPairs.matched.length} cặp)`,
+      stageLabel: 'Đang khởi tạo FFmpeg ghép video...',
+      progress: 0.02,
+      onAbort: () => handleCancelMerge(),
+    });
+
+    let mergeOutcome: 'done' | 'error' | 'aborted' = 'error';
+    let mergeOutcomeMsg: string | null = null;
 
     try {
       if (mergeMode === 'single' && mergeVideoFile && mergeAudioFile) {
@@ -895,9 +924,10 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
           fallback: 'Edu Merged Video',
         });
         const data = await runSingleMergeJob(mergeVideoFile, mergeAudioFile, resolvedName, controller);
-        setMergeStatus(
-          `Hoàn tất! Đã lưu ${data.fileName} (${data.savedPath})${data.copiedLocal ? ` · Đã lưu thêm vào "${localDirName}"` : ''}`,
-        );
+        const doneMsg = `Hoàn tất! Đã lưu ${data.fileName} (${data.savedPath})${data.copiedLocal ? ` · Đã lưu thêm vào "${localDirName}"` : ''}`;
+        setMergeStatus(doneMsg);
+        mergeOutcome = 'done';
+        mergeOutcomeMsg = doneMsg;
         emitOutputUpdated({ relativePath: data.relativePath, sourceTab: 'Edu Merge' });
         playExportCompleteSound();
       } else {
@@ -917,22 +947,32 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
         }
         emitOutputUpdated({ relativePath: lastRel, sourceTab: 'Edu Merge' });
         playExportCompleteSound();
-        setMergeStatus(
-          `Hoàn tất Batch! Đã ghép ${pairs.length} cặp video+audio vào thư mục Output${localDirHandle ? ` và "${localDirName}"` : ''}.`,
-        );
+        const doneMsg = `Hoàn tất Batch! Đã ghép ${pairs.length} cặp video+audio vào thư mục Output${localDirHandle ? ` và "${localDirName}"` : ''}.`;
+        setMergeStatus(doneMsg);
+        mergeOutcome = 'done';
+        mergeOutcomeMsg = doneMsg;
       }
       await refreshOutputFolders();
     } catch (err) {
       if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
-        setMergeStatus('Đã hủy tác vụ ghép video.');
+        mergeOutcome = 'aborted';
+        mergeOutcomeMsg = 'Đã hủy tác vụ ghép video.';
+        setMergeStatus(mergeOutcomeMsg);
       } else {
-        setMergeError(err instanceof Error ? err.message : 'Lỗi FFmpeg ghép video.');
+        mergeOutcome = 'error';
+        mergeOutcomeMsg = err instanceof Error ? err.message : 'Lỗi FFmpeg ghép video.';
+        setMergeError(mergeOutcomeMsg);
         setMergeStatus('');
       }
     } finally {
       activeMergeJobIdRef.current = null;
       mergeAbortRef.current = null;
       setIsMerging(false);
+      finishRenderTaskSlot('edu:merge', {
+        status: mergeOutcome,
+        notice: mergeOutcome === 'done' ? mergeOutcomeMsg : null,
+        error: mergeOutcome === 'error' || mergeOutcome === 'aborted' ? mergeOutcomeMsg : null,
+      });
     }
   };
 
@@ -1201,13 +1241,28 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
 
   const handleRunKaraokeMix = async () => {
     if (!kmVideoFile || isRenderingKm) return;
+    const conflict = checkRenderConcurrencyConflict(getRenderTasksSnapshot(), 'edu:karaoke');
+    if (conflict) {
+      setKmError(conflict.message);
+      return;
+    }
+
     setKmError(null);
     setIsRenderingKm(true);
     setKmProgress(3);
     setKmStatus('Đang tạo job Karaoke & Audio Mix...');
     const controller = new AbortController();
     kmAbortRef.current = controller;
+    startRenderTaskSlot('edu:karaoke', {
+      kind: 'render',
+      title: kmOutputName.trim() || kmVideoFile.name,
+      stageLabel: 'Đang tạo job Karaoke & Audio Mix...',
+      progress: 0.03,
+      onAbort: () => handleCancelKaraokeMix(),
+    });
     let pollTimer: number | null = null;
+    let kmOutcome: 'done' | 'error' | 'aborted' = 'error';
+    let kmOutcomeMsg: string | null = null;
 
     try {
       const startRes = await fetch('/api/studio/job/start', {
@@ -1227,21 +1282,28 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
 
       setKmProgress(8);
       setKmStatus(`Đang tải Video nền (${kmVideoFile.name})...`);
+      updateRenderTaskSlot('edu:karaoke', {
+        progress: 0.08,
+        stageLabel: `Đang tải Video nền (${kmVideoFile.name})...`,
+      });
       await uploadStudioFileChunked(jobId, 'video', kmVideoFile, controller.signal);
 
       if (kmMusicFile) {
         setKmProgress(14);
         setKmStatus(`Đang tải Nhạc nền (${kmMusicFile.name})...`);
+        updateRenderTaskSlot('edu:karaoke', { progress: 0.14 });
         await uploadStudioFileChunked(jobId, 'music', kmMusicFile, controller.signal);
       }
       if (kmSfxFile) {
         setKmProgress(18);
         setKmStatus(`Đang tải Ambient SFX (${kmSfxFile.name})...`);
+        updateRenderTaskSlot('edu:karaoke', { progress: 0.18 });
         await uploadStudioFileChunked(jobId, 'sfx', kmSfxFile, controller.signal);
       }
       if (kmVoiceFile) {
         setKmProgress(22);
         setKmStatus(`Đang tải Voiceover (${kmVoiceFile.name})...`);
+        updateRenderTaskSlot('edu:karaoke', { progress: 0.22 });
         await uploadStudioFileChunked(jobId, 'voice', kmVoiceFile, controller.signal);
       }
 
@@ -1266,16 +1328,23 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
 
       setKmProgress(25);
       setKmStatus('FFmpeg đang hòa âm Ducking, đốt Karaoke (.ass) & Watermark/Outro...');
+      updateRenderTaskSlot('edu:karaoke', {
+        progress: 0.25,
+        stageLabel: 'FFmpeg đang hòa âm & đốt Karaoke...',
+      });
       pollTimer = window.setInterval(async () => {
         try {
           const stRes = await fetch(`/api/studio/job/${jobId}/status`, { signal: controller.signal });
           if (!stRes.ok) return;
           const stData = (await stRes.json()) as { progress?: number; stageLabel?: string };
           if (typeof stData.progress === 'number' && stData.progress > 0) {
-            setKmProgress(Math.min(99, Math.max(25, stData.progress)));
+            const pct = Math.min(99, Math.max(25, stData.progress));
+            setKmProgress(pct);
+            updateRenderTaskSlot('edu:karaoke', { progress: pct / 100 });
           }
           if (stData.stageLabel) {
             setKmStatus(stData.stageLabel);
+            updateRenderTaskSlot('edu:karaoke', { stageLabel: stData.stageLabel });
           }
         } catch {
           // ignore poll glitch
@@ -1342,15 +1411,22 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
           extraLocalMsg = ` · Đã lưu thêm vào "${localDirName}"`;
         }
       }
-      setKmStatus(`Hoàn tất! Đã lưu ${data.fileName} (${data.savedPath})${extraLocalMsg}`);
+      const doneMsg = `Hoàn tất! Đã lưu ${data.fileName} (${data.savedPath})${extraLocalMsg}`;
+      setKmStatus(doneMsg);
+      kmOutcome = 'done';
+      kmOutcomeMsg = doneMsg;
       emitOutputUpdated({ relativePath: data.relativePath, sourceTab: 'Edu Karaoke' });
       playExportCompleteSound();
       await refreshOutputFolders();
     } catch (err) {
       if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
-        setKmStatus('Đã hủy tác vụ Karaoke & Mix.');
+        kmOutcome = 'aborted';
+        kmOutcomeMsg = 'Đã hủy tác vụ Karaoke & Mix.';
+        setKmStatus(kmOutcomeMsg);
       } else {
-        setKmError(err instanceof Error ? err.message : 'Lỗi FFmpeg Karaoke & Mix.');
+        kmOutcome = 'error';
+        kmOutcomeMsg = err instanceof Error ? err.message : 'Lỗi FFmpeg Karaoke & Mix.';
+        setKmError(kmOutcomeMsg);
         setKmStatus('');
       }
     } finally {
@@ -1358,6 +1434,11 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
       activeKmJobIdRef.current = null;
       kmAbortRef.current = null;
       setIsRenderingKm(false);
+      finishRenderTaskSlot('edu:karaoke', {
+        status: kmOutcome,
+        notice: kmOutcome === 'done' ? kmOutcomeMsg : null,
+        error: kmOutcome === 'error' || kmOutcome === 'aborted' ? kmOutcomeMsg : null,
+      });
     }
   };
 
@@ -2630,12 +2711,27 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
 
   const handleExportReadingAlongMp4 = async () => {
     if (isExportingReadingMp4) return;
+    const conflict = checkRenderConcurrencyConflict(getRenderTasksSnapshot(), 'edu:reading');
+    if (conflict) {
+      setAlignError(conflict.message);
+      return;
+    }
+
     setAlignError(null);
     setIsExportingReadingMp4(true);
     setReadingExportProgress(0);
     setReadingExportStatus('Đang dựng video Reading Along + Intro/Outro + Nhạc nền...');
     const controller = new AbortController();
     readingAbortRef.current = controller;
+    startRenderTaskSlot('edu:reading', {
+      kind: 'render',
+      title: readingTitle || readingTopic || 'Reading Along',
+      stageLabel: 'Đang chuẩn bị render Reading Along MP4...',
+      progress: 0.01,
+      onAbort: () => controller.abort(),
+    });
+    let readingOutcome: 'done' | 'error' | 'aborted' = 'error';
+    let readingOutcomeMsg: string | null = null;
 
     try {
       let targetAudio = alignFile;
@@ -2650,7 +2746,9 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
       let targetWatermark = watermarkOutro;
 
       if (!targetAudio || (!isCustomAlignAudio && synthesizedReadingSig !== currentReadingSig)) {
-        setReadingExportStatus('Đang tạo lại giọng đọc Intro/Outro & hòa nhạc nền mới nhất...');
+        const ttsLbl = 'Đang tạo lại giọng đọc Intro/Outro & hòa nhạc nền mới nhất...';
+        setReadingExportStatus(ttsLbl);
+        updateRenderTaskSlot('edu:reading', { stageLabel: ttsLbl, progress: 0.04 });
         const bundle = await handleGenerateReadingTts();
         if (!bundle) {
           throw new Error('Không thể tạo audio bài đọc trước khi xuất MP4.');
@@ -2706,6 +2804,7 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
         ({ progress, stageLabel }) => {
           setReadingExportProgress(progress);
           setReadingExportStatus(stageLabel);
+          updateRenderTaskSlot('edu:reading', { progress, stageLabel });
         },
         {
           aspectRatio: readingAspect,
@@ -2752,20 +2851,32 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
         },
       );
 
-      setReadingExportStatus(`Hoàn tất! Đã lưu ${saved.fileName} kèm ${baseStem}.txt (${saved.savedPath}).`);
+      const doneMsg = `Hoàn tất! Đã lưu ${saved.fileName} kèm ${baseStem}.txt (${saved.savedPath}).`;
+      setReadingExportStatus(doneMsg);
+      readingOutcome = 'done';
+      readingOutcomeMsg = doneMsg;
       emitOutputUpdated({ relativePath: saved.relativePath, sourceTab: 'Reading Along' });
       playExportCompleteSound();
       await refreshOutputFolders();
     } catch (err) {
       if (err instanceof ExportAbortedError || controller.signal.aborted) {
-        setReadingExportStatus('Đã hủy xuất Reading Along MP4.');
+        readingOutcome = 'aborted';
+        readingOutcomeMsg = 'Đã hủy xuất Reading Along MP4.';
+        setReadingExportStatus(readingOutcomeMsg);
       } else {
-        setAlignError(err instanceof Error ? err.message : 'Lỗi xuất Reading Along MP4.');
+        readingOutcome = 'error';
+        readingOutcomeMsg = err instanceof Error ? err.message : 'Lỗi xuất Reading Along MP4.';
+        setAlignError(readingOutcomeMsg);
         setReadingExportStatus('');
       }
     } finally {
       readingAbortRef.current = null;
       setIsExportingReadingMp4(false);
+      finishRenderTaskSlot('edu:reading', {
+        status: readingOutcome,
+        notice: readingOutcome === 'done' ? readingOutcomeMsg : null,
+        error: readingOutcome === 'error' || readingOutcome === 'aborted' ? readingOutcomeMsg : null,
+      });
     }
   };
 

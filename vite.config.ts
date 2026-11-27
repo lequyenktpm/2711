@@ -40,8 +40,20 @@ export default defineConfig(() => {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
-      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      // When watching locally, ignore runtime/output/temp directories so rendering or saving never triggers browser reload.
+      watch:
+        process.env.DISABLE_HMR === 'true'
+          ? null
+          : {
+              ignored: [
+                '**/output/**',
+                '**/.studio-tmp/**',
+                '**/.render-tmp/**',
+                '**/data/**',
+                '**/.playwright-cli/**',
+                '**/batch-output/**',
+              ],
+            },
     },
   };
 });

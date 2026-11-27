@@ -175,6 +175,28 @@ import {
   USER_SETTINGS_HYDRATED_EVENT,
   USER_SETTINGS_RESET_EVENT,
 } from '../utils/studioSettingsStore';
+import {
+  clearReelsDraftInterruptFlag,
+  loadReelsDraftCheckpoint,
+  ReelsDraftCheckpoint,
+  saveReelsDraftCheckpoint,
+} from '../engine/renderCheckpointStore';
+import {
+  abortRenderTaskSlot,
+  checkRenderConcurrencyConflict,
+  ConcurrencyConflictInfo,
+  finishRenderTaskSlot,
+  getActiveBlockingTaskFromMap,
+  getAppTabForSlot,
+  getRenderTask,
+  getRenderTasksSnapshot,
+  RenderTaskSlotId,
+  requestNavigateToTaskSlot,
+  startRenderTaskSlot,
+  subscribeTaskNavigation,
+  updateRenderTaskSlot,
+  useRenderTasks,
+} from '../engine/renderTaskManager';
 
 interface EnglishReelsTabProps {
   onSendToStudio: (project: LessonProject, audioFile: File | null) => void;
@@ -590,13 +612,18 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
   const [bgUploadError, setBgUploadError] = useState<string | null>(null);
   const [bgAssetVersion, setBgAssetVersion] = useState(0);
 
-  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
+  const [localIsGeneratingAudio, setLocalIsGeneratingAudio] = useState(false);
   const [isGeneratingAiCards, setIsGeneratingAiCards] = useState(false);
   const [isPreviewingVoice, setIsPreviewingVoice] = useState(false);
   const [isResyncingReels, setIsResyncingReels] = useState(false);
-  const [ttsProgress, setTtsProgress] = useState(0);
-  const [ttsStageLabel, setTtsStageLabel] = useState('');
-  const [studioError, setStudioError] = useState<string | null>(null);
+  const [localTtsProgress, setLocalTtsProgress] = useState(0);
+  const [localTtsStageLabel, setLocalTtsStageLabel] = useState('');
+  const [modeErrors, setModeErrors] = useState<Partial<Record<ReelCreationMode, string | null>>>({});
+  const [modeNotices, setModeNotices] = useState<Partial<Record<ReelCreationMode, string | null>>>({});
+  const [concurrencyConflict, setConcurrencyConflict] = useState<ConcurrencyConflictInfo | null>(null);
+  const [interruptedDrafts, setInterruptedDrafts] = useState<
+    Array<{ draft: ReelsDraftCheckpoint; audioFile: File | null }>
+  >([]);
   const [previewAudioUrl, setPreviewAudioUrl] = useState<string | null>(null);
   const [bgmPreset, setBgmPreset] = useState<StudioBgmPresetId>(
     () => initialModeSaved.bgmPreset || DEFAULT_BGM_PRESET,
@@ -675,10 +702,6 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
   const [synthesizedAudioSig, setSynthesizedAudioSig] = useState<string>('');
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [videoTime, setVideoTime] = useState(0.5);
-  const [isExportingVideo, setIsExportingVideo] = useState(false);
-  const [exportProgress, setExportProgress] = useState(0);
-  const [exportStageLabel, setExportStageLabel] = useState('');
-  const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [mp4Resolution, setMp4Resolution] = useState<ExportResolutionId>(
     () => initialModeSaved.mp4Resolution || DEFAULT_MP4_EXPORT_SETTINGS.resolution,
   );
@@ -688,6 +711,44 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
   const [mp4Fps, setMp4Fps] = useState<ExportFpsOption>(
     () => initialModeSaved.mp4Fps || DEFAULT_MP4_EXPORT_SETTINGS.fps,
   );
+
+  // Per-sub-tab isolated Render/TTS task states via shared renderTaskManager
+  const renderTasks = useRenderTasks();
+  const activeModeRef = useRef<ReelCreationMode>(reelCreationMode);
+  activeModeRef.current = reelCreationMode;
+  const exportAbortByModeRef = useRef<Partial<Record<ReelCreationMode, AbortController | null>>>({});
+
+  const getReelsSlotId = (m: ReelCreationMode): RenderTaskSlotId =>
+    m === 'creator' ? 'reels:creator' : m === 'translation' ? 'reels:translation' : 'reels:source';
+  const currentSlotId = getReelsSlotId(reelCreationMode);
+  const currentSlotTask = renderTasks[currentSlotId] ?? getRenderTask(currentSlotId);
+  const isExportingVideo = currentSlotTask.status === 'rendering';
+  const isGeneratingAudio = localIsGeneratingAudio || currentSlotTask.status === 'synthesizing';
+  const exportProgress = isExportingVideo ? currentSlotTask.progress : 0;
+  const exportStageLabel = isExportingVideo ? currentSlotTask.stageLabel : '';
+  const ttsProgress =
+    currentSlotTask.status === 'synthesizing'
+      ? Math.round(currentSlotTask.progress * 100)
+      : localTtsProgress;
+  const ttsStageLabel =
+    currentSlotTask.status === 'synthesizing' ? currentSlotTask.stageLabel : localTtsStageLabel;
+  const otherActiveBlockingTask = useMemo(
+    () => getActiveBlockingTaskFromMap(renderTasks, currentSlotId),
+    [renderTasks, currentSlotId],
+  );
+  const studioError = modeErrors[reelCreationMode] ?? null;
+  const exportNotice = modeNotices[reelCreationMode] ?? null;
+
+  const setModeStudioError = (modeKey: ReelCreationMode, msg: string | null) => {
+    setModeErrors((prev) => ({ ...prev, [modeKey]: msg }));
+  };
+  const setModeExportNotice = (modeKey: ReelCreationMode, msg: string | null) => {
+    setModeNotices((prev) => ({ ...prev, [modeKey]: msg }));
+  };
+  const setStudioError = (msg: string | null) => setModeStudioError(activeModeRef.current, msg);
+  const setExportNotice = (msg: string | null) => setModeExportNotice(activeModeRef.current, msg);
+  const setTtsProgress = (pct: number) => setLocalTtsProgress(pct);
+  const setTtsStageLabel = (lbl: string) => setLocalTtsStageLabel(lbl);
 
   const currentAudioSignature = useMemo(
     () =>
@@ -752,6 +813,33 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
   const lastRafTsRef = useRef<number | null>(null);
   const exportAbortRef = useRef<AbortController | null>(null);
   const lastCountdownSfxKeyRef = useRef<string>('');
+  const switchModeRef = useRef<((m: ReelCreationMode) => void) | null>(null);
+
+  useEffect(() => {
+    const scanReelsRecovery = async () => {
+      try {
+        const modes: ReelCreationMode[] = ['source', 'creator', 'translation'];
+        const results = await Promise.all(modes.map((m) => loadReelsDraftCheckpoint(m)));
+        const pending = results.filter(
+          (res): res is { draft: ReelsDraftCheckpoint; audioFile: File | null } =>
+            Boolean(res && res.draft.activeRenderInterrupted && res.draft.cards.length > 0),
+        );
+        setInterruptedDrafts(pending);
+      } catch {
+        // ignore recovery scan failures
+      }
+    };
+    void scanReelsRecovery();
+  }, []);
+
+  useEffect(() => {
+    return subscribeTaskNavigation((slotId) => {
+      const target = getAppTabForSlot(slotId);
+      if (target.activeTab === 'reels' && target.reelsMode) {
+        switchModeRef.current?.(target.reelsMode);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     const onHydrated = (ev: Event) => {
@@ -1979,12 +2067,11 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
   const switchReelCreationMode = (nextMode: ReelCreationMode) => {
     if (nextMode === reelCreationMode) return;
     setIsVideoPlaying(false);
+    setConcurrencyConflict(null);
     setPreviewAudioUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return null;
     });
-    setStudioError(null);
-    setExportNotice(null);
 
     // Snapshot current workspace & ALL visual/audio/export settings so each of the 3 sub-tabs stays 100% isolated
     modeWorkspacesRef.current[reelCreationMode] = {
@@ -2468,16 +2555,37 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     }
   };
 
+  switchModeRef.current = switchReelCreationMode;
+
   const synthesizeLessonAudioBundle = async (
     quizPositionByCard?: Map<number, number>,
     ttsOverride?: { provider?: string; strictProvider?: boolean },
+    runOptions?: {
+      targetMode?: ReelCreationMode;
+      slotId?: RenderTaskSlotId;
+      activeRenderInterrupted?: boolean;
+    },
   ): Promise<{
     audioFile: File;
     durations: number[] | undefined;
     timings: ReelCardTimingMeta[] | undefined;
     project: LessonProject;
   }> => {
+    const originMode = runOptions?.targetMode ?? activeModeRef.current;
+    const originSlotId = runOptions?.slotId ?? getReelsSlotId(originMode);
     const signatureAtStart = currentAudioSignature;
+    const cardsAtStart = cards;
+    const titleAtStart = lessonTitle;
+    const levelAtStart =
+      originMode === 'creator'
+        ? creatorLevel
+        : originMode === 'translation'
+          ? translationLevel
+          : parsedLessonLevel;
+    const rawTextAtStart = rawText;
+    const pastedAiJsonAtStart = pastedAiJson;
+    const reelModeAtStart = mode;
+    const langAtStart = detectedLearningLangForDesc;
     const allowExplAudio = enableDualTts && targetLang !== 'none';
     const allowLearningAudio = enableLearningAudio;
     const roleSeparated = splitAudioByRole && allowExplAudio;
@@ -2785,8 +2893,16 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         segments,
       },
       (pct, lbl) => {
-        setTtsProgress(pct);
-        setTtsStageLabel(lbl);
+        if (originSlotId) {
+          updateRenderTaskSlot(originSlotId, {
+            progress: Math.min(0.95, Math.max(0.02, pct / 100)),
+            stageLabel: lbl,
+          });
+        }
+        if (activeModeRef.current === originMode) {
+          setTtsProgress(pct);
+          setTtsStageLabel(lbl);
+        }
       },
     );
     if (!data?.audioBase64) {
@@ -2798,24 +2914,23 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         sourceLabel: 'English Reels / Đa Ngôn Ngữ',
         edgeErrors: data.edgeErrors,
         onRetryEdge: async () => {
-          await synthesizeLessonAudioBundle(quizPositionByCard, {
-            provider: 'edge',
-            strictProvider: true,
-          });
+          await synthesizeLessonAudioBundle(
+            quizPositionByCard,
+            {
+              provider: 'edge',
+              strictProvider: true,
+            },
+            runOptions,
+          );
         },
       });
     }
 
-    const activeFileLevel =
-      reelCreationMode === 'creator'
-        ? creatorLevel
-        : reelCreationMode === 'translation'
-          ? translationLevel
-          : parsedLessonLevel;
+    const activeFileLevel = levelAtStart;
     const leveledTitleStem = buildLeveledOutputStem({
-      title: lessonTitle,
+      title: titleAtStart,
       level: activeFileLevel,
-      learningLanguage: detectedLearningLangForDesc,
+      learningLanguage: langAtStart,
       fallback: 'English Reels',
     });
     const rawFileName = cleanDownloadFileName(leveledTitleStem, 'mp3', 'English Reels');
@@ -2982,25 +3097,27 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         return orig;
       });
       syncedProj = resyncProjectTimingToCues(proj, mergedCues, { resyncVisuals: false });
-      setCustomSyncedCues(syncedProj.cues);
-    } else {
-      setCustomSyncedCues(null);
     }
-    setSyncedTimingOffsetMs(0);
-    setSyncedSpeedFactor(1);
+    const nextSyncedCues =
+      data.hasWordBoundaries && Array.isArray(data.cues) && data.cues.length > 0
+        ? syncedProj.cues
+        : null;
 
     let finalAudioFile: File = rawAudioFile;
     const countdownCues = extractCountdownWindowsFromElements(syncedProj.elements);
     const shouldMixBgm = (bgmPreset !== 'none' || Boolean(customBgmFile)) && bgmVolume > 0;
     const shouldMixCountdown = enableCountdownSfx && countdownCues.length > 0;
     if (shouldMixBgm || shouldMixCountdown) {
-      setTtsStageLabel(
+      const mixLbl =
         shouldMixCountdown && shouldMixBgm
           ? 'Đang hòa âm nhạc nền + hiệu ứng đếm ngược...'
           : shouldMixCountdown
             ? 'Đang ghép hiệu ứng âm thanh đếm ngược...'
-            : 'Đang hòa âm nhạc nền + giọng đọc...',
-      );
+            : 'Đang hòa âm nhạc nền + giọng đọc...';
+      updateRenderTaskSlot(originSlotId, { stageLabel: mixLbl });
+      if (activeModeRef.current === originMode) {
+        setTtsStageLabel(mixLbl);
+      }
       const mixed = await mixVoiceWithBgmPreset({
         voiceFile: rawAudioFile,
         bgmPreset,
@@ -3020,22 +3137,66 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
 
     const nextAudioUrl = URL.createObjectURL(finalAudioFile);
     createdAudioUrlsRef.current.add(nextAudioUrl);
-    setGeneratedAudioUrl((prev) => {
-      if (prev && createdAudioUrlsRef.current.has(prev)) {
-        const stillReferenced = Object.entries(modeWorkspacesRef.current).some(
-          ([k, ws]) => k !== reelCreationMode && ws?.generatedAudioUrl === prev,
-        );
-        if (!stillReferenced) {
-          URL.revokeObjectURL(prev);
-          createdAudioUrlsRef.current.delete(prev);
+
+    if (activeModeRef.current === originMode) {
+      setCustomSyncedCues(nextSyncedCues);
+      setSyncedTimingOffsetMs(0);
+      setSyncedSpeedFactor(1);
+      setGeneratedAudioUrl((prev) => {
+        if (prev && createdAudioUrlsRef.current.has(prev)) {
+          const stillReferenced = Object.entries(modeWorkspacesRef.current).some(
+            ([k, ws]) => k !== originMode && ws?.generatedAudioUrl === prev,
+          );
+          if (!stillReferenced) {
+            URL.revokeObjectURL(prev);
+            createdAudioUrlsRef.current.delete(prev);
+          }
         }
+        return nextAudioUrl;
+      });
+      setGeneratedAudioFile(finalAudioFile);
+      setGeneratedDurations(durations);
+      setGeneratedTimings(timings);
+      setSynthesizedAudioSig(signatureAtStart);
+    } else {
+      const existingWs = modeWorkspacesRef.current[originMode];
+      if (existingWs) {
+        modeWorkspacesRef.current[originMode] = {
+          ...existingWs,
+          generatedAudioFile: finalAudioFile,
+          generatedAudioUrl: nextAudioUrl,
+          generatedDurations: durations,
+          generatedTimings: timings,
+          customSyncedCues: nextSyncedCues,
+          syncedTimingOffsetMs: 0,
+          syncedSpeedFactor: 1,
+          synthesizedAudioSig: signatureAtStart,
+        };
       }
-      return nextAudioUrl;
-    });
-    setGeneratedAudioFile(finalAudioFile);
-    setGeneratedDurations(durations);
-    setGeneratedTimings(timings);
-    setSynthesizedAudioSig(signatureAtStart);
+    }
+
+    void saveReelsDraftCheckpoint(
+      {
+        version: 1,
+        mode: originMode,
+        updatedAt: Date.now(),
+        activeRenderInterrupted: Boolean(runOptions?.activeRenderInterrupted),
+        interruptedStage: runOptions?.activeRenderInterrupted ? 'Đã tạo xong Audio, đang render MP4' : undefined,
+        lessonTitle: titleAtStart,
+        parsedLessonLevel: levelAtStart,
+        reelMode: reelModeAtStart,
+        cards: cardsAtStart,
+        rawText: rawTextAtStart,
+        pastedAiJson: pastedAiJsonAtStart,
+        generatedDurations: durations,
+        generatedTimings: timings,
+        customSyncedCues: nextSyncedCues,
+        synthesizedAudioSig: signatureAtStart,
+        hasAudioFile: true,
+        audioFileName: finalAudioFile.name,
+      },
+      finalAudioFile,
+    );
 
     syncedProj = applyElementLayoutOverrides({
       ...syncedProj,
@@ -3076,43 +3237,145 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
 
   const handleGeneratePreviewVideoAudio = async () => {
     if (cards.length === 0) return;
-    setStudioError(null);
-    setExportNotice(null);
-    setIsGeneratingAudio(true);
+    const originMode = activeModeRef.current;
+    const slotId = getReelsSlotId(originMode);
+    const conflict = checkRenderConcurrencyConflict(getRenderTasksSnapshot(), slotId);
+    if (conflict) {
+      setConcurrencyConflict(conflict);
+      setModeStudioError(originMode, conflict.message);
+      return;
+    }
+
+    setConcurrencyConflict(null);
+    setModeStudioError(originMode, null);
+    setModeExportNotice(originMode, null);
+    setLocalIsGeneratingAudio(true);
+    startRenderTaskSlot(slotId, {
+      kind: 'audio',
+      title: lessonTitle || 'Audio Reels',
+      stageLabel: 'Đang tổng hợp giọng đọc TTS...',
+      progress: 0.04,
+    });
+
+    let ttsOk = false;
+    let errMsg: string | null = null;
     try {
-      await synthesizeLessonAudioBundle();
-      setPreviewViewMode('video');
-      setVideoTime(0);
-      setIsVideoPlaying(true);
-      setExportNotice(`Đã tạo giọng đọc chuẩn kèm nhạc nền & đồng bộ vào Video ${reelsAspectRatio}!`);
+      await synthesizeLessonAudioBundle(undefined, undefined, {
+        targetMode: originMode,
+        slotId,
+        activeRenderInterrupted: false,
+      });
+      ttsOk = true;
+      if (activeModeRef.current === originMode) {
+        setPreviewViewMode('video');
+        setVideoTime(0);
+        setIsVideoPlaying(true);
+      }
+      setModeExportNotice(
+        originMode,
+        `Đã tạo giọng đọc chuẩn kèm nhạc nền & đồng bộ vào Video ${reelsAspectRatio}!`,
+      );
     } catch (err) {
-      setStudioError(err instanceof Error ? err.message : 'Lỗi khi tạo Audio TTS.');
+      errMsg = err instanceof Error ? err.message : 'Lỗi khi tạo Audio TTS.';
+      setModeStudioError(originMode, errMsg);
     } finally {
-      setIsGeneratingAudio(false);
+      setLocalIsGeneratingAudio(false);
       setTtsProgress(0);
       setTtsStageLabel('');
+      finishRenderTaskSlot(slotId, {
+        status: ttsOk ? 'done' : 'error',
+        notice: ttsOk ? 'Đã tạo xong Audio Reels' : null,
+        error: errMsg,
+      });
     }
   };
 
   const handleDirectRenderVideo = async () => {
-    if (cards.length === 0 || isExportingVideo) return;
-    setIsVideoPlaying(false);
-    setStudioError(null);
-    setExportNotice(null);
-    setIsExportingVideo(true);
-    setExportProgress(0.02);
-    setExportStageLabel(`Đang chuẩn bị âm thanh & cảnh ${reelsAspectRatio}...`);
+    const originMode = activeModeRef.current;
+    const slotId = getReelsSlotId(originMode);
+    if (cards.length === 0) return;
+    if (getRenderTask(slotId).status === 'rendering') return;
+
+    const conflict = checkRenderConcurrencyConflict(getRenderTasksSnapshot(), slotId);
+    if (conflict) {
+      setConcurrencyConflict(conflict);
+      setModeStudioError(originMode, conflict.message);
+      return;
+    }
 
     const controller = new AbortController();
-    exportAbortRef.current = controller;
+    exportAbortByModeRef.current[originMode] = controller;
+    if (originMode === activeModeRef.current) {
+      exportAbortRef.current = controller;
+    }
+
+    setIsVideoPlaying(false);
+    setConcurrencyConflict(null);
+    setModeStudioError(originMode, null);
+    setModeExportNotice(originMode, null);
+
+    const activeFileLevel =
+      originMode === 'creator'
+        ? creatorLevel
+        : originMode === 'translation'
+          ? translationLevel
+          : parsedLessonLevel;
+    const titleAtStart = lessonTitle;
+    const langAtStart = detectedLearningLangForDesc;
+    const aspectAtStart = reelsAspectRatio;
+    const resAtStart = mp4Resolution;
+    const qualAtStart = mp4Quality;
+    const fpsAtStart = mp4Fps;
+    const descTxtAtStart = videoDescription.txtContent;
+
+    startRenderTaskSlot(slotId, {
+      kind: 'render',
+      title: titleAtStart || 'English Reels',
+      stageLabel: `Đang chuẩn bị âm thanh & cảnh ${aspectAtStart}...`,
+      progress: 0.02,
+      onAbort: () => controller.abort(),
+    });
+
+    void saveReelsDraftCheckpoint(
+      {
+        version: 1,
+        mode: originMode,
+        updatedAt: Date.now(),
+        activeRenderInterrupted: true,
+        interruptedStage: `Đang chuẩn bị render MP4 (${aspectAtStart})`,
+        lessonTitle: titleAtStart,
+        parsedLessonLevel: activeFileLevel,
+        reelMode: mode,
+        cards,
+        rawText,
+        pastedAiJson,
+        generatedDurations,
+        generatedTimings,
+        customSyncedCues,
+        synthesizedAudioSig,
+        hasAudioFile: Boolean(generatedAudioFile),
+        audioFileName: generatedAudioFile?.name,
+      },
+      generatedAudioFile,
+    );
+
+    let outcome: 'done' | 'error' | 'aborted' = 'error';
+    let outcomeMsg: string | null = null;
 
     try {
       let targetProject = previewProject;
       let targetAudio = generatedAudioFile;
 
       if (!targetAudio || synthesizedAudioSig !== currentAudioSignature) {
-        setExportStageLabel('Đang tạo lại giọng đọc & nhạc nền cho video mới...');
-        const bundled = await synthesizeLessonAudioBundle();
+        updateRenderTaskSlot(slotId, {
+          stageLabel: 'Đang tạo lại giọng đọc & nhạc nền cho video mới...',
+          progress: 0.04,
+        });
+        const bundled = await synthesizeLessonAudioBundle(undefined, undefined, {
+          targetMode: originMode,
+          slotId,
+          activeRenderInterrupted: true,
+        });
         targetProject = bundled.project;
         targetAudio = bundled.audioFile;
       }
@@ -3121,16 +3384,10 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         throw new ExportAbortedError();
       }
 
-      const activeFileLevel =
-        reelCreationMode === 'creator'
-          ? creatorLevel
-          : reelCreationMode === 'translation'
-            ? translationLevel
-            : parsedLessonLevel;
       const cleanExportBase = buildLeveledOutputStem({
-        title: lessonTitle,
+        title: titleAtStart,
         level: activeFileLevel,
-        learningLanguage: detectedLearningLangForDesc,
+        learningLanguage: langAtStart,
         fallback: 'English Reels',
       });
 
@@ -3138,14 +3395,13 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         targetProject,
         targetAudio,
         ({ progress, stageLabel }) => {
-          setExportProgress(progress);
-          setExportStageLabel(stageLabel);
+          updateRenderTaskSlot(slotId, { progress, stageLabel });
         },
         {
-          aspectRatio: reelsAspectRatio,
-          resolution: mp4Resolution,
-          quality: mp4Quality,
-          fps: mp4Fps,
+          aspectRatio: aspectAtStart,
+          resolution: resAtStart,
+          quality: qualAtStart,
+          fps: fpsAtStart,
         },
         {
           signal: controller.signal,
@@ -3154,26 +3410,36 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           skipDownload: true,
           savePath: TAB_OUTPUT_SUBFOLDERS.reels,
           sourceTab: 'English Reels',
-          companionText: videoDescription.txtContent,
+          companionText: descTxtAtStart,
         },
       );
 
       emitOutputUpdated({ sourceTab: 'English Reels' });
       playExportCompleteSound();
-      setExportNotice(
-        `Đã xuất thành công ${result.fileName} kèm ${cleanExportBase}.txt${result.savedPath ? ` (lưu tại ${result.savedPath})` : ''}!`,
-      );
+      outcome = 'done';
+      outcomeMsg = `Đã xuất thành công ${result.fileName} kèm ${cleanExportBase}.txt${result.savedPath ? ` (lưu tại ${result.savedPath})` : ''}!`;
+      setModeExportNotice(originMode, outcomeMsg);
     } catch (err) {
       if (err instanceof ExportAbortedError || controller.signal.aborted) {
-        setExportNotice('Đã hủy quá trình render Video.');
+        outcome = 'aborted';
+        outcomeMsg = 'Đã hủy quá trình render Video.';
+        setModeExportNotice(originMode, outcomeMsg);
       } else {
-        setStudioError(err instanceof Error ? err.message : 'Không thể render Video MP4.');
+        outcome = 'error';
+        outcomeMsg = err instanceof Error ? err.message : 'Không thể render Video MP4.';
+        setModeStudioError(originMode, outcomeMsg);
       }
     } finally {
-      exportAbortRef.current = null;
-      setIsExportingVideo(false);
-      setExportProgress(0);
-      setExportStageLabel('');
+      exportAbortByModeRef.current[originMode] = null;
+      if (exportAbortRef.current === controller) {
+        exportAbortRef.current = null;
+      }
+      void clearReelsDraftInterruptFlag(originMode);
+      finishRenderTaskSlot(slotId, {
+        status: outcome,
+        notice: outcome === 'done' ? outcomeMsg : null,
+        error: outcome === 'error' || outcome === 'aborted' ? outcomeMsg : null,
+      });
     }
   };
 
@@ -3245,14 +3511,40 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       return;
     }
 
-    setIsGeneratingAudio(true);
+    const originMode = activeModeRef.current;
+    const slotId = getReelsSlotId(originMode);
+    const conflict = checkRenderConcurrencyConflict(getRenderTasksSnapshot(), slotId);
+    if (conflict) {
+      setConcurrencyConflict(conflict);
+      setStudioError(conflict.message);
+      return;
+    }
+
+    setLocalIsGeneratingAudio(true);
+    startRenderTaskSlot(slotId, {
+      kind: 'audio',
+      title: lessonTitle || 'Audio Reels',
+      stageLabel: 'Đang tổng hợp TTS gửi sang Studio...',
+      progress: 0.05,
+    });
+    let ok = false;
+    let errMsg: string | null = null;
     try {
-      const bundled = await synthesizeLessonAudioBundle();
+      const bundled = await synthesizeLessonAudioBundle(undefined, undefined, {
+        targetMode: originMode,
+        slotId,
+      });
+      ok = true;
       onSendToStudio(bundled.project, bundled.audioFile);
     } catch (err) {
-      setStudioError(err instanceof Error ? err.message : 'Lỗi khi tạo Audio TTS.');
+      errMsg = err instanceof Error ? err.message : 'Lỗi khi tạo Audio TTS.';
+      setStudioError(errMsg);
     } finally {
-      setIsGeneratingAudio(false);
+      setLocalIsGeneratingAudio(false);
+      finishRenderTaskSlot(slotId, {
+        status: ok ? 'done' : 'error',
+        error: errMsg,
+      });
     }
   };
 
@@ -3278,19 +3570,25 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
               <button
                 type="button"
                 role="tab"
+                data-testid="reels-subtab-source"
                 aria-selected={reelCreationMode === 'source'}
                 onClick={() => switchReelCreationMode('source')}
-                className={`px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                className={`px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 ${
                   reelCreationMode === 'source'
                     ? 'bg-white text-indigo-700 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Từ Bài / Link
+                <span>Từ Bài / Link</span>
+                {(renderTasks['reels:source']?.status === 'rendering' ||
+                  renderTasks['reels:source']?.status === 'synthesizing') && (
+                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                )}
               </button>
               <button
                 type="button"
                 role="tab"
+                data-testid="reels-subtab-creator"
                 aria-selected={reelCreationMode === 'creator'}
                 onClick={() => switchReelCreationMode('creator')}
                 className={`inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
@@ -3301,10 +3599,15 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>AI Tạo Từ &amp; Câu</span>
+                {(renderTasks['reels:creator']?.status === 'rendering' ||
+                  renderTasks['reels:creator']?.status === 'synthesizing') && (
+                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                )}
               </button>
               <button
                 type="button"
                 role="tab"
+                data-testid="reels-subtab-translation"
                 aria-selected={reelCreationMode === 'translation'}
                 onClick={() => switchReelCreationMode('translation')}
                 className={`inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
@@ -3315,6 +3618,10 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Phản Xạ Dịch Câu</span>
+                {(renderTasks['reels:translation']?.status === 'rendering' ||
+                  renderTasks['reels:translation']?.status === 'synthesizing') && (
+                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                )}
               </button>
             </div>
             <span className="text-xs font-medium text-indigo-700 tabular-nums whitespace-nowrap">
@@ -3322,6 +3629,79 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
             </span>
           </div>
         </div>
+
+        {/* Recovery banner if a previous Reels render crashed or reloaded mid-way */}
+        {interruptedDrafts.length > 0 && (
+          <div
+            data-testid="reels-recovery-banner"
+            className="p-3 rounded-lg bg-amber-50 border border-amber-200 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-950"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+              <span>
+                <strong>Phát hiện bài Reels bị gián đoạn trước khi tải lại trang:</strong>{' '}
+                {interruptedDrafts
+                  .map(
+                    (it) =>
+                      `${it.draft.mode === 'creator' ? 'AI Tạo Từ & Câu' : it.draft.mode === 'translation' ? 'Phản Xạ Dịch Câu' : 'Từ Bài / Link'} · "${it.draft.lessonTitle}" (${it.draft.cards.length} thẻ${it.audioFile ? ' + đã lưu Audio' : ''})`,
+                  )
+                  .join('; ')}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {interruptedDrafts.map((it) => (
+                <button
+                  key={it.draft.mode}
+                  type="button"
+                  onClick={() => {
+                    const targetM = it.draft.mode;
+                    if (activeModeRef.current !== targetM) {
+                      switchReelCreationMode(targetM);
+                    }
+                    setTimeout(() => {
+                      hasCustomCardsRef.current = true;
+                      setCards(it.draft.cards);
+                      setLessonTitle(it.draft.lessonTitle);
+                      setParsedLessonLevel(it.draft.parsedLessonLevel || '');
+                      setMode(it.draft.reelMode);
+                      setRawText(it.draft.rawText);
+                      setPastedAiJson(it.draft.pastedAiJson);
+                      setGeneratedDurations(it.draft.generatedDurations);
+                      setGeneratedTimings(it.draft.generatedTimings);
+                      setCustomSyncedCues(it.draft.customSyncedCues ?? null);
+                      setSynthesizedAudioSig(it.draft.synthesizedAudioSig);
+                      if (it.audioFile) {
+                        const url = URL.createObjectURL(it.audioFile);
+                        createdAudioUrlsRef.current.add(url);
+                        setGeneratedAudioFile(it.audioFile);
+                        setGeneratedAudioUrl(url);
+                      }
+                      setModeExportNotice(
+                        targetM,
+                        `Đã khôi phục bộ ${it.draft.cards.length} thẻ${it.audioFile ? ' kèm file Audio' : ''}! Bạn có thể bấm Render MP4 ngay.`,
+                      );
+                    }, 30);
+                    void clearReelsDraftInterruptFlag(targetM);
+                    setInterruptedDrafts((prev) => prev.filter((x) => x.draft.mode !== targetM));
+                  }}
+                  className="px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-700 text-white font-semibold"
+                >
+                  Khôi phục ({it.draft.mode === 'creator' ? 'AI Tạo Từ' : it.draft.mode === 'translation' ? 'Phản Xạ' : 'Từ Bài'})
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  interruptedDrafts.forEach((it) => void clearReelsDraftInterruptFlag(it.draft.mode));
+                  setInterruptedDrafts([]);
+                }}
+                className="px-2 py-1 rounded-md bg-white border border-amber-300 text-amber-900 hover:bg-amber-100"
+              >
+                Bỏ qua
+              </button>
+            </div>
+          </div>
+        )}
 
         {reelCreationMode === 'source' && (
           <>
@@ -5137,7 +5517,10 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                           </span>
                           <button
                             type="button"
-                            onClick={() => exportAbortRef.current?.abort()}
+                            onClick={() => {
+                              exportAbortByModeRef.current[reelCreationMode]?.abort();
+                              abortRenderTaskSlot(currentSlotId);
+                            }}
                             className="inline-flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold bg-rose-600 hover:bg-rose-700 rounded-lg"
                           >
                             <Square className="w-3 h-3 fill-current" />
@@ -6865,6 +7248,74 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
             </div>
           )}
 
+          {otherActiveBlockingTask && (
+            <div
+              data-testid="reels-other-task-notice"
+              className="p-2.5 rounded-lg bg-slate-100 border border-slate-300 text-[11px] text-slate-800 space-y-1.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-indigo-800 truncate">
+                  Đang chạy ngầm: {otherActiveBlockingTask.label} (
+                  {Math.round(otherActiveBlockingTask.progress * 100)}%)
+                </span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => requestNavigateToTaskSlot(otherActiveBlockingTask.slotId)}
+                    className="px-2 py-0.5 rounded bg-indigo-600 text-white font-semibold hover:bg-indigo-700"
+                  >
+                    Về tab kia
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => abortRenderTaskSlot(otherActiveBlockingTask.slotId)}
+                    className="px-2 py-0.5 rounded bg-rose-600 text-white font-semibold hover:bg-rose-700"
+                  >
+                    Hủy
+                  </button>
+                </div>
+              </div>
+              <p className="text-slate-600">
+                Bạn vẫn có thể soạn thẻ, chỉnh cài đặt và copy Prompt bình thường ở tab này.
+              </p>
+            </div>
+          )}
+
+          {concurrencyConflict && (
+            <div
+              data-testid="reels-concurrency-conflict"
+              className="p-2.5 rounded-lg bg-amber-50 border border-amber-300 text-xs text-amber-950 space-y-2"
+            >
+              <p className="font-medium leading-relaxed">{concurrencyConflict.message}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => requestNavigateToTaskSlot(concurrencyConflict.blockingTask.slotId)}
+                  className="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+                >
+                  Xem tab đang render
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    abortRenderTaskSlot(concurrencyConflict.blockingTask.slotId);
+                    setConcurrencyConflict(null);
+                  }}
+                  className="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white font-semibold"
+                >
+                  Hủy luồng kia để chạy bài này
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConcurrencyConflict(null)}
+                  className="px-2 py-1 rounded bg-white border border-amber-300 text-amber-900 hover:bg-amber-100"
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
+          )}
+
           {studioError && (
             <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg p-2.5">
               {studioError}
@@ -6901,7 +7352,10 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
               {isExportingVideo ? (
                 <button
                   type="button"
-                  onClick={() => exportAbortRef.current?.abort()}
+                  onClick={() => {
+                    exportAbortByModeRef.current[reelCreationMode]?.abort();
+                    abortRenderTaskSlot(currentSlotId);
+                  }}
                   className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold text-white bg-rose-600 rounded-xl hover:bg-rose-700"
                 >
                   <Square className="w-3.5 h-3.5 fill-current" />
@@ -6910,6 +7364,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
               ) : (
                 <button
                   type="button"
+                  data-testid="reels-render-mp4-btn"
                   disabled={isGeneratingAudio || cards.length === 0}
                   onClick={() => void handleDirectRenderVideo()}
                   className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50"

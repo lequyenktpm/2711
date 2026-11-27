@@ -129,6 +129,29 @@ import {
   downloadTextAsPlainFile,
 } from '../utils/safeFileDownload';
 import { buildZipArchive, extractFilesFromZipArchive } from '../utils/zipBuilder';
+import {
+  BatchCheckpointState,
+  clearBatchCheckpoint,
+  loadBatchCheckpoint,
+  loadBatchDirectoryHandle,
+  loadBatchFileBlob,
+  saveBatchCheckpoint,
+  saveBatchDirectoryHandle,
+  saveBatchFileBlob,
+  SerializedBatchAiItem,
+  SerializedBatchStudioItem,
+  summarizeBatchRecovery,
+} from '../engine/renderCheckpointStore';
+import {
+  abortRenderTaskSlot,
+  checkRenderConcurrencyConflict,
+  ConcurrencyConflictInfo,
+  finishRenderTaskSlot,
+  getRenderTasksSnapshot,
+  requestNavigateToTaskSlot,
+  startRenderTaskSlot,
+  updateRenderTaskSlot,
+} from '../engine/renderTaskManager';
 
 export type BatchItemStatus =
   | 'pending'
@@ -373,6 +396,98 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
   const aiJsonMultiInputRef = useRef<HTMLInputElement>(null);
   const bgImageInputRef = useRef<HTMLInputElement>(null);
 
+  const hasHydratedCheckpointRef = useRef(false);
+  const itemsRef = useRef<BatchJobItem[]>(items);
+  itemsRef.current = items;
+  const aiBatchItemsRef = useRef<MultiJsonBatchItem[]>(aiBatchItems);
+  aiBatchItemsRef.current = aiBatchItems;
+  const isRunningRef = useRef(isRunning);
+  isRunningRef.current = isRunning;
+
+  const [restoredRecoveryInfo, setRestoredRecoveryInfo] = useState<{
+    doneCount: number;
+    pendingCount: number;
+    totalCount: number;
+    wasInterrupted: boolean;
+  } | null>(null);
+  const [needsDirPermissionPrompt, setNeedsDirPermissionPrompt] = useState(false);
+  const [batchConflict, setBatchConflict] = useState<ConcurrencyConflictInfo | null>(null);
+
+  const buildCheckpointPayload = (overrides?: {
+    wasRunning?: boolean;
+    studioItems?: BatchJobItem[];
+    aiItems?: MultiJsonBatchItem[];
+  }): BatchCheckpointState => {
+    const srcStudio = overrides?.studioItems ?? itemsRef.current;
+    const srcAi = overrides?.aiItems ?? aiBatchItemsRef.current;
+    const serializedStudio: SerializedBatchStudioItem[] = srcStudio.map((it) => ({
+      id: it.id,
+      baseName: it.baseName,
+      status: it.status,
+      progress: it.progress,
+      detail: it.detail,
+      outputInfo: it.outputInfo,
+      pastedJsonText: it.pastedJsonText,
+      promptText: it.promptText,
+      hasAudioFile: Boolean(it.audioFile),
+      audioFileName: it.audioFile?.name,
+      hasSrtFile: Boolean(it.srtFile),
+      srtFileName: it.srtFile?.name,
+      hasJsonFile: Boolean(it.jsonFile),
+      jsonFileName: it.jsonFile?.name,
+    }));
+    const serializedAi: SerializedBatchAiItem[] = srcAi.map((it) => ({
+      id: it.id,
+      subTab: it.subTab,
+      sourceFileName: it.sourceFileName,
+      title: it.title,
+      learningLanguage: it.learningLanguage,
+      payload: it.payload,
+      status: it.status,
+      progress: it.progress,
+      detail: it.detail,
+      outputInfo: it.outputInfo,
+    }));
+    return {
+      version: 1,
+      updatedAt: Date.now(),
+      wasRunning: overrides?.wasRunning ?? isRunningRef.current,
+      batchSubTab,
+      batchMode,
+      saveMode,
+      customSavePath,
+      outputDirName,
+      studioItems: serializedStudio,
+      aiItems: serializedAi,
+      exportSettings: onChangeMp4Settings ? mp4Settings : localExportSettings,
+      reelBatchTheme,
+      reelBatchDualTts,
+      reelBatchRate,
+      reelBatchBgm,
+      reelBatchBgmVol,
+      reelBatchCountdownSfx,
+      reelBatchOutroText,
+      reelBatchOutroSec,
+      readingBatchPalette,
+      readingBatchFrame,
+      readingBatchPointer,
+      readingBatchBgPreset,
+      readingBatchIntro,
+      readingBatchOutroSpeech,
+      videoStyle,
+      compositionId,
+      contextLockedRandom,
+    };
+  };
+
+  const persistCheckpointNow = async (overrides?: {
+    wasRunning?: boolean;
+    studioItems?: BatchJobItem[];
+    aiItems?: MultiJsonBatchItem[];
+  }) => {
+    await saveBatchCheckpoint(buildCheckpointPayload(overrides));
+  };
+
   const refreshOutputFiles = async () => {
     try {
       const res = await fetch('/api/output/files');
@@ -389,6 +504,155 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
       // ignore offline
     }
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    const hydrate = async () => {
+      try {
+        const [cp, savedDir] = await Promise.all([
+          loadBatchCheckpoint(),
+          loadBatchDirectoryHandle(),
+        ]);
+        if (cancelled) return;
+
+        if (savedDir) {
+          setOutputDirHandle(savedDir);
+          if (savedDir.name) setOutputDirName(savedDir.name);
+          try {
+            const perm = await savedDir.queryPermission?.({ mode: 'readwrite' });
+            if (perm && perm !== 'granted') {
+              setNeedsDirPermissionPrompt(true);
+            }
+          } catch {
+            // ignore unsupported queryPermission
+          }
+        }
+
+        if (cp && (cp.studioItems.length > 0 || cp.aiItems.length > 0)) {
+          setBatchSubTab(cp.batchSubTab);
+          setBatchMode(cp.batchMode);
+          setSaveMode(cp.saveMode);
+          setCustomSavePath(cp.customSavePath || TAB_OUTPUT_SUBFOLDERS.batch);
+          if (cp.outputDirName) setOutputDirName(cp.outputDirName);
+          if (cp.reelBatchTheme) setReelBatchTheme(cp.reelBatchTheme);
+          if (typeof cp.reelBatchDualTts === 'boolean') setReelBatchDualTts(cp.reelBatchDualTts);
+          if (typeof cp.reelBatchRate === 'number') setReelBatchRate(cp.reelBatchRate);
+          if (cp.reelBatchBgm) setReelBatchBgm(cp.reelBatchBgm as StudioBgmPresetId);
+          if (typeof cp.reelBatchBgmVol === 'number') setReelBatchBgmVol(cp.reelBatchBgmVol);
+          if (typeof cp.reelBatchCountdownSfx === 'boolean') {
+            setReelBatchCountdownSfx(cp.reelBatchCountdownSfx);
+          }
+          if (cp.reelBatchOutroText !== undefined) setReelBatchOutroText(cp.reelBatchOutroText);
+          if (typeof cp.reelBatchOutroSec === 'number') setReelBatchOutroSec(cp.reelBatchOutroSec);
+          if (cp.readingBatchPalette) {
+            setReadingBatchPalette(cp.readingBatchPalette as ReadingBookPalette['id']);
+          }
+          if (cp.readingBatchFrame) {
+            setReadingBatchFrame(cp.readingBatchFrame as ReadingBookFrameId);
+          }
+          if (cp.readingBatchPointer) {
+            setReadingBatchPointer(cp.readingBatchPointer as ReadingPointerStyleId);
+          }
+          if (cp.readingBatchBgPreset !== undefined) {
+            setReadingBatchBgPreset(cp.readingBatchBgPreset as BackgroundPresetId | '');
+          }
+          if (typeof cp.readingBatchIntro === 'boolean') setReadingBatchIntro(cp.readingBatchIntro);
+          if (typeof cp.readingBatchOutroSpeech === 'boolean') {
+            setReadingBatchOutroSpeech(cp.readingBatchOutroSpeech);
+          }
+          if (cp.videoStyle) setVideoStyle(cp.videoStyle as PromptVideoStyle);
+          if (cp.compositionId) setCompositionId(cp.compositionId);
+          if (typeof cp.contextLockedRandom === 'boolean') {
+            setContextLockedRandom(cp.contextLockedRandom);
+          }
+
+          const hydratedStudio: BatchJobItem[] = await Promise.all(
+            cp.studioItems.map(async (s) => {
+              const [audioFile, srtFile, jsonFile] = await Promise.all([
+                s.hasAudioFile ? loadBatchFileBlob(s.id, 'audio') : Promise.resolve(null),
+                s.hasSrtFile ? loadBatchFileBlob(s.id, 'srt') : Promise.resolve(null),
+                s.hasJsonFile ? loadBatchFileBlob(s.id, 'json') : Promise.resolve(null),
+              ]);
+              const missingFileWarning =
+                (s.hasAudioFile && !audioFile) || (s.hasSrtFile && !srtFile);
+              return {
+                id: s.id,
+                baseName: s.baseName,
+                audioFile,
+                srtFile,
+                jsonFile,
+                pastedJsonText: s.pastedJsonText,
+                promptText: s.promptText,
+                status: s.status,
+                progress: s.progress,
+                detail: missingFileWarning
+                  ? 'Cần nạp lại file gốc do trình duyệt không giữ tệp nhị phân lớn'
+                  : s.detail,
+                outputInfo: s.outputInfo,
+              };
+            }),
+          );
+          if (cancelled) return;
+
+          const hydratedAi: MultiJsonBatchItem[] = cp.aiItems.map((a) => ({
+            id: a.id,
+            subTab: a.subTab,
+            sourceFileName: a.sourceFileName,
+            title: a.title,
+            learningLanguage: a.learningLanguage as LearningLanguageId,
+            payload: a.payload,
+            status: a.status,
+            progress: a.progress,
+            detail: a.detail,
+            outputInfo: a.outputInfo,
+          }));
+
+          setItems(hydratedStudio);
+          itemsRef.current = hydratedStudio;
+          setAiBatchItems(hydratedAi);
+          aiBatchItemsRef.current = hydratedAi;
+
+          const summary = summarizeBatchRecovery(cp);
+          if (summary.hasCheckpoint && (summary.wasInterrupted || summary.doneCount > 0)) {
+            setRestoredRecoveryInfo({
+              doneCount: summary.doneCount,
+              pendingCount: summary.pendingCount,
+              totalCount: summary.totalCount,
+              wasInterrupted: summary.wasInterrupted,
+            });
+          }
+        }
+      } catch {
+        // ignore hydration errors
+      } finally {
+        hasHydratedCheckpointRef.current = true;
+      }
+    };
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!hasHydratedCheckpointRef.current) return;
+    if (isRunning) return;
+    const t = window.setTimeout(() => {
+      void persistCheckpointNow({ wasRunning: false });
+    }, 250);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    items,
+    aiBatchItems,
+    batchSubTab,
+    batchMode,
+    saveMode,
+    customSavePath,
+    outputDirName,
+    isRunning,
+  ]);
 
   useEffect(() => {
     if (isOpen) {
@@ -505,6 +769,8 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
         const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
         setOutputDirHandle(handle);
         setOutputDirName(handle.name);
+        setNeedsDirPermissionPrompt(false);
+        void saveBatchDirectoryHandle(handle);
         setOpenFolderMsg(`Đã chọn thư mục trên máy: ${handle.name}`);
       } else {
         setOpenFolderMsg(
@@ -516,6 +782,43 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
       if (err?.name !== 'AbortError') {
         console.warn('Directory picker cancelled or error:', err);
       }
+    }
+  };
+
+  const handleGrantRestoredDirectoryPermission = async () => {
+    if (!outputDirHandle) return;
+    try {
+      const perm = await outputDirHandle.requestPermission?.({ mode: 'readwrite' });
+      if (perm === 'granted') {
+        setNeedsDirPermissionPrompt(false);
+        setOpenFolderMsg(`Đã cấp lại quyền ghi vào thư mục: ${outputDirHandle.name}`);
+      }
+    } catch {
+      await handlePickDirectory();
+    }
+  };
+
+  const writeImmediateToLocalDirIfSelected = async (
+    mp4Blob: Blob | undefined,
+    fileName: string,
+    txtName: string,
+    txtBody: string,
+  ): Promise<string | null> => {
+    if (!outputDirHandle || !mp4Blob) return null;
+    try {
+      const fh = await outputDirHandle.getFileHandle(fileName, { create: true });
+      const w = await fh.createWritable();
+      await w.write(mp4Blob);
+      await w.close();
+      if (txtBody.trim()) {
+        const th = await outputDirHandle.getFileHandle(txtName, { create: true });
+        const tw = await th.createWritable();
+        await tw.write(new Blob([txtBody], { type: 'text/plain;charset=utf-8' }));
+        await tw.close();
+      }
+      return `${outputDirHandle.name}/${fileName}`;
+    } catch {
+      return null;
     }
   };
 
@@ -851,6 +1154,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
     if (!fileList || fileList.length === 0) return;
     const files = await expandUploadedFilesOrZips(Array.from(fileList));
 
+    const blobsToPersist: Array<{ id: string; role: 'audio' | 'srt' | 'json'; file: File }> = [];
     setItems((prev) => {
       const map = new Map<string, BatchJobItem>();
       for (const existing of prev) {
@@ -874,10 +1178,13 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
 
         if (AUDIO_EXT_RE.test(file.name)) {
           current.audioFile = file;
+          blobsToPersist.push({ id: current.id, role: 'audio', file });
         } else if (SUB_EXT_RE.test(file.name)) {
           current.srtFile = file;
+          blobsToPersist.push({ id: current.id, role: 'srt', file });
         } else if (JSON_EXT_RE.test(file.name)) {
           current.jsonFile = file;
+          blobsToPersist.push({ id: current.id, role: 'json', file });
         }
 
         if (current.status === 'error') {
@@ -887,8 +1194,11 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
         map.set(key, current);
       }
 
-      return Array.from(map.values()).sort((a, b) => a.baseName.localeCompare(b.baseName));
+      const nextList = Array.from(map.values()).sort((a, b) => a.baseName.localeCompare(b.baseName));
+      itemsRef.current = nextList;
+      return nextList;
     });
+    blobsToPersist.forEach((b) => void saveBatchFileBlob(b.id, b.role, b.file));
   };
 
   const handleJsonFilesSelected = async (fileList: FileList | null) => {
@@ -898,12 +1208,14 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
     );
     if (files.length === 0) return;
 
+    const jsonBlobsToPersist: Array<{ id: string; file: File }> = [];
     setItems((prev) => {
-      return prev.map((item) => {
+      const next = prev.map((item) => {
         const matchingFile = files.find(
           (f) => getBaseName(f.name).toLowerCase() === item.baseName.toLowerCase(),
         );
         if (matchingFile) {
+          jsonBlobsToPersist.push({ id: item.id, file: matchingFile });
           return {
             ...item,
             jsonFile: matchingFile,
@@ -912,15 +1224,26 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
         }
         return item;
       });
+      itemsRef.current = next;
+      return next;
     });
+    jsonBlobsToPersist.forEach((b) => void saveBatchFileBlob(b.id, 'json', b.file));
   };
 
   const updateItem = (id: string, patch: Partial<BatchJobItem>) => {
-    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+    setItems((prev) => {
+      const next = prev.map((it) => (it.id === id ? { ...it, ...patch } : it));
+      itemsRef.current = next;
+      return next;
+    });
   };
 
   const updateAiItem = (id: string, patch: Partial<MultiJsonBatchItem>) => {
-    setAiBatchItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+    setAiBatchItems((prev) => {
+      const next = prev.map((it) => (it.id === id ? { ...it, ...patch } : it));
+      aiBatchItemsRef.current = next;
+      return next;
+    });
   };
 
   const buildPromptForItem = async (item: BatchJobItem): Promise<string> => {
@@ -1213,14 +1536,33 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
   // ── Studio Batch Execution ────────────────────────────────────────────────
   const handleStartBatch = async () => {
     if (isRunning) return;
+    const conflict = checkRenderConcurrencyConflict(getRenderTasksSnapshot(), 'batch');
+    if (conflict) {
+      setBatchConflict(conflict);
+      return;
+    }
+
     stopFlagRef.current = false;
+    setBatchConflict(null);
     setBatchErrorNotice(null);
     const controller = new AbortController();
     batchAbortControllerRef.current = controller;
     setIsRunning(true);
+    isRunningRef.current = true;
 
     const queueSnapshot = [...items];
+    const totalToRun = queueSnapshot.filter((it) => it.status !== 'done').length;
+    startRenderTaskSlot('batch', {
+      kind: 'batch',
+      title: `Batch Studio (${totalToRun} bài)`,
+      stageLabel: 'Đang khởi chạy hàng đợi Batch...',
+      progress: 0.01,
+      onAbort: () => handleCancelBatchImmediately(),
+    });
+    await persistCheckpointNow({ wasRunning: true });
+
     let completedCount = 0;
+    let processedCount = 0;
     const runErrors: string[] = [];
     for (let idx = 0; idx < queueSnapshot.length; idx++) {
       const item = queueSnapshot[idx];
@@ -1263,8 +1605,8 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
           detail: `Đang dựng ${encoding.width}×${encoding.height} @ ${encoding.fps}fps...`,
         });
 
+        const effectivePath = resolveTabOutputSubfolder('Batch', customSavePath);
         if (saveMode === 'disk') {
-          const effectivePath = resolveTabOutputSubfolder('Batch', customSavePath);
           const saved = await exportProjectToServerDisk(
             builtProject,
             item.audioFile,
@@ -1273,6 +1615,13 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                 status: 'rendering',
                 progress: 0.15 + progress * 0.85,
                 detail: stageLabel,
+              });
+              updateRenderTaskSlot('batch', {
+                progress: Math.min(
+                  0.99,
+                  (processedCount + progress) / Math.max(1, totalToRun),
+                ),
+                stageLabel: `[${processedCount + 1}/${Math.max(1, totalToRun)}] ${item.baseName}: ${stageLabel}`,
               });
             },
             activeSettings,
@@ -1289,7 +1638,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
           updateItem(item.id, {
             status: 'done',
             progress: 1,
-            detail: `Đã lưu (${mb} MB · ${encoding.width}×${encoding.height} @ ${encoding.fps}fps)`,
+            detail: `Đã lưu ngay vào folder (${mb} MB · ${encoding.width}×${encoding.height} @ ${encoding.fps}fps)`,
             outputInfo: saved.savedPath,
           });
           emitOutputUpdated({ relativePath: saved.relativePath, sourceTab: 'Batch' });
@@ -1305,23 +1654,36 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                 progress: 0.15 + progress * 0.85,
                 detail: stageLabel,
               });
+              updateRenderTaskSlot('batch', {
+                progress: Math.min(
+                  0.99,
+                  (processedCount + progress) / Math.max(1, totalToRun),
+                ),
+                stageLabel: `[${processedCount + 1}/${Math.max(1, totalToRun)}] ${item.baseName}: ${stageLabel}`,
+              });
             },
             activeSettings,
             {
               signal: controller.signal,
               customFileBase: fileBase,
               alsoSaveToServerOutput: true,
-              savePath: resolveTabOutputSubfolder('Batch', customSavePath),
+              savePath: effectivePath,
               sourceTab: 'Batch',
               companionText: batchItemDescription.txtContent,
             },
+          );
+          const localCopyPath = await writeImmediateToLocalDirIfSelected(
+            exported.blob,
+            exported.fileName,
+            `${fileBase}.txt`,
+            batchItemDescription.txtContent,
           );
           const mb = (exported.byteLength / (1024 * 1024)).toFixed(2);
           updateItem(item.id, {
             status: 'done',
             progress: 1,
-            detail: `Đã tải ${exported.fileName} (${mb} MB)`,
-            outputInfo: exported.savedPath,
+            detail: `Đã tải & lưu ngay ${exported.fileName} (${mb} MB)`,
+            outputInfo: localCopyPath || exported.savedPath,
           });
           if (exported.relativePath) {
             emitOutputUpdated({ relativePath: exported.relativePath, sourceTab: 'Batch' });
@@ -1351,14 +1713,33 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
         });
       }
 
+      processedCount++;
+      await persistCheckpointNow({ wasRunning: true });
+
       if (idx < queueSnapshot.length - 1 && !stopFlagRef.current && !controller.signal.aborted) {
         await new Promise((r) => setTimeout(r, 400));
       }
     }
 
+    const aborted = stopFlagRef.current || controller.signal.aborted;
+    const stillPending = itemsRef.current.some((x) => x.status === 'pending' || x.status === 'error');
     batchAbortControllerRef.current = null;
+    isRunningRef.current = false;
     setIsRunning(false);
-    if (!stopFlagRef.current && !controller.signal.aborted && completedCount > 0) {
+    await persistCheckpointNow({ wasRunning: aborted && stillPending });
+    finishRenderTaskSlot('batch', {
+      status: aborted ? 'aborted' : runErrors.length > 0 && completedCount === 0 ? 'error' : 'done',
+      notice:
+        !aborted && completedCount > 0
+          ? `Đã hoàn tất lưu ngay ${completedCount} video Batch vào thư mục.`
+          : null,
+      error: aborted
+        ? 'Đã tạm dừng Batch (đã lưu checkpoint các bài xong).'
+        : runErrors.length > 0 && completedCount === 0
+          ? runErrors[0]
+          : null,
+    });
+    if (!aborted && completedCount > 0) {
       playExportCompleteSound();
     }
     void refreshOutputFiles();
@@ -1367,14 +1748,33 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
   // ── Multi-Tab AI JSON Batch Execution (Creator / Translation / Reading) ───
   const handleStartAiBatch = async () => {
     if (isRunning || batchSubTab === 'studio') return;
+    const conflict = checkRenderConcurrencyConflict(getRenderTasksSnapshot(), 'batch');
+    if (conflict) {
+      setBatchConflict(conflict);
+      return;
+    }
+
     stopFlagRef.current = false;
+    setBatchConflict(null);
     setBatchErrorNotice(null);
     const controller = new AbortController();
     batchAbortControllerRef.current = controller;
     setIsRunning(true);
+    isRunningRef.current = true;
 
     const queueSnapshot = aiBatchItems.filter((it) => it.subTab === batchSubTab);
+    const totalToRun = queueSnapshot.filter((it) => it.status !== 'done').length;
+    startRenderTaskSlot('batch', {
+      kind: 'batch',
+      title: `Batch ${batchSubTab.toUpperCase()} (${totalToRun} bài)`,
+      stageLabel: 'Đang khởi chạy Batch AI JSON...',
+      progress: 0.01,
+      onAbort: () => handleCancelBatchImmediately(),
+    });
+    await persistCheckpointNow({ wasRunning: true });
+
     let completedCount = 0;
+    let processedCount = 0;
     const runErrors: string[] = [];
 
     for (let idx = 0; idx < queueSnapshot.length; idx++) {
@@ -1683,6 +2083,13 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                   progress: 0.4 + progress * 0.6,
                   detail: stageLabel,
                 });
+                updateRenderTaskSlot('batch', {
+                  progress: Math.min(
+                    0.99,
+                    (processedCount + 0.4 + progress * 0.6) / Math.max(1, totalToRun),
+                  ),
+                  stageLabel: `[${processedCount + 1}/${Math.max(1, totalToRun)}] ${cleanTitle}: ${stageLabel}`,
+                });
               },
               activeSettings,
               {
@@ -1695,12 +2102,18 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                 customRenderFrame,
               },
             );
+            const localCopyPath = await writeImmediateToLocalDirIfSelected(
+              exported.blob,
+              exported.fileName,
+              `${fileBase}.txt`,
+              desc.txtContent,
+            );
             const mb = (exported.byteLength / (1024 * 1024)).toFixed(2);
             updateAiItem(item.id, {
               status: 'done',
               progress: 1,
-              detail: `Đã tải ${exported.fileName} (${mb} MB)`,
-              outputInfo: exported.savedPath,
+              detail: `Đã tải & lưu ngay ${exported.fileName} (${mb} MB)`,
+              outputInfo: localCopyPath || exported.savedPath,
             });
             if (exported.relativePath) {
               emitOutputUpdated({ relativePath: exported.relativePath, sourceTab: 'Batch Reading' });
@@ -1902,6 +2315,13 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                   progress: 0.42 + progress * 0.58,
                   detail: stageLabel,
                 });
+                updateRenderTaskSlot('batch', {
+                  progress: Math.min(
+                    0.99,
+                    (processedCount + 0.42 + progress * 0.58) / Math.max(1, totalToRun),
+                  ),
+                  stageLabel: `[${processedCount + 1}/${Math.max(1, totalToRun)}] ${payload.title}: ${stageLabel}`,
+                });
               },
               activeSettings,
               {
@@ -1913,12 +2333,18 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                 companionText: desc.txtContent,
               },
             );
+            const localCopyPath = await writeImmediateToLocalDirIfSelected(
+              exported.blob,
+              exported.fileName,
+              `${fileBase}.txt`,
+              desc.txtContent,
+            );
             const mb = (exported.byteLength / (1024 * 1024)).toFixed(2);
             updateAiItem(item.id, {
               status: 'done',
               progress: 1,
-              detail: `Đã tải ${exported.fileName} (${mb} MB)`,
-              outputInfo: exported.savedPath,
+              detail: `Đã tải & lưu ngay ${exported.fileName} (${mb} MB)`,
+              outputInfo: localCopyPath || exported.savedPath,
             });
             if (exported.relativePath) {
               emitOutputUpdated({ relativePath: exported.relativePath, sourceTab: sourceLabel });
@@ -1949,14 +2375,35 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
         });
       }
 
+      processedCount++;
+      await persistCheckpointNow({ wasRunning: true });
+
       if (idx < queueSnapshot.length - 1 && !stopFlagRef.current && !controller.signal.aborted) {
         await new Promise((r) => setTimeout(r, 400));
       }
     }
 
+    const aborted = stopFlagRef.current || controller.signal.aborted;
+    const stillPending = aiBatchItemsRef.current.some(
+      (x) => x.subTab === batchSubTab && (x.status === 'pending' || x.status === 'error'),
+    );
     batchAbortControllerRef.current = null;
+    isRunningRef.current = false;
     setIsRunning(false);
-    if (!stopFlagRef.current && !controller.signal.aborted && completedCount > 0) {
+    await persistCheckpointNow({ wasRunning: aborted && stillPending });
+    finishRenderTaskSlot('batch', {
+      status: aborted ? 'aborted' : runErrors.length > 0 && completedCount === 0 ? 'error' : 'done',
+      notice:
+        !aborted && completedCount > 0
+          ? `Đã hoàn tất lưu ngay ${completedCount} video Batch vào thư mục.`
+          : null,
+      error: aborted
+        ? 'Đã tạm dừng Batch (đã lưu checkpoint các bài xong).'
+        : runErrors.length > 0 && completedCount === 0
+          ? runErrors[0]
+          : null,
+    });
+    if (!aborted && completedCount > 0) {
       playExportCompleteSound();
     }
     void refreshOutputFiles();
@@ -2403,6 +2850,78 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
             );
           })}
         </div>
+
+        {/* Batch Checkpoint Recovery & Concurrency Conflict Banners */}
+        {(restoredRecoveryInfo || batchConflict || (needsDirPermissionPrompt && outputDirName)) && (
+          <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 space-y-1.5 text-xs text-amber-950">
+            {restoredRecoveryInfo && (
+              <div
+                data-testid="batch-modal-recovery-notice"
+                className="flex flex-wrap items-center justify-between gap-2"
+              >
+                <span>
+                  <strong>Đã khôi phục tiến trình Batch đã lưu:</strong>{' '}
+                  <strong>{restoredRecoveryInfo.doneCount}/{restoredRecoveryInfo.totalCount}</strong> bài đã xong (đã lưu ra thư mục), còn{' '}
+                  <strong>{restoredRecoveryInfo.pendingCount}</strong> bài sẽ tiếp tục chạy mà không làm lại bài đã xong.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setRestoredRecoveryInfo(null)}
+                  className="px-2 py-0.5 rounded bg-white border border-amber-300 text-amber-900 hover:bg-amber-100"
+                >
+                  Đã hiểu
+                </button>
+              </div>
+            )}
+
+            {needsDirPermissionPrompt && outputDirName && (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  Trình duyệt vừa tải lại — hãy cấp lại quyền ghi cho thư mục{' '}
+                  <strong>{outputDirName}</strong> để lưu thẳng từng file mới:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void handleGrantRestoredDirectoryPermission()}
+                  className="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-700 text-white font-semibold"
+                >
+                  Cấp lại quyền ghi “{outputDirName}”
+                </button>
+              </div>
+            )}
+
+            {batchConflict && (
+              <div
+                data-testid="batch-concurrency-conflict"
+                className="flex flex-wrap items-center justify-between gap-2 text-rose-900"
+              >
+                <span className="font-medium">{batchConflict.message}</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      requestNavigateToTaskSlot(batchConflict.blockingTask.slotId);
+                      onClose();
+                    }}
+                    className="px-2 py-0.5 rounded bg-indigo-600 text-white font-semibold hover:bg-indigo-700"
+                  >
+                    Xem tab kia
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      abortRenderTaskSlot(batchConflict.blockingTask.slotId);
+                      setBatchConflict(null);
+                    }}
+                    className="px-2 py-0.5 rounded bg-rose-600 text-white font-semibold hover:bg-rose-700"
+                  >
+                    Dừng luồng kia
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Main Body: Queue Column + Optional Live BatchPreviewPane */}
         <div
@@ -2967,19 +3486,17 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                           onChange={(e) => setSaveMode(e.target.value as 'disk' | 'download')}
                           className="flex-1 px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
                         >
-                          <option value="download">Tải ngay từng video qua trình duyệt</option>
-                          <option value="disk">Lưu vào thư mục output/ của project</option>
+                          <option value="download">Tải &amp; lưu ngay từng video vào thư mục output/</option>
+                          <option value="disk">Lưu ngay từng video vào thư mục output/ (hoặc thư mục máy)</option>
                         </select>
-                        {saveMode === 'disk' && (
-                          <button
-                            type="button"
-                            disabled={isRunning}
-                            onClick={handlePickDirectory}
-                            className="px-2.5 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 whitespace-nowrap"
-                          >
-                            Chọn thư mục
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          disabled={isRunning}
+                          onClick={handlePickDirectory}
+                          className="px-2.5 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 whitespace-nowrap"
+                        >
+                          {outputDirName ? 'Đổi thư mục' : 'Chọn thư mục'}
+                        </button>
                       </div>
                     </div>
 
@@ -3708,9 +4225,26 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                 type="button"
                 onClick={() => {
                   if (batchSubTab === 'studio') {
+                    itemsRef.current.forEach((it) => {
+                      void saveBatchFileBlob(it.id, 'audio', null);
+                      void saveBatchFileBlob(it.id, 'srt', null);
+                      void saveBatchFileBlob(it.id, 'json', null);
+                    });
                     setItems([]);
+                    itemsRef.current = [];
                   } else {
-                    setAiBatchItems((prev) => prev.filter((x) => x.subTab !== batchSubTab));
+                    setAiBatchItems((prev) => {
+                      const next = prev.filter((x) => x.subTab !== batchSubTab);
+                      aiBatchItemsRef.current = next;
+                      return next;
+                    });
+                  }
+                  if (
+                    itemsRef.current.length === 0 &&
+                    aiBatchItemsRef.current.length === 0
+                  ) {
+                    void clearBatchCheckpoint();
+                    setRestoredRecoveryInfo(null);
                   }
                 }}
                 className="px-3 py-2 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded-lg hover:bg-slate-100"
@@ -3772,7 +4306,11 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                 className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-xs"
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Chạy Batch ({pendingCount} bài)</span>
+                <span>
+                  {doneCount > 0 && pendingCount > 0
+                    ? `Tiếp tục chạy ${pendingCount} bài còn lại`
+                    : `Chạy Batch (${pendingCount} bài)`}
+                </span>
               </button>
             )}
           </div>

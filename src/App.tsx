@@ -1,5 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Clapperboard, Database, Film, Layers, RotateCcw, Sparkles, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowRight,
+  Clapperboard,
+  Database,
+  Film,
+  FolderCheck,
+  Layers,
+  RotateCcw,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import { AudioSubtitleStudioModal } from './components/AudioSubtitleStudioModal';
 import { AutomationPipelinePanel, PresetId } from './components/AutomationPipelinePanel';
 import { BatchQueueModal } from './components/BatchQueueModal';
@@ -66,6 +77,31 @@ import {
   PRESET_WATER_POLITE,
   PRESET_XUN52000_DARK,
 } from './engine/demoPresets';
+import {
+  BatchRecoverySummary,
+  CHECKPOINT_UPDATED_EVENT,
+  clearBatchCheckpoint,
+  clearStudioDraftInterruptFlag,
+  loadBatchCheckpoint,
+  loadStudioDraftCheckpoint,
+  saveStudioDraftCheckpoint,
+  StudioDraftCheckpoint,
+  summarizeBatchRecovery,
+} from './engine/renderCheckpointStore';
+import {
+  abortRenderTaskSlot,
+  checkRenderConcurrencyConflict,
+  finishRenderTaskSlot,
+  getActiveBlockingTaskFromMap,
+  getAppTabForSlot,
+  getRenderTasksSnapshot,
+  requestNavigateToTaskSlot,
+  startRenderTaskSlot,
+  subscribeTaskNavigation,
+  updateRenderTaskSlot,
+  useActiveTaskBeforeUnloadGuard,
+  useRenderTasks,
+} from './engine/renderTaskManager';
 import { FlexibleSceneDocument, scenePlanToProject } from './engine/scenePlanAdapter';
 import { adjustCuesTiming, cuesToBlockTranscript } from './engine/transcriptParser';
 import { resyncCuesToAudioFile } from './engine/ttsSyncHelper';
@@ -197,6 +233,53 @@ export default function App() {
   const currentTimeRef = useRef<number>(currentTime);
   currentTimeRef.current = currentTime;
   const exportAbortControllerRef = useRef<AbortController | null>(null);
+
+  const renderTasks = useRenderTasks();
+  useActiveTaskBeforeUnloadGuard();
+  const activeBlockingTask = useMemo(
+    () => getActiveBlockingTaskFromMap(renderTasks),
+    [renderTasks],
+  );
+  const [batchRecoverySummary, setBatchRecoverySummary] = useState<BatchRecoverySummary | null>(null);
+  const [interruptedStudioDraft, setInterruptedStudioDraft] = useState<{
+    draft: StudioDraftCheckpoint;
+    audioFile: File | null;
+  } | null>(null);
+
+  useEffect(() => {
+    const refreshRecovery = async () => {
+      try {
+        const [batchCp, studioCp] = await Promise.all([
+          loadBatchCheckpoint(),
+          loadStudioDraftCheckpoint(),
+        ]);
+        const summary = summarizeBatchRecovery(batchCp);
+        setBatchRecoverySummary(summary.wasInterrupted ? summary : null);
+        if (studioCp?.draft?.activeRenderInterrupted) {
+          setInterruptedStudioDraft(studioCp);
+        } else {
+          setInterruptedStudioDraft(null);
+        }
+      } catch {
+        // ignore recovery scan error
+      }
+    };
+    void refreshRecovery();
+    window.addEventListener(CHECKPOINT_UPDATED_EVENT, refreshRecovery);
+    return () => {
+      window.removeEventListener(CHECKPOINT_UPDATED_EVENT, refreshRecovery);
+    };
+  }, []);
+
+  useEffect(() => {
+    return subscribeTaskNavigation((slotId) => {
+      const target = getAppTabForSlot(slotId);
+      setActiveTab(target.activeTab);
+      if (target.openBatch) {
+        setIsBatchModalOpen(true);
+      }
+    });
+  }, []);
 
   // Sync playback loop (accounts for non-destructive Intro & Outro tails around voiceover audio)
   useEffect(() => {
@@ -1118,6 +1201,12 @@ export default function App() {
   const handleExportVideo = useCallback(
     async (projectOverride?: LessonProject): Promise<ExportVideoResult | null> => {
       if (isExportingVideo) return null;
+      const conflict = checkRenderConcurrencyConflict(getRenderTasksSnapshot(), 'studio');
+      if (conflict) {
+        setExportError(conflict.message);
+        return null;
+      }
+
       const targetProject = projectOverride ?? project;
       const controller = new AbortController();
       exportAbortControllerRef.current = controller;
@@ -1128,11 +1217,35 @@ export default function App() {
       setExportStageLabel('Đang chuẩn bị render MP4...');
       setExportError(null);
 
+      const cleanFileBase = buildLeveledOutputStem({
+        title: targetProject.title || targetProject.id,
+        fallback: 'Studio Video',
+      });
+
+      startRenderTaskSlot('studio', {
+        kind: 'render',
+        title: targetProject.title || cleanFileBase,
+        stageLabel: 'Đang chuẩn bị render MP4...',
+        progress: 0,
+        onAbort: () => controller.abort(),
+      });
+      void saveStudioDraftCheckpoint(
+        {
+          version: 1,
+          updatedAt: Date.now(),
+          activeRenderInterrupted: true,
+          interruptedStage: 'Đang render MP4 Studio',
+          project: targetProject,
+          hasAudioFile: Boolean(audioFile),
+          audioFileName: audioFile?.name || audioFileName,
+        },
+        audioFile,
+      );
+
+      let taskOutcome: 'done' | 'error' | 'aborted' = 'error';
+      let outcomeMsg: string | null = null;
+
       try {
-        const cleanFileBase = buildLeveledOutputStem({
-          title: targetProject.title || targetProject.id,
-          fallback: 'Studio Video',
-        });
         const targetDescription = projectOverride
           ? buildVideoDescription({
               title: targetProject.title,
@@ -1150,11 +1263,12 @@ export default function App() {
         const shouldMixBgm =
           (studioBgmPreset !== 'none' || Boolean(studioCustomBgmFile)) && studioBgmVolume > 0;
         if (shouldMixBgm || (introSec > 0 && Boolean(audioFile))) {
-          setExportStageLabel(
+          const mixLabel =
             introSec > 0 && !shouldMixBgm
               ? 'Đang căn khoảng lặng Intro cho âm thanh...'
-              : 'Đang hòa âm nhạc nền + âm thanh...',
-          );
+              : 'Đang hòa âm nhạc nền + âm thanh...';
+          setExportStageLabel(mixLabel);
+          updateRenderTaskSlot('studio', { stageLabel: mixLabel });
           const speechWindows = targetProject.cues.map((c) => ({
             start: c.start + introSec,
             end: c.end + introSec,
@@ -1183,6 +1297,7 @@ export default function App() {
           ({ progress, stageLabel }) => {
             setExportProgress(progress);
             setExportStageLabel(stageLabel);
+            updateRenderTaskSlot('studio', { progress, stageLabel });
           },
           mp4Settings,
           {
@@ -1199,6 +1314,8 @@ export default function App() {
           sourceTab: `Studio ${targetProject.aspectRatio || mp4Settings.aspectRatio || '9:16'}`,
         });
         playExportCompleteSound();
+        taskOutcome = 'done';
+        outcomeMsg = `Đã lưu ${result.fileName}`;
         try {
           const outRes = await fetch('/api/output/files');
           const outData = (await outRes.json().catch(() => ({}))) as {
@@ -1221,10 +1338,14 @@ export default function App() {
         return result;
       } catch (err) {
         if (err instanceof ExportAbortedError || controller.signal.aborted) {
-          setExportError('Đã hủy quá trình render video.');
+          taskOutcome = 'aborted';
+          outcomeMsg = 'Đã hủy quá trình render video.';
+          setExportError(outcomeMsg);
           return null;
         }
         const msg = err instanceof Error ? err.message : 'Không thể render file video.';
+        taskOutcome = 'error';
+        outcomeMsg = msg;
         setExportError(msg);
         return null;
       } finally {
@@ -1232,12 +1353,19 @@ export default function App() {
         setIsExportingVideo(false);
         setExportProgress(0);
         setExportStageLabel('');
+        void clearStudioDraftInterruptFlag();
+        finishRenderTaskSlot('studio', {
+          status: taskOutcome,
+          notice: taskOutcome === 'done' ? outcomeMsg : null,
+          error: taskOutcome === 'error' || taskOutcome === 'aborted' ? outcomeMsg : null,
+        });
       }
     },
     [
       isExportingVideo,
       project,
       audioFile,
+      audioFileName,
       mp4Settings,
       studioBgmPreset,
       studioBgmVolume,
@@ -1468,29 +1596,176 @@ export default function App() {
         </div>
       </header>
 
-      {activeTab === 'reels' ? (
-        <main className="flex-1 w-full">
-          <EnglishReelsTab onSendToStudio={handleReceiveFromReelsTab} />
-        </main>
-      ) : activeTab === 'edu-studio' ? (
-        <main className="flex-1 w-full">
-          <EducationalStudioTab
-            onSendAudioCuesToStudio={(incomingAudio, incomingCues, incomingTitle) => {
-              handleApplyGeneratedAudioAndCues(incomingAudio, incomingCues, incomingTitle);
-              setActiveTab('studio');
-            }}
-          />
-        </main>
-      ) : (
-        /* Main Automated AI-First Workspace */
-        <main id="studio" className="flex-1 max-w-[1400px] w-full mx-auto p-4 lg:p-6 space-y-5">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h1 className="text-xl font-bold text-slate-900 tracking-tight text-balance">
-                {project.title}
-              </h1>
-              <p className="text-xs text-slate-500 mt-0.5">{project.subtitle}</p>
+      {/* Global Active Render Status Bar (visible across all tabs so background renders never get lost) */}
+      {activeBlockingTask && (
+        <div
+          data-testid="global-active-render-bar"
+          className="bg-indigo-950 text-white border-b border-indigo-800 px-3 sm:px-6 py-2"
+        >
+          <div className="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              <span className="font-semibold text-indigo-200 shrink-0">
+                {activeBlockingTask.label}:
+              </span>
+              {activeBlockingTask.title && (
+                <span className="font-medium text-white truncate max-w-[220px]">
+                  {activeBlockingTask.title}
+                </span>
+              )}
+              <span className="text-indigo-200/90 truncate max-w-[320px]">
+                {activeBlockingTask.stageLabel || 'Đang xử lý...'}
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-indigo-800/90 font-mono text-[11px] font-semibold tabular-nums shrink-0">
+                {Math.max(0, Math.min(100, Math.round(activeBlockingTask.progress * 100)))}%
+              </span>
             </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => requestNavigateToTaskSlot(activeBlockingTask.slotId)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/15 hover:bg-white/25 text-white font-semibold transition-colors"
+              >
+                <span>Mở tab đang chạy</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                onClick={() => abortRenderTaskSlot(activeBlockingTask.slotId)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-rose-600/90 hover:bg-rose-600 text-white font-semibold transition-colors"
+              >
+                <X className="w-3 h-3" />
+                <span>Dừng luồng</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reload / Crash Checkpoint Recovery Banners */}
+      {(batchRecoverySummary || interruptedStudioDraft) && !activeBlockingTask && (
+        <div className="bg-amber-50 border-b border-amber-200 px-3 sm:px-6 py-2.5">
+          <div className="max-w-[1440px] mx-auto flex flex-col gap-2">
+            {batchRecoverySummary && (
+              <div
+                data-testid="batch-recovery-banner"
+                className="flex flex-wrap items-center justify-between gap-2 text-xs text-amber-950"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <FolderCheck className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span>
+                    <strong>Batch chưa chạy xong trước khi tải lại trang:</strong> Đã lưu xong{' '}
+                    <strong>{batchRecoverySummary.doneCount}/{batchRecoverySummary.totalCount}</strong> bài, còn{' '}
+                    <strong>{batchRecoverySummary.pendingCount}</strong> bài chờ xử lý tiếp.
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsBatchModalOpen(true)}
+                    className="px-3 py-1 rounded-md bg-amber-600 hover:bg-amber-700 text-white font-semibold"
+                  >
+                    Mở Batch &amp; Chạy tiếp {batchRecoverySummary.pendingCount} bài
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void clearBatchCheckpoint();
+                      setBatchRecoverySummary(null);
+                    }}
+                    className="px-2 py-1 rounded-md bg-white border border-amber-300 text-amber-900 hover:bg-amber-100"
+                  >
+                    Bỏ qua
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {interruptedStudioDraft && (
+              <div
+                data-testid="studio-recovery-banner"
+                className="flex flex-wrap items-center justify-between gap-2 text-xs text-amber-950"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span>
+                    <strong>Phát hiện bản dựng Studio bị gián đoạn:</strong> “
+                    {interruptedStudioDraft.draft.project.title}”
+                    {interruptedStudioDraft.audioFile
+                      ? ` (kèm audio ${interruptedStudioDraft.audioFile.name})`
+                      : ''}
+                    .
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const restored = interruptedStudioDraft;
+                      setProject(restored.draft.project);
+                      if (restored.audioFile) {
+                        setAudioFile(restored.audioFile);
+                        setAudioFileName(restored.audioFile.name);
+                        setAudioUrl((prev) => {
+                          if (prev) URL.revokeObjectURL(prev);
+                          return URL.createObjectURL(restored.audioFile!);
+                        });
+                      }
+                      setActiveTab('studio');
+                      void clearStudioDraftInterruptFlag();
+                      setInterruptedStudioDraft(null);
+                    }}
+                    className="px-3 py-1 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+                  >
+                    Khôi phục Studio &amp; Audio
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void clearStudioDraftInterruptFlag();
+                      setInterruptedStudioDraft(null);
+                    }}
+                    className="px-2 py-1 rounded-md bg-white border border-amber-300 text-amber-900 hover:bg-amber-100"
+                  >
+                    Bỏ qua
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Keep all 3 main tabs mounted via CSS hidden so tab switching NEVER unmounts or cancels active renders */}
+      <main className={activeTab === 'reels' ? 'flex-1 w-full' : 'hidden'}>
+        <EnglishReelsTab onSendToStudio={handleReceiveFromReelsTab} />
+      </main>
+
+      <main className={activeTab === 'edu-studio' ? 'flex-1 w-full' : 'hidden'}>
+        <EducationalStudioTab
+          onSendAudioCuesToStudio={(incomingAudio, incomingCues, incomingTitle) => {
+            handleApplyGeneratedAudioAndCues(incomingAudio, incomingCues, incomingTitle);
+            setActiveTab('studio');
+          }}
+        />
+      </main>
+
+      {/* Main Automated AI-First Workspace */}
+      <main
+        id="studio"
+        className={
+          activeTab === 'studio'
+            ? 'flex-1 max-w-[1400px] w-full mx-auto p-4 lg:p-6 space-y-5'
+            : 'hidden'
+        }
+      >
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight text-balance">
+              {project.title}
+            </h1>
+            <p className="text-xs text-slate-500 mt-0.5">{project.subtitle}</p>
+          </div>
             <div className="flex items-center gap-2 text-xs text-slate-600 tabular-nums">
               <span>{project.elements.length} lớp tự động</span>
               <span aria-hidden="true">·</span>
@@ -1669,7 +1944,6 @@ export default function App() {
             </div>
           </section>
         </main>
-      )}
 
       {/* Global Output Panel visible across ALL tabs at the bottom */}
       <GlobalOutputPanel activeTab={activeTab} />
