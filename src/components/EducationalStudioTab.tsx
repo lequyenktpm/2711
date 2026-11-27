@@ -1761,7 +1761,8 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
     title: string;
     rawText: string;
   } | null>(null);
-  const [readingWebPromptMode, setReadingWebPromptMode] = useState<'web-url' | 'topic'>('topic');
+  const [adaptRawInputText, setAdaptRawInputText] = useState('');
+  const [readingWebPromptMode, setReadingWebPromptMode] = useState<'web-url' | 'topic' | 'adapt-text'>('topic');
   const [isWebPromptOpen, setIsWebPromptOpen] = useState<boolean>(true);
   const [copiedReadingPrompt, setCopiedReadingPrompt] = useState<boolean>(false);
   const [pastedReadingAiResponse, setPastedReadingAiResponse] = useState<string>('');
@@ -2018,8 +2019,11 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
         learningLanguage: readingLearningLang as ReadingLearningLang,
         formatPreference: readingFormat,
         url: readingUrl || scrapedWebSource?.url,
-        sourceTitle: scrapedWebSource?.title,
-        sourceText: scrapedWebSource?.rawText,
+        sourceTitle: readingWebPromptMode === 'adapt-text' ? readingTitle : scrapedWebSource?.title,
+        sourceText:
+          readingWebPromptMode === 'adapt-text'
+            ? adaptRawInputText
+            : scrapedWebSource?.rawText,
         topic: readingAiTopic,
         level: readingAiLevel,
         wordCount: readingAiLength,
@@ -2030,6 +2034,8 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
       readingLearningLang,
       readingFormat,
       readingUrl,
+      readingTitle,
+      adaptRawInputText,
       scrapedWebSource,
       readingAiTopic,
       readingAiLevel,
@@ -2836,6 +2842,83 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
     } finally {
       setIsScrapingOrGeneratingReading(false);
     }
+  };
+
+  const handleAiAdaptReadingText = async () => {
+    if (isScrapingOrGeneratingReading) return;
+    if (!adaptRawInputText.trim()) {
+      setAlignError('Hãy dán nội dung gốc cần biên tập theo trình độ trước.');
+      return;
+    }
+    setAlignError(null);
+    setIsScrapingOrGeneratingReading(true);
+    setReadingAiProgress(20);
+    const langLabel =
+      LEARNING_LANGUAGE_OPTIONS.find((l) => l.id === readingLearningLang)?.nativeName || readingLearningLang;
+    setReadingAiStageLabel(
+      `AI đang biên tập nội dung sang ${langLabel} trình độ ${readingAiLevel} (~${readingDurationMinutes} phút)...`,
+    );
+    try {
+      const res = await fetch('/api/ai/generate-reading', {
+        method: 'POST',
+        headers: buildApiKeyHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          mode: 'adapt-text',
+          learningLanguage: readingLearningLang,
+          formatPreference: readingFormat,
+          topic: readingAiTopic.trim(),
+          level: readingAiLevel,
+          wordCount: readingAiLength,
+          durationMinutes: readingDurationMinutes,
+          sourceText: adaptRawInputText.trim(),
+          sourceTitle: readingTitle.trim(),
+        }),
+      });
+      const data = await parseApiJson<{
+        title?: string;
+        topicBadge?: string;
+        text?: string;
+        error?: string;
+      }>(res, 'AI biên tập bài đọc thất bại');
+      if (!res.ok || !data.text?.trim()) {
+        throw new Error(data.error || 'AI không biên tập được nội dung này.');
+      }
+      setReadingAiProgress(100);
+      setReadingTitle(data.title || readingTitle || `${langLabel} Reading`);
+      setReadingTopic(data.topicBadge || `${readingAiLevel} · READING`);
+      setReadingText(data.text.trim());
+      setAlignResult(null);
+      setAlignCurrentSec(0);
+      setSynthesizedReadingSig('');
+      setReadingAiStageLabel(`Đã biên tập xong bài đọc ${langLabel} trình độ ${readingAiLevel}!`);
+    } catch (err) {
+      setAlignError(err instanceof Error ? err.message : 'Lỗi AI biên tập bài đọc.');
+      setReadingAiStageLabel('');
+    } finally {
+      setIsScrapingOrGeneratingReading(false);
+    }
+  };
+
+  const handleExportReadingJson = () => {
+    const cleanText = readingText.trim();
+    if (!cleanText) {
+      setAlignError('Chưa có nội dung bài đọc để xuất file .json.');
+      return;
+    }
+    const payload = {
+      title: readingTitle.trim() || 'Reading Practice',
+      topicBadge: readingTopic.trim() || `${readingAiLevel} · READING`,
+      level: readingAiLevel,
+      learningLanguage: readingLearningLang,
+      text: cleanText,
+    };
+    const fileName = cleanDownloadFileName(
+      readingTitle.trim() || 'reading-lesson',
+      'json',
+      'reading-lesson',
+    );
+    downloadTextAsPlainFile(JSON.stringify(payload, null, 2), fileName);
+    setReadingAiStageLabel(`Đã xuất file ${fileName} (có thể dùng ngay trong Batch hàng loạt)!`);
   };
 
   const handleCopyReadingWebPrompt = async () => {
@@ -4658,7 +4741,7 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
                         />
                         <select
                           aria-label="Chọn nhanh thời lượng đọc"
-                          value={[0.5, 1, 2, 3, 5, 10].includes(readingDurationMinutes) ? String(readingDurationMinutes) : 'custom'}
+                          value={[0.5, 1, 2, 3, 5, 10, 15, 20, 25, 30].includes(readingDurationMinutes) ? String(readingDurationMinutes) : 'custom'}
                           onChange={(e) => {
                             if (e.target.value === 'custom') return;
                             const mins = Number(e.target.value);
@@ -4678,7 +4761,11 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
                           <option value="3">~3 phút</option>
                           <option value="5">~5 phút</option>
                           <option value="10">~10 phút</option>
-                          {![0.5, 1, 2, 3, 5, 10].includes(readingDurationMinutes) && (
+                          <option value="15">~15 phút</option>
+                          <option value="20">~20 phút</option>
+                          <option value="25">~25 phút</option>
+                          <option value="30">~30 phút</option>
+                          {![0.5, 1, 2, 3, 5, 10, 15, 20, 25, 30].includes(readingDurationMinutes) && (
                             <option value="custom">{readingDurationMinutes} phút</option>
                           )}
                         </select>
@@ -4693,11 +4780,11 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
                           id="reading-ai-length"
                           type="number"
                           min={40}
-                          max={5600}
+                          max={6500}
                           step={10}
                           value={readingAiLength}
                           onChange={(e) =>
-                            setReadingAiLength(Math.max(40, Math.min(5600, Math.round(Number(e.target.value) || 120))))
+                            setReadingAiLength(Math.max(40, Math.min(6500, Math.round(Number(e.target.value) || 120))))
                           }
                           className="w-28 px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg tabular-nums"
                         />
@@ -4758,6 +4845,68 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
                     </div>
                   )}
 
+                  {/* Raw Content Input + AI Difficulty Adaptation + JSON Export */}
+                  <div className="p-3 rounded-xl bg-white/90 border border-indigo-200/80 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <label htmlFor="reading-adapt-raw-text" className="text-[11px] font-bold text-slate-800">
+                        Nhập nội dung thô để AI biên tập lại theo trình độ ({readingAiLevel}) &amp; thời lượng ({readingDurationMinutes}p)
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <PasteButton
+                          size="sm"
+                          onPaste={(txt) => setAdaptRawInputText(txt)}
+                          title="Dán nhanh văn bản gốc cần AI biên tập"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleExportReadingJson}
+                          data-testid="export-reading-json-btn"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100"
+                        >
+                          <Download className="w-3 h-3" />
+                          <span>Xuất bài đọc .json</span>
+                        </button>
+                      </div>
+                    </div>
+                    <textarea
+                      id="reading-adapt-raw-text"
+                      rows={3}
+                      value={adaptRawInputText}
+                      onChange={(e) => setAdaptRawInputText(e.target.value)}
+                      placeholder="Dán bài báo, đoạn truyện, ghi chú tiếng Việt/Anh/Nhật/Hàn... AI sẽ biên tập lại đúng trình độ đã chọn và độ dài mục tiêu."
+                      className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg"
+                    />
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {effectiveReadingGeminiKey && (
+                        <button
+                          type="button"
+                          disabled={isScrapingOrGeneratingReading || !adaptRawInputText.trim()}
+                          onClick={() => void handleAiAdaptReadingText()}
+                          data-testid="ai-adapt-reading-btn"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                        >
+                          {isScrapingOrGeneratingReading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Wand2 className="w-3.5 h-3.5" />
+                          )}
+                          <span>AI Biên tập theo độ khó</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReadingWebPromptMode('adapt-text');
+                          setIsWebPromptOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Tạo Prompt Web AI từ nội dung này</span>
+                      </button>
+                    </div>
+                  </div>
+
                   {/* External Web AI Prompt Builder & Paste Response Box (Side-by-side like AI Creator) */}
                   {isWebPromptOpen && (
                     <div className="p-3 rounded-xl bg-white border border-indigo-200 space-y-2.5 text-xs">
@@ -4785,6 +4934,17 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
                             }`}
                           >
                             Theo URL Web
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setReadingWebPromptMode('adapt-text')}
+                            className={`px-2 py-0.5 text-[10px] font-semibold rounded border ${
+                              readingWebPromptMode === 'adapt-text'
+                                ? 'bg-indigo-600 border-indigo-600 text-white'
+                                : 'bg-slate-50 border-slate-200 text-slate-600'
+                            }`}
+                          >
+                            Biên tập từ nội dung dán
                           </button>
                         </div>
                         <button
@@ -5259,6 +5419,13 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
                             className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 whitespace-nowrap"
                           >
                             Làm sạch tiêu đề bài tập
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleExportReadingJson}
+                            className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 whitespace-nowrap"
+                          >
+                            Xuất .json
                           </button>
                           <label className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 cursor-pointer">
                             Nhập TXT / SRT...

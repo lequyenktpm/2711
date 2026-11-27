@@ -18,12 +18,13 @@ import {
   ElementLayout,
   IllustrationVariant,
   SceneElement,
+  TitleOverlayLayout,
   WatermarkCorner,
   WatermarkOutroConfig,
 } from '../engine/types';
 import { getEffectiveVectorCatalog } from '../engine/vectorComponentDb';
 
-export type StageOverlayZone = 'intro' | 'outro' | 'watermark';
+export type StageOverlayZone = 'intro' | 'outro' | 'watermark' | 'title';
 
 interface InlinePreviewElementEditorProps {
   selectedElement: SceneElement | null;
@@ -31,6 +32,10 @@ interface InlinePreviewElementEditorProps {
   selectedOverlayZone?: StageOverlayZone | null;
   watermarkConfig?: WatermarkOutroConfig;
   projectTitle?: string;
+  titleLayout?: TitleOverlayLayout;
+  resolvedTitleBox?: { x: number; y: number; width: number; height: number; scale: number } | null;
+  onChangeTitle?: (title: string) => void;
+  onChangeTitleLayout?: (next?: TitleOverlayLayout) => void;
   onChangeWatermark?: (wm: WatermarkOutroConfig) => void;
   onUpdateElement?: (id: string, patch: Partial<SceneElement>) => void;
   onResetElementPosition?: (id: string) => void;
@@ -64,6 +69,10 @@ export const InlinePreviewElementEditor: React.FC<InlinePreviewElementEditorProp
   selectedOverlayZone,
   watermarkConfig,
   projectTitle,
+  titleLayout,
+  resolvedTitleBox,
+  onChangeTitle,
+  onChangeTitleLayout,
   onChangeWatermark,
   onUpdateElement,
   onResetElementPosition,
@@ -74,6 +83,182 @@ export const InlinePreviewElementEditor: React.FC<InlinePreviewElementEditorProp
   stageHeight = 1920,
 }) => {
   if (!selectedElement && !selectedOverlayZone) return null;
+
+  if (selectedOverlayZone === 'title' && (onChangeTitle || onChangeTitleLayout)) {
+    const titleX = Math.round(titleLayout?.x ?? resolvedTitleBox?.x ?? stageWidth / 2);
+    const titleY = Math.round(titleLayout?.y ?? resolvedTitleBox?.y ?? 145);
+    const titleScale = Number((titleLayout?.scale ?? resolvedTitleBox?.scale ?? 1).toFixed(2));
+    const isHidden = Boolean(titleLayout?.hidden);
+
+    const updateTitlePos = (patch: Partial<TitleOverlayLayout>) => {
+      onChangeTitleLayout?.({
+        ...titleLayout,
+        x: titleX,
+        y: titleY,
+        scale: titleScale,
+        ...patch,
+      });
+    };
+
+    const clampTitleX = (x: number) => Math.round(Math.max(40, Math.min(stageWidth - 40, x)));
+    const clampTitleY = (y: number) => Math.round(Math.max(36, Math.min(stageHeight - 40, y)));
+    const clampTitleScale = (s: number) => Number(Math.max(0.5, Math.min(1.8, s)).toFixed(2));
+
+    return (
+      <div
+        data-testid="inline-preview-title-editor"
+        className="w-full rounded-xl border border-indigo-200 bg-indigo-50/70 p-3 space-y-2.5 text-xs"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-bold text-indigo-950">
+            Đang chỉnh ngay dưới Preview: Tên bài giảng (Title)
+          </span>
+          <div className="flex items-center gap-1.5">
+            {onChangeTitleLayout && (
+              <button
+                type="button"
+                onClick={() => onChangeTitleLayout(undefined)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold bg-white border border-slate-200 text-slate-700 rounded hover:bg-slate-100"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>Đặt lại vị trí</span>
+              </button>
+            )}
+            {onClearSelection && (
+              <button
+                type="button"
+                onClick={onClearSelection}
+                aria-label="Đóng khung sửa tên bài giảng"
+                className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-white/70"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {onChangeTitle && (
+            <input
+              type="text"
+              aria-label="Sửa tên bài giảng"
+              value={projectTitle ?? ''}
+              onChange={(e) => onChangeTitle(e.target.value)}
+              placeholder="Nhập tên bài giảng hiển thị trên video..."
+              className="flex-1 min-w-[200px] px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg font-semibold"
+            />
+          )}
+          {onChangeTitleLayout && (
+            <label className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-700 cursor-pointer bg-white px-2.5 py-1.5 rounded-lg border border-slate-200">
+              <input
+                type="checkbox"
+                checked={isHidden}
+                onChange={(e) => updateTitlePos({ hidden: e.target.checked })}
+                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span>Ẩn tiêu đề</span>
+            </label>
+          )}
+        </div>
+
+        {onChangeTitleLayout && (
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-indigo-200/70">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10.5px] font-semibold text-slate-600">Vị trí:</span>
+              <label className="inline-flex items-center gap-1 text-[10.5px] text-slate-600">
+                <span>X</span>
+                <input
+                  type="number"
+                  aria-label="Tọa độ X tên bài giảng"
+                  value={titleX}
+                  onChange={(e) => updateTitlePos({ x: clampTitleX(Number(e.target.value) || 0) })}
+                  className="w-14 px-1.5 py-0.5 text-[11px] font-mono bg-white border border-slate-200 rounded"
+                />
+              </label>
+              <label className="inline-flex items-center gap-1 text-[10.5px] text-slate-600">
+                <span>Y</span>
+                <input
+                  type="number"
+                  aria-label="Tọa độ Y tên bài giảng"
+                  value={titleY}
+                  onChange={(e) => updateTitlePos({ y: clampTitleY(Number(e.target.value) || 0) })}
+                  className="w-14 px-1.5 py-0.5 text-[11px] font-mono bg-white border border-slate-200 rounded"
+                />
+              </label>
+              <div className="inline-flex items-center gap-0.5">
+                <button
+                  type="button"
+                  aria-label="Dịch tên bài giảng sang trái"
+                  onClick={() => updateTitlePos({ x: clampTitleX(titleX - 12) })}
+                  className="p-1 bg-white border border-slate-200 rounded hover:bg-slate-100 text-slate-700"
+                >
+                  <ArrowLeft className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Dịch tên bài giảng lên trên"
+                  onClick={() => updateTitlePos({ y: clampTitleY(titleY - 12) })}
+                  className="p-1 bg-white border border-slate-200 rounded hover:bg-slate-100 text-slate-700"
+                >
+                  <ArrowUp className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Dịch tên bài giảng xuống dưới"
+                  onClick={() => updateTitlePos({ y: clampTitleY(titleY + 12) })}
+                  className="p-1 bg-white border border-slate-200 rounded hover:bg-slate-100 text-slate-700"
+                >
+                  <ArrowDown className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Dịch tên bài giảng sang phải"
+                  onClick={() => updateTitlePos({ x: clampTitleX(titleX + 12) })}
+                  className="p-1 bg-white border border-slate-200 rounded hover:bg-slate-100 text-slate-700"
+                >
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                aria-label="Thu nhỏ tên bài giảng"
+                onClick={() => updateTitlePos({ scale: clampTitleScale(titleScale - 0.1) })}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10.5px] font-semibold bg-white border border-slate-200 rounded hover:bg-slate-100 text-slate-700"
+              >
+                <ZoomOut className="w-3 h-3" />
+                <span>Thu nhỏ</span>
+              </button>
+              <input
+                type="range"
+                aria-label="Tỉ lệ chữ tên bài giảng"
+                min={0.5}
+                max={1.8}
+                step={0.05}
+                value={titleScale}
+                onChange={(e) => updateTitlePos({ scale: clampTitleScale(Number(e.target.value)) })}
+                className="w-20 accent-indigo-600 h-1"
+              />
+              <button
+                type="button"
+                aria-label="Phóng to tên bài giảng"
+                onClick={() => updateTitlePos({ scale: clampTitleScale(titleScale + 0.1) })}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10.5px] font-semibold bg-white border border-slate-200 rounded hover:bg-slate-100 text-slate-700"
+              >
+                <ZoomIn className="w-3 h-3" />
+                <span>Phóng to</span>
+              </button>
+              <span className="font-mono text-[10.5px] font-semibold text-indigo-700 tabular-nums">
+                {Math.round(titleScale * 100)}%
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (selectedOverlayZone && watermarkConfig && onChangeWatermark) {
     return (

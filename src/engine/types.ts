@@ -592,6 +592,13 @@ export interface WatermarkOutroConfig {
   introSubtitle?: string;
 }
 
+export interface TitleOverlayLayout {
+  x?: number;
+  y?: number;
+  scale?: number;
+  hidden?: boolean;
+}
+
 export interface LessonProject {
   id: string;
   title: string;
@@ -601,6 +608,7 @@ export interface LessonProject {
   backgroundImage?: BackgroundImageConfig;
   subtitleConfig?: SubtitleDisplayConfig;
   watermark?: WatermarkOutroConfig;
+  titleLayout?: TitleOverlayLayout;
   duration: number;
   fps: 30 | 60;
   aspectRatio?: ExportAspectRatioId;

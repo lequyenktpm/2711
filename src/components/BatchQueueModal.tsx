@@ -51,6 +51,8 @@ import {
   renderReadingAlongFrame,
 } from '../engine/eduStudioEffects';
 import {
+  CREATOR_FORMAT_OPTIONS,
+  CreatorFormatCategory,
   getLevelsForLearningLanguage,
   LEARNING_LANGUAGE_OPTIONS,
   LearningLanguageId,
@@ -79,8 +81,10 @@ import {
 } from '../engine/mp4Exporter';
 import {
   BatchSubTabId,
+  buildBatchPromptZipName,
   buildBatchTtsSegmentsForReelCards,
   generateBatchPromptsForTopics,
+  getBatchPromptSubfolder,
   mapBatchSynthesisDurations,
   mapBatchWordBoundariesToProjectCues,
   parseCreatorOrTranslationBatchInput,
@@ -123,7 +127,7 @@ import {
   downloadServerOutputFile,
   downloadTextAsPlainFile,
 } from '../utils/safeFileDownload';
-import { buildZipArchive } from '../utils/zipBuilder';
+import { buildZipArchive, extractFilesFromZipArchive } from '../utils/zipBuilder';
 
 export type BatchItemStatus =
   | 'pending'
@@ -230,6 +234,16 @@ function base64ToAudioFile(base64: string, fileName: string, mimeType = 'audio/m
   return new File([bytes], fileName, { type: mimeType });
 }
 
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  const chunkSize = 8192;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const slice = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...slice);
+  }
+  return btoa(binary);
+}
+
 export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
   isOpen,
   mp4Settings,
@@ -243,18 +257,38 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
   const [items, setItems] = useState<BatchJobItem[]>([]);
   const [isRunning, setIsRunning] = useState(false);
 
-  // ── Multi-Tab JSON Batch Queue (Creator / Translation / Reading) ──────────
+  // ── Multi-Tab JSON Batch Queue & Settings-First Prompt ZIP State ──────────
   const [aiBatchItems, setAiBatchItems] = useState<MultiJsonBatchItem[]>([]);
   const [multiJsonParseMsg, setMultiJsonParseMsg] = useState<string | null>(null);
   const [isPasteMultiOpen, setIsPasteMultiOpen] = useState(false);
   const [pasteMultiRaw, setPasteMultiRaw] = useState('');
-  const [isTopicPromptOpen, setIsTopicPromptOpen] = useState(false);
+  const [isTopicPromptOpen, setIsTopicPromptOpen] = useState(true);
   const [topicLinesInput, setTopicLinesInput] = useState('');
+  const [batchPromptCount, setBatchPromptCount] = useState<number>(5);
   const [promptGenLang, setPromptGenLang] = useState<LearningLanguageId>('en');
   const [promptGenLevel, setPromptGenLevel] = useState<string>('B1');
-  const [promptGenMinutes, setPromptGenMinutes] = useState<number>(1.5);
+  const [promptGenTargetLang, setPromptGenTargetLang] = useState<string>('vi');
+  const [promptDurationMode, setPromptDurationMode] = useState<'fixed' | 'random'>('fixed');
+  const [promptGenMinutes, setPromptGenMinutes] = useState<number>(5);
+  const [promptMinMinutes, setPromptMinMinutes] = useState<number>(3);
+  const [promptMaxMinutes, setPromptMaxMinutes] = useState<number>(10);
+  const [promptGenCreatorFormat, setPromptGenCreatorFormat] =
+    useState<CreatorFormatCategory>('auto');
+  const [promptGenThinkSec, setPromptGenThinkSec] = useState<number>(4);
+  const [promptGenRepeatCount, setPromptGenRepeatCount] = useState<number>(2);
   const [promptGenReadingFormat, setPromptGenReadingFormat] =
     useState<ReadingFormatCategory>('auto');
+  const [savedPromptZipInfo, setSavedPromptZipInfo] = useState<{
+    zipName: string;
+    relativePath: string;
+    savedPath: string;
+    subfolder: string;
+    count: number;
+  } | null>(null);
+  const [batchErrorNotice, setBatchErrorNotice] = useState<{
+    title: string;
+    errors: string[];
+  } | null>(null);
 
   // ── Shared Settings for AI JSON Tabs (Zero API Needed) ────────────────────
   const [reelBatchTheme, setReelBatchTheme] = useState<CanvasThemeId>('studio-slate');
@@ -484,24 +518,28 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
     }
   };
 
-  const handleOpenOutputFolder = async () => {
+  const handleOpenOutputFolder = async (overrideSubPath?: string) => {
     try {
-      const subPath = resolveTabOutputSubfolder('Batch', customSavePath);
+      const targetPath =
+        overrideSubPath !== undefined
+          ? overrideSubPath
+          : resolveTabOutputSubfolder('Batch', customSavePath);
       const res = await fetch('/api/output/open', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subPath }),
+        body: JSON.stringify({ path: targetPath }),
       });
       const data = (await res.json().catch(() => ({}))) as {
-        opened?: boolean;
-        path?: string;
+        ok?: boolean;
+        desktopOpened?: boolean;
+        outputDir?: string;
         error?: string;
       };
-      if (data.opened) {
-        setOpenFolderMsg(`Đã mở thư mục: ${data.path}`);
+      if (data.desktopOpened) {
+        setOpenFolderMsg(`Đã mở thư mục trên máy: ${data.outputDir || targetPath}`);
       } else {
         setOpenFolderMsg(
-          `Đường dẫn Output trên server: ${data.path || outputFilesState.outputDir} (Bạn có thể xem/tải từng file ở danh sách bên dưới).`,
+          `Đường dẫn lưu trữ: ${data.outputDir || outputFilesState.outputDir} (Mở danh sách file bên dưới hoặc copy đường dẫn này vào File Explorer).`,
         );
         setShowOutputList(true);
       }
@@ -538,6 +576,99 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
       }
     }
     downloadBlob(data, fileName, mimeType);
+  };
+
+  const saveZipToServerSubfolder = async (
+    zipData: Uint8Array,
+    zipName: string,
+    subfolder: string,
+    sourceTab: string,
+  ): Promise<{ relativePath: string; savedPath: string }> => {
+    try {
+      const res = await fetch('/api/output/save-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: zipName,
+          base64: uint8ArrayToBase64(zipData),
+          relativeDir: subfolder,
+          sourceTab,
+        }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as {
+          relativePath?: string;
+          savedPath?: string;
+        };
+        if (data.relativePath) {
+          emitOutputUpdated({ relativePath: data.relativePath, sourceTab });
+          void refreshOutputFiles();
+        }
+        return {
+          relativePath: data.relativePath || `${subfolder}/${zipName}`,
+          savedPath: data.savedPath || `output/${subfolder}/${zipName}`,
+        };
+      }
+    } catch {
+      // Fall back to relative display path when server save fails
+    }
+    return {
+      relativePath: `${subfolder}/${zipName}`,
+      savedPath: `output/${subfolder}/${zipName}`,
+    };
+  };
+
+  const expandUploadedFilesOrZips = async (files: File[]): Promise<File[]> => {
+    const expanded: File[] = [];
+    const zipErrors: string[] = [];
+
+    for (const f of files) {
+      if (!/\.zip$/i.test(f.name)) {
+        expanded.push(f);
+        continue;
+      }
+      try {
+        const bytes = new Uint8Array(await f.arrayBuffer());
+        const archiveFiles = await extractFilesFromZipArchive(bytes);
+        const entryNames = Object.keys(archiveFiles).filter((entryPath) => {
+          const leaf = entryPath.split('/').pop() || '';
+          return (
+            leaf.length > 0 &&
+            !entryPath.includes('__MACOSX/') &&
+            !leaf.startsWith('._')
+          );
+        });
+        if (entryNames.length === 0) {
+          zipErrors.push(`File ZIP "${f.name}" không chứa tệp hợp lệ bên trong.`);
+          continue;
+        }
+        for (const entryPath of entryNames) {
+          const leaf = entryPath.split('/').pop() || entryPath;
+          const entryBytes = archiveFiles[entryPath];
+          const mime = /\.json$/i.test(leaf)
+            ? 'application/json'
+            : /\.mp3$/i.test(leaf)
+              ? 'audio/mpeg'
+              : /\.wav$/i.test(leaf)
+                ? 'audio/wav'
+                : 'text/plain';
+          expanded.push(new File([new Uint8Array(entryBytes)], leaf, { type: mime }));
+        }
+      } catch (err) {
+        zipErrors.push(
+          `Lỗi giải nén "${f.name}": ${err instanceof Error ? err.message : 'File ZIP bị hỏng.'}`,
+        );
+      }
+    }
+
+    if (zipErrors.length > 0) {
+      setBatchErrorNotice({
+        title: `Không đọc được ${zipErrors.length} file .zip`,
+        errors: zipErrors,
+      });
+    }
+
+    return expanded;
   };
 
   // ── Multi-Tab AI JSON Ingestion (No API Needed) ───────────────────────────
@@ -611,24 +742,38 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
       setMultiJsonParseMsg(
         `Đã nạp ${added.length} bài, bỏ qua ${failedFiles.length} file sai định dạng (${failedFiles.slice(0, 3).join(', ')}).`,
       );
+      setBatchErrorNotice({
+        title: `Có ${failedFiles.length} file JSON không đúng định dạng tab hiện tại`,
+        errors: failedFiles.map((fn) => `${fn}: sai cấu trúc hoặc không chứa bài hợp lệ`),
+      });
     } else if (failedFiles.length > 0) {
-      setMultiJsonParseMsg(
-        `Không đọc được nội dung JSON hợp lệ từ: ${failedFiles.slice(0, 3).join(', ')}. Hãy kiểm tra đúng tab con đã chọn.`,
-      );
+      const msg = `Không đọc được nội dung JSON hợp lệ từ: ${failedFiles.slice(0, 3).join(', ')}. Hãy kiểm tra đúng tab con đã chọn.`;
+      setMultiJsonParseMsg(msg);
+      setBatchErrorNotice({
+        title: 'Không đọc được các file JSON vừa tải lên',
+        errors: failedFiles.map((fn) => `${fn}: không khớp cấu trúc tab đang chọn`),
+      });
     }
   };
 
   const handleUploadAiJsonFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0 || batchSubTab === 'studio') return;
-    const files = Array.from(fileList);
+    const rawFiles = Array.from(fileList);
     e.target.value = '';
+    const expandedFiles = await expandUploadedFilesOrZips(rawFiles);
     const entries = await Promise.all(
-      files.map(async (f) => ({
-        rawText: await f.text(),
-        fileName: f.name,
-      })),
+      expandedFiles
+        .filter((f) => /\.(json|txt|md)$/i.test(f.name) || f.type === 'application/json')
+        .map(async (f) => ({
+          rawText: await f.text(),
+          fileName: f.name,
+        })),
     );
+    if (entries.length === 0) {
+      setMultiJsonParseMsg('Không tìm thấy file .json/.txt nào bên trong tệp bạn vừa chọn.');
+      return;
+    }
     ingestMultiJsonTexts(entries, batchSubTab);
   };
 
@@ -643,42 +788,67 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
   };
 
   const handleExportTopicsPromptZip = async () => {
-    if (batchSubTab === 'studio') return;
+    setBatchErrorNotice(null);
     const topics = parseTopicLinesInput(topicLinesInput);
-    if (topics.length === 0) {
-      setMultiJsonParseMsg('Hãy nhập ít nhất 1 dòng chủ đề để xuất bộ Prompt ZIP.');
-      return;
-    }
+    const safeMin = Math.max(0.5, Math.min(30, Math.min(promptMinMinutes, promptMaxMinutes)));
+    const safeMax = Math.max(0.5, Math.min(30, Math.max(promptMinMinutes, promptMaxMinutes)));
+    const effectiveCount = Math.max(
+      1,
+      Math.min(30, topics.length > 0 ? Math.max(batchPromptCount, topics.length) : batchPromptCount),
+    );
+    const resolvedStudioComp: LayoutCompositionId | 'ai-decide' =
+      compositionId === 'random' ? 'ai-decide' : compositionId;
+
     const prompts = generateBatchPromptsForTopics({
       subTab: batchSubTab,
       topics,
+      promptCount: effectiveCount,
       learningLanguage: promptGenLang,
       level: promptGenLevel,
+      durationMode: promptDurationMode,
       durationMinutes: promptGenMinutes,
-      targetLang: 'vi',
+      minDurationMinutes: safeMin,
+      maxDurationMinutes: safeMax,
+      targetLang: promptGenTargetLang,
       aspectRatio: activeSettings.aspectRatio || '9:16',
+      style: videoStyle,
+      compositionId: resolvedStudioComp,
+      formatPreference: promptGenCreatorFormat,
+      thinkSec: promptGenThinkSec,
+      repeatCount: promptGenRepeatCount,
       readingFormat: promptGenReadingFormat,
     });
+
     const zipEntries: Record<string, string> = {};
     prompts.forEach((p) => {
       zipEntries[p.fileName] = p.promptText;
     });
     const zipData = buildZipArchive(zipEntries);
-    const zipName = cleanDownloadFileName(
-      `Batch Prompts ${batchSubTab}`,
-      'zip',
-      'Batch Prompts',
+    const zipName = buildBatchPromptZipName(batchSubTab);
+    const subfolder = getBatchPromptSubfolder(batchSubTab);
+    const savedMeta = await saveZipToServerSubfolder(
+      zipData,
+      zipName,
+      subfolder,
+      `Prompt ${batchSubTab}`,
     );
     await saveBlobOutput(zipData, zipName, 'application/zip');
+    setSavedPromptZipInfo({
+      zipName,
+      relativePath: savedMeta.relativePath,
+      savedPath: savedMeta.savedPath,
+      subfolder,
+      count: prompts.length,
+    });
     setMultiJsonParseMsg(
-      `Đã tạo ${prompts.length} file prompt và tải xuống ${zipName}. Chạy trên AI Web rồi upload toàn bộ JSON kết quả lên đây!`,
+      `Đã tạo ${prompts.length} prompt trong ${zipName} (lưu tại ${savedMeta.savedPath}). Chạy AI Web lấy JSON → nén .zip (hoặc chọn nhiều .json) rồi upload lên đây!`,
     );
   };
 
   // ── Studio File Handling ──────────────────────────────────────────────────
-  const handleFilesSelected = (fileList: FileList | null) => {
+  const handleFilesSelected = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
-    const files = Array.from(fileList);
+    const files = await expandUploadedFilesOrZips(Array.from(fileList));
 
     setItems((prev) => {
       const map = new Map<string, BatchJobItem>();
@@ -720,9 +890,12 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
     });
   };
 
-  const handleJsonFilesSelected = (fileList: FileList | null) => {
+  const handleJsonFilesSelected = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
-    const files = Array.from(fileList);
+    const files = (await expandUploadedFilesOrZips(Array.from(fileList))).filter((f) =>
+      JSON_EXT_RE.test(f.name),
+    );
+    if (files.length === 0) return;
 
     setItems((prev) => {
       return prev.map((item) => {
@@ -929,10 +1102,12 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
   const handleGeneratePromptZip = async () => {
     if (isRunning) return;
     stopFlagRef.current = false;
+    setBatchErrorNotice(null);
     setIsRunning(true);
 
     const queueSnapshot = [...items];
     const promptFiles: Record<string, string> = {};
+    const runErrors: string[] = [];
 
     for (let idx = 0; idx < queueSnapshot.length; idx++) {
       const item = queueSnapshot[idx];
@@ -958,10 +1133,16 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
           promptText,
         });
       } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Lỗi không xác định';
+        runErrors.push(`${item.baseName}: ${msg}`);
+        setBatchErrorNotice({
+          title: `Có ${runErrors.length} bài tạo Prompt thất bại (đang tiếp tục các bài còn lại)`,
+          errors: [...runErrors],
+        });
         updateItem(item.id, {
           status: 'error',
           progress: 0,
-          detail: err instanceof Error ? err.message : 'Lỗi không xác định',
+          detail: msg,
         });
       }
 
@@ -972,13 +1153,22 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
 
     if (Object.keys(promptFiles).length >= 1) {
       const zipData = buildZipArchive(promptFiles);
-      const firstTitle = queueSnapshot[0]?.baseName || 'Batch';
-      const zipName = cleanDownloadFileName(
-        Object.keys(promptFiles).length === 1 ? `${firstTitle} Prompts` : 'Batch Prompts',
-        'zip',
-        'Batch Prompts',
+      const zipName = buildBatchPromptZipName('studio');
+      const subfolder = getBatchPromptSubfolder('studio');
+      const savedMeta = await saveZipToServerSubfolder(
+        zipData,
+        zipName,
+        subfolder,
+        'Prompt studio',
       );
       await saveBlobOutput(zipData, zipName, 'application/zip');
+      setSavedPromptZipInfo({
+        zipName,
+        relativePath: savedMeta.relativePath,
+        savedPath: savedMeta.savedPath,
+        subfolder,
+        count: Object.keys(promptFiles).length,
+      });
     }
 
     setIsRunning(false);
@@ -1016,12 +1206,14 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
   const handleStartBatch = async () => {
     if (isRunning) return;
     stopFlagRef.current = false;
+    setBatchErrorNotice(null);
     const controller = new AbortController();
     batchAbortControllerRef.current = controller;
     setIsRunning(true);
 
     const queueSnapshot = [...items];
     let completedCount = 0;
+    const runErrors: string[] = [];
     for (let idx = 0; idx < queueSnapshot.length; idx++) {
       const item = queueSnapshot[idx];
       if (stopFlagRef.current || controller.signal.aborted) break;
@@ -1138,10 +1330,16 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
           });
           break;
         }
+        const msg = err instanceof Error ? err.message : 'Lỗi không xác định';
+        runErrors.push(`${item.baseName}: ${msg}`);
+        setBatchErrorNotice({
+          title: `Có ${runErrors.length} bài gặp lỗi khi render (đang tiếp tục hoặc bạn có thể Hủy)`,
+          errors: [...runErrors],
+        });
         updateItem(item.id, {
           status: 'error',
           progress: 0,
-          detail: err instanceof Error ? err.message : 'Lỗi không xác định',
+          detail: msg,
         });
       }
 
@@ -1162,12 +1360,14 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
   const handleStartAiBatch = async () => {
     if (isRunning || batchSubTab === 'studio') return;
     stopFlagRef.current = false;
+    setBatchErrorNotice(null);
     const controller = new AbortController();
     batchAbortControllerRef.current = controller;
     setIsRunning(true);
 
     const queueSnapshot = aiBatchItems.filter((it) => it.subTab === batchSubTab);
     let completedCount = 0;
+    const runErrors: string[] = [];
 
     for (let idx = 0; idx < queueSnapshot.length; idx++) {
       const item = queueSnapshot[idx];
@@ -1700,10 +1900,16 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
           });
           break;
         }
+        const msg = err instanceof Error ? err.message : 'Lỗi xử lý bài batch';
+        runErrors.push(`${item.title}: ${msg}`);
+        setBatchErrorNotice({
+          title: `Có ${runErrors.length} bài gặp lỗi khi render (đang tiếp tục hoặc bạn có thể Hủy)`,
+          errors: [...runErrors],
+        });
         updateAiItem(item.id, {
           status: 'error',
           progress: 0,
-          detail: err instanceof Error ? err.message : 'Lỗi xử lý bài batch',
+          detail: msg,
         });
       }
 
@@ -1766,6 +1972,321 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
   ];
 
   const promptLevelOptions = getLevelsForLearningLanguage(promptGenLang);
+  const currentTabPromptZipName = buildBatchPromptZipName(batchSubTab);
+  const currentTabPromptSubfolder = getBatchPromptSubfolder(batchSubTab);
+
+  const renderSettingsFirstPromptZipPanel = () => (
+    <div
+      className="p-3 rounded-xl bg-violet-50/70 border border-violet-200 space-y-2.5 text-xs"
+      data-testid="settings-first-prompt-zip-panel"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="font-bold text-violet-950">
+            Cài đặt thông số trước → Tạo Prompt ZIP ({currentTabPromptZipName})
+          </div>
+          <div className="text-[10.5px] text-violet-700">
+            Thư mục lưu trên máy/server: <code>output/{currentTabPromptSubfolder}</code> · Đưa Prompt cho AI Web rồi nén <code>.zip</code> (hoặc chọn nhiều <code>.json</code>) tải lại vào đây.
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={isRunning}
+          onClick={() => void handleOpenOutputFolder(currentTabPromptSubfolder)}
+          data-testid="open-prompt-folder-btn"
+          className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-violet-800 bg-white border border-violet-300 rounded-lg hover:bg-violet-100 shrink-0"
+        >
+          <FolderOpen className="w-3.5 h-3.5" />
+          <span>Mở thư mục Prompt</span>
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div>
+          <label className="block text-[10px] font-semibold text-slate-700 mb-0.5">
+            Số lượng video (1–30)
+          </label>
+          <input
+            type="number"
+            min={1}
+            max={30}
+            value={batchPromptCount}
+            onChange={(e) =>
+              setBatchPromptCount(Math.max(1, Math.min(30, Math.round(Number(e.target.value) || 1))))
+            }
+            data-testid="batch-prompt-count-input"
+            className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg tabular-nums"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-semibold text-slate-700 mb-0.5">
+            Ngôn ngữ học
+          </label>
+          <select
+            value={promptGenLang}
+            onChange={(e) => {
+              const lang = e.target.value as LearningLanguageId;
+              setPromptGenLang(lang);
+              const meta = LEARNING_LANGUAGE_OPTIONS.find((l) => l.id === lang);
+              setPromptGenLevel(meta?.defaultLevel || 'B1');
+            }}
+            className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg"
+          >
+            {LEARNING_LANGUAGE_OPTIONS.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[10px] font-semibold text-slate-700 mb-0.5">
+            Trình độ
+          </label>
+          <select
+            value={promptGenLevel}
+            onChange={(e) => setPromptGenLevel(e.target.value)}
+            className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg"
+          >
+            {promptLevelOptions.map((lv) => (
+              <option key={lv.id} value={lv.id}>
+                {lv.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[10px] font-semibold text-slate-700 mb-0.5">
+            Ngôn ngữ giải thích
+          </label>
+          <select
+            value={promptGenTargetLang}
+            onChange={(e) => setPromptGenTargetLang(e.target.value)}
+            className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg"
+          >
+            <option value="vi">Tiếng Việt</option>
+            <option value="en">English</option>
+            <option value="ja">日本語</option>
+            <option value="none">Chỉ ngôn ngữ gốc</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Sub-tab specific + Duration Fixed vs Random */}
+      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
+        <div className="sm:col-span-5">
+          <label className="block text-[10px] font-semibold text-slate-700 mb-0.5">
+            Chế độ thời lượng video (0.5 – 30 phút)
+          </label>
+          <div className="grid grid-cols-2 gap-1">
+            <button
+              type="button"
+              onClick={() => setPromptDurationMode('fixed')}
+              data-testid="prompt-duration-fixed-btn"
+              className={`px-2 py-1 text-[11px] font-semibold rounded-lg border ${
+                promptDurationMode === 'fixed'
+                  ? 'bg-violet-600 border-violet-600 text-white'
+                  : 'bg-white border-slate-200 text-slate-700'
+              }`}
+            >
+              Cố định (VD: 5p)
+            </button>
+            <button
+              type="button"
+              onClick={() => setPromptDurationMode('random')}
+              data-testid="prompt-duration-random-btn"
+              className={`px-2 py-1 text-[11px] font-semibold rounded-lg border ${
+                promptDurationMode === 'random'
+                  ? 'bg-violet-600 border-violet-600 text-white'
+                  : 'bg-white border-slate-200 text-slate-700'
+              }`}
+            >
+              Ngẫu nhiên khoảng
+            </button>
+          </div>
+        </div>
+
+        {promptDurationMode === 'fixed' ? (
+          <div className="sm:col-span-3">
+            <label className="block text-[10px] font-semibold text-slate-700 mb-0.5">
+              Thời lượng cố định (phút)
+            </label>
+            <select
+              value={[0.5, 1, 2, 3, 5, 10, 15, 20, 25, 30].includes(promptGenMinutes) ? String(promptGenMinutes) : '5'}
+              onChange={(e) => setPromptGenMinutes(Number(e.target.value))}
+              data-testid="prompt-fixed-minutes-select"
+              className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg font-medium"
+            >
+              <option value="0.5">0.5 phút (30s)</option>
+              <option value="1">1 phút</option>
+              <option value="2">2 phút</option>
+              <option value="3">3 phút</option>
+              <option value="5">5 phút</option>
+              <option value="10">10 phút</option>
+              <option value="15">15 phút</option>
+              <option value="20">20 phút</option>
+              <option value="25">25 phút</option>
+              <option value="30">30 phút</option>
+            </select>
+          </div>
+        ) : (
+          <>
+            <div className="sm:col-span-2">
+              <label className="block text-[10px] font-semibold text-slate-700 mb-0.5">
+                Từ (phút)
+              </label>
+              <input
+                type="number"
+                min={0.5}
+                max={30}
+                step={0.5}
+                value={promptMinMinutes}
+                onChange={(e) =>
+                  setPromptMinMinutes(Math.max(0.5, Math.min(30, Number(e.target.value) || 0.5)))
+                }
+                data-testid="prompt-random-min-input"
+                className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg tabular-nums"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-[10px] font-semibold text-slate-700 mb-0.5">
+                Đến (phút)
+              </label>
+              <input
+                type="number"
+                min={0.5}
+                max={30}
+                step={0.5}
+                value={promptMaxMinutes}
+                onChange={(e) =>
+                  setPromptMaxMinutes(Math.max(0.5, Math.min(30, Number(e.target.value) || 5)))
+                }
+                data-testid="prompt-random-max-input"
+                className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg tabular-nums"
+              />
+            </div>
+          </>
+        )}
+
+        {batchSubTab === 'creator' && (
+          <div className="sm:col-span-4">
+            <label className="block text-[10px] font-semibold text-slate-700 mb-0.5">
+              Dạng bài (A–E)
+            </label>
+            <select
+              value={promptGenCreatorFormat}
+              onChange={(e) => setPromptGenCreatorFormat(e.target.value as CreatorFormatCategory)}
+              className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg"
+            >
+              {CREATOR_FORMAT_OPTIONS.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {batchSubTab === 'translation' && (
+          <>
+            <div className="sm:col-span-2">
+              <label className="block text-[10px] font-semibold text-slate-700 mb-0.5">
+                Giây suy nghĩ
+              </label>
+              <input
+                type="number"
+                min={2}
+                max={12}
+                value={promptGenThinkSec}
+                onChange={(e) =>
+                  setPromptGenThinkSec(Math.max(2, Math.min(12, Number(e.target.value) || 4)))
+                }
+                className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg tabular-nums"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-[10px] font-semibold text-slate-700 mb-0.5">
+                Số lần đọc lặp
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={4}
+                value={promptGenRepeatCount}
+                onChange={(e) =>
+                  setPromptGenRepeatCount(Math.max(1, Math.min(4, Number(e.target.value) || 2)))
+                }
+                className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg tabular-nums"
+              />
+            </div>
+          </>
+        )}
+
+        {batchSubTab === 'reading' && (
+          <div className="sm:col-span-4">
+            <label className="block text-[10px] font-semibold text-slate-700 mb-0.5">
+              Thể loại bài đọc
+            </label>
+            <select
+              value={promptGenReadingFormat}
+              onChange={(e) => setPromptGenReadingFormat(e.target.value as ReadingFormatCategory)}
+              className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg"
+            >
+              {READING_FORMAT_OPTIONS.map((fmt) => (
+                <option key={fmt.id} value={fmt.id}>
+                  {fmt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      <textarea
+        rows={2}
+        value={topicLinesInput}
+        onChange={(e) => setTopicLinesInput(e.target.value)}
+        placeholder={'(Tuỳ chọn) Nhập chủ đề mỗi dòng 1 bài, hoặc bỏ trống để tự chọn đủ số lượng video đã đặt ở trên...'}
+        className="w-full p-2 text-xs bg-white border border-violet-200 rounded-lg"
+      />
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {savedPromptZipInfo && (
+          <div className="text-[11px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1 flex items-center gap-2">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <span>
+              Đã lưu <strong>{savedPromptZipInfo.count}</strong> prompt → <code>{savedPromptZipInfo.savedPath}</code>
+            </span>
+          </div>
+        )}
+        <button
+          type="button"
+          disabled={isRunning}
+          onClick={() => void handleExportTopicsPromptZip()}
+          data-testid="generate-topics-prompt-zip-btn"
+          className="ml-auto inline-flex items-center gap-1.5 px-3.5 py-1.5 text-[11px] font-semibold text-white bg-violet-600 rounded-lg hover:bg-violet-700 disabled:opacity-50"
+        >
+          <Archive className="w-3.5 h-3.5" />
+          <span>Tạo &amp; Lưu Prompt ZIP ({currentTabPromptZipName})</span>
+        </button>
+      </div>
+      {openFolderMsg && (
+        <div
+          data-testid="prompt-folder-status-msg"
+          className="px-2.5 py-1.5 rounded-lg bg-white border border-violet-200 text-[11px] text-slate-700 flex items-center justify-between gap-2"
+        >
+          <span>{openFolderMsg}</span>
+          <button
+            type="button"
+            onClick={() => setOpenFolderMsg(null)}
+            className="text-slate-400 hover:text-slate-700"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div
@@ -1790,7 +2311,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                 Hàng đợi Batch Đa Tab — Tự động hóa hàng loạt (Không cần API Key)
               </h2>
               <p className="text-xs text-slate-500">
-                Upload hàng loạt <code>.json</code> từ Web AI cho Từ vựng, Câu, Phản xạ dịch hoặc Sách đọc theo chữ — tự tổng hợp giọng đọc &amp; render MP4 tuần tự.
+                Chọn thông số trước để tạo Prompt ZIP riêng cho từng tab, đưa qua AI Web rồi tải lại tệp <code>.zip</code> hoặc nhiều <code>.json</code> để tự động dựng MP4.
               </p>
             </div>
           </div>
@@ -1821,6 +2342,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                 onClick={() => {
                   setBatchSubTab(tab.id);
                   setMultiJsonParseMsg(null);
+                  setSavedPromptZipInfo(null);
                 }}
                 data-testid={`batch-subtab-${tab.id}`}
                 className={`px-3 py-2 rounded-xl border text-left transition-all ${
@@ -1851,7 +2373,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
         >
           <div className={`${previewState ? 'lg:col-span-7' : ''} flex flex-col min-h-0 overflow-hidden`}>
             {/* Config Bar */}
-            <div className="p-4 bg-slate-50 border-b border-slate-200 space-y-3 overflow-y-auto max-h-[48vh]">
+            <div className="p-4 bg-slate-50 border-b border-slate-200 space-y-3 overflow-y-auto max-h-[54vh]">
               {batchSubTab === 'studio' ? (
                 <>
                   {/* ── Studio Mode selector ── */}
@@ -2013,106 +2535,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                       </div>
                     </div>
 
-                    {isTopicPromptOpen && (
-                      <div className="p-2.5 rounded-lg bg-violet-50/70 border border-violet-200 space-y-2 text-xs">
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                          <div>
-                            <label className="block text-[10px] font-semibold text-slate-700 mb-0.5">
-                              Ngôn ngữ học
-                            </label>
-                            <select
-                              value={promptGenLang}
-                              onChange={(e) => {
-                                const lang = e.target.value as LearningLanguageId;
-                                setPromptGenLang(lang);
-                                const meta = LEARNING_LANGUAGE_OPTIONS.find((l) => l.id === lang);
-                                setPromptGenLevel(meta?.defaultLevel || 'B1');
-                              }}
-                              className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg"
-                            >
-                              {LEARNING_LANGUAGE_OPTIONS.map((l) => (
-                                <option key={l.id} value={l.id}>
-                                  {l.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-semibold text-slate-700 mb-0.5">
-                              Trình độ
-                            </label>
-                            <select
-                              value={promptGenLevel}
-                              onChange={(e) => setPromptGenLevel(e.target.value)}
-                              className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg"
-                            >
-                              {promptLevelOptions.map((lv) => (
-                                <option key={lv.id} value={lv.id}>
-                                  {lv.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-semibold text-slate-700 mb-0.5">
-                              Thời lượng mục tiêu (phút)
-                            </label>
-                            <input
-                              type="number"
-                              min={0.5}
-                              max={30}
-                              step={0.5}
-                              value={promptGenMinutes}
-                              onChange={(e) =>
-                                setPromptGenMinutes(
-                                  Math.max(0.5, Math.min(30, Number(e.target.value) || 1.5)),
-                                )
-                              }
-                              className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg"
-                            />
-                          </div>
-                        </div>
-
-                        {batchSubTab === 'reading' && (
-                          <div>
-                            <label className="block text-[10px] font-semibold text-slate-700 mb-0.5">
-                              Thể loại bài đọc
-                            </label>
-                            <select
-                              value={promptGenReadingFormat}
-                              onChange={(e) =>
-                                setPromptGenReadingFormat(e.target.value as ReadingFormatCategory)
-                              }
-                              className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg"
-                            >
-                              {READING_FORMAT_OPTIONS.map((fmt) => (
-                                <option key={fmt.id} value={fmt.id}>
-                                  {fmt.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-
-                        <textarea
-                          rows={3}
-                          value={topicLinesInput}
-                          onChange={(e) => setTopicLinesInput(e.target.value)}
-                          placeholder={'Nhập danh sách chủ đề (mỗi dòng 1 video):\n1. Morning Habits\n2. At the Coffee Shop\n3. Travel Conversations'}
-                          className="w-full p-2 text-xs bg-white border border-violet-200 rounded-lg"
-                        />
-                        <div className="flex justify-end">
-                          <button
-                            type="button"
-                            onClick={() => void handleExportTopicsPromptZip()}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold text-white bg-violet-600 rounded-lg hover:bg-violet-700"
-                          >
-                            <Archive className="w-3.5 h-3.5" />
-                            <span>Tải xuống Prompt ZIP (Miễn phí cho AI Web)</span>
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                    {isTopicPromptOpen && renderSettingsFirstPromptZipPanel()}
 
                     {isPasteMultiOpen && (
                       <div className="p-2.5 rounded-lg bg-indigo-50/70 border border-indigo-200 space-y-2">
@@ -2459,17 +2882,23 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                 )}
               </div>
 
-              {/* ── Prompt-ZIP Destination Folder Picker (Studio only) ── */}
+              {/* ── Prompt-ZIP Settings & Destination Folder (Studio prompt-zip mode) ── */}
               {batchSubTab === 'studio' && batchMode === 'prompt-zip' && (
-                <div className="p-3 bg-violet-50/70 border border-violet-200 rounded-xl space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <span className="text-xs font-semibold text-violet-900 block">
-                        Nơi lưu các file Prompt (.txt) &amp; file nén ZIP
-                      </span>
-                      <span className="text-[11px] text-violet-700">
-                        Mỗi video = 1 file prompt riêng để dán vào ChatGPT / Claude / Gemini web
-                      </span>
+                <div className="space-y-2.5">
+                  {renderSettingsFirstPromptZipPanel()}
+                  <div className="p-2.5 bg-violet-50/50 border border-violet-200 rounded-xl flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-[11px] text-violet-800">
+                      {outputDirName ? (
+                        <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Thư mục cục bộ đã chọn: {outputDirName}
+                        </span>
+                      ) : (
+                        <span>
+                          Tuỳ chọn: chọn thêm thư mục máy để lưu bản sao (hệ thống mặc định lưu vào{' '}
+                          <code>output/{currentTabPromptSubfolder}</code>).
+                        </span>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -2481,14 +2910,6 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                       <span>{outputDirName ? 'Đổi thư mục lưu' : 'Chọn thư mục lưu trên máy'}</span>
                     </button>
                   </div>
-                  {outputDirName && (
-                    <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-medium bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                      <span>
-                        Thư mục đã chọn: <strong>{outputDirName}</strong>
-                      </span>
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -2745,7 +3166,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                 </div>
               )}
 
-              {/* Action Bar for Adding Files */}
+              {/* Action Bar for Adding Files (.json / .zip supported) */}
               <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
                 {batchSubTab === 'studio' ? (
                   <>
@@ -2754,10 +3175,10 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                         ref={fileInputRef}
                         type="file"
                         multiple
-                        accept=".mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.srt,.vtt,.txt,.json"
+                        accept=".mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.srt,.vtt,.txt,.json,.zip"
                         className="hidden"
                         onChange={(e) => {
-                          handleFilesSelected(e.target.files);
+                          void handleFilesSelected(e.target.files);
                           e.target.value = '';
                         }}
                       />
@@ -2768,17 +3189,17 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors shadow-xs"
                       >
                         <FolderOpen className="w-3.5 h-3.5" />
-                        <span>Thêm Audio + Sub (.mp3, .srt)</span>
+                        <span>Thêm Audio + Sub / ZIP</span>
                       </button>
 
                       <input
                         ref={jsonOnlyInputRef}
                         type="file"
                         multiple
-                        accept=".json"
+                        accept=".json,.zip"
                         className="hidden"
                         onChange={(e) => {
-                          handleJsonFilesSelected(e.target.files);
+                          void handleJsonFilesSelected(e.target.files);
                           e.target.value = '';
                         }}
                       />
@@ -2786,11 +3207,12 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                         type="button"
                         disabled={isRunning}
                         onClick={() => jsonOnlyInputRef.current?.click()}
+                        data-testid="studio-upload-json-zip-btn"
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 disabled:opacity-50 transition-colors shadow-xs"
-                        title="Nạp các file kịch bản .json đã tải từ AI Web"
+                        title="Nạp các file .json hoặc file .zip chứa các file .json từ AI Web"
                       >
                         <FileText className="w-3.5 h-3.5" />
-                        <span>Nạp file .json</span>
+                        <span>Nạp .json / .zip</span>
                       </button>
                     </div>
 
@@ -2805,7 +3227,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                         ref={aiJsonMultiInputRef}
                         type="file"
                         multiple
-                        accept=".json,.txt"
+                        accept=".json,.txt,.zip"
                         className="hidden"
                         onChange={(e) => void handleUploadAiJsonFiles(e)}
                       />
@@ -2817,7 +3239,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                         className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-xs"
                       >
                         <Upload className="w-3.5 h-3.5" />
-                        <span>Upload nhiều file Prompt JSON</span>
+                        <span>Upload nhiều .json hoặc .zip</span>
                       </button>
                       <button
                         type="button"
@@ -2837,7 +3259,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                 )}
               </div>
 
-              {multiJsonParseMsg && batchSubTab !== 'studio' && (
+              {multiJsonParseMsg && (
                 <p className="text-[11px] font-medium text-indigo-900 bg-indigo-50 border border-indigo-200 rounded-lg px-2.5 py-1.5">
                   {multiJsonParseMsg}
                 </p>
@@ -2870,6 +3292,44 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
 
             {/* Queue List */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2.5 min-h-[200px]">
+              {batchErrorNotice && (
+                <div
+                  data-testid="batch-error-notice"
+                  className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-xs text-rose-900 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-bold flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>{batchErrorNotice.title}</span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isRunning && (
+                        <button
+                          type="button"
+                          onClick={handleCancelBatchImmediately}
+                          className="px-2.5 py-1 text-[11px] font-semibold text-white bg-rose-600 rounded-lg hover:bg-rose-700"
+                        >
+                          Hủy chạy
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setBatchErrorNotice(null)}
+                        className="text-rose-500 hover:text-rose-800"
+                        aria-label="Đóng thông báo lỗi batch"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <ul className="list-disc pl-5 space-y-0.5 text-[11px] text-rose-800 max-h-24 overflow-y-auto">
+                    {batchErrorNotice.errors.map((errLine, errIdx) => (
+                      <li key={errIdx}>{errLine}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {previewError && (
                 <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-center justify-between gap-2">
                   <span>{previewError}</span>
@@ -3066,8 +3526,8 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                     Chưa có file JSON nào trong hàng đợi tab này
                   </p>
                   <p className="text-xs text-slate-500 max-w-md mt-1 leading-relaxed">
-                    Bấm <strong>&quot;Upload nhiều file Prompt JSON&quot;</strong> (chọn 5–20 file{' '}
-                    <code>.json</code> kết quả từ ChatGPT / Claude / Gemini Web) hoặc bấm{' '}
+                    Bấm <strong>&quot;Upload nhiều .json hoặc .zip&quot;</strong> (chọn nhiều file{' '}
+                    <code>.json</code> hoặc 1 file <code>.zip</code> kết quả từ ChatGPT / Claude / Gemini Web) hoặc bấm{' '}
                     <strong>&quot;Dán nhiều JSON&quot;</strong>. Tool sẽ tự động đọc giọng &amp; dựng video hàng loạt không cần API Key.
                   </p>
                 </div>

@@ -74,12 +74,14 @@ import {
   CanvasThemeId,
   CartoonAnimationParams,
   CustomComponentPresetConfig,
+  ElementLayout,
   isDarkCanvasTheme,
   LayoutCompositionId,
   LessonProject,
   SceneElement,
   ScenePlanDocument,
   SubtitleDisplayConfig,
+  TitleOverlayLayout,
   TranscriptCue,
   WatermarkOutroConfig,
   WordTiming,
@@ -951,6 +953,24 @@ export default function App() {
     }));
   }, []);
 
+  const handleChangeTitle = useCallback((title: string) => {
+    setProject((prev) => ({ ...prev, title }));
+  }, []);
+
+  const handleChangeTitleLayout = useCallback((titleLayout?: TitleOverlayLayout) => {
+    setProject((prev) => ({ ...prev, titleLayout }));
+  }, []);
+
+  const handleApplyReflowElements = useCallback((reflowedMap: Map<string, ElementLayout>) => {
+    setProject((prev) => ({
+      ...prev,
+      elements: prev.elements.map((el) => {
+        const nextLay = reflowedMap.get(el.id);
+        return nextLay ? { ...el, layout: nextLay } : el;
+      }),
+    }));
+  }, []);
+
   const handleApplySubtitlePositionToAll = useCallback((x: number, y: number) => {
     setProject((prev) => ({
       ...prev,
@@ -1067,10 +1087,13 @@ export default function App() {
       const res = await fetch('/api/output/open', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ path: TAB_OUTPUT_SUBFOLDERS.studio }),
       });
-      const data = (await res.json().catch(() => ({}))) as { opened?: boolean; path?: string };
-      if (!data.opened) {
+      const data = (await res.json().catch(() => ({}))) as {
+        desktopOpened?: boolean;
+        outputDir?: string;
+      };
+      if (!data.desktopOpened) {
         setActiveTab('edu-studio');
       }
     } catch {
@@ -1580,6 +1603,9 @@ export default function App() {
                 onSelectElement={setSelectedElementId}
                 onMoveElement={handleMoveElement}
                 onUpdateElement={handleUpdateElement}
+                onChangeTitle={handleChangeTitle}
+                onChangeTitleLayout={handleChangeTitleLayout}
+                onApplyReflowElements={handleApplyReflowElements}
                 onDeleteElement={handleDeleteElement}
                 onApplySubtitlePositionToAll={handleApplySubtitlePositionToAll}
                 onResetElementPosition={handleResetElementPosition}

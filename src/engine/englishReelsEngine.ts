@@ -27,6 +27,7 @@ import {
   LayoutCompositionId,
   LessonProject,
   SubtitleDisplayConfig,
+  TitleOverlayLayout,
   TranscriptCue,
   WatermarkOutroConfig,
 } from './types';
@@ -53,6 +54,20 @@ export type CreatorFormatCategory =
   | 'grammar'
   | 'comparisons'
   | 'real_life';
+
+export const CREATOR_FORMAT_OPTIONS: Array<{
+  id: CreatorFormatCategory;
+  label: string;
+}> = [
+  { id: 'auto', label: 'Tự động luân phiên (Khuyên dùng)' },
+  { id: 'vocab', label: 'A. Vocabulary Lists (Từ vựng nâng cấp)' },
+  { id: 'phrases', label: 'B. Natural Phrases (Cụm tự nhiên bản xứ)' },
+  { id: 'phrasal_verbs', label: 'C. Phrasal Verbs (Cụm động từ / Mẫu câu)' },
+  { id: 'mistakes', label: 'D. Common Mistakes (Lỗi sai thường gặp)' },
+  { id: 'grammar', label: 'E. Grammar in Context (Ngữ pháp ngữ cảnh)' },
+  { id: 'comparisons', label: 'F. Vocabulary Comparisons (So sánh từ)' },
+  { id: 'real_life', label: 'G. Real-life Conversations (Giao tiếp đời sống)' },
+];
 
 export interface LearningLanguageOption {
   id: LearningLanguageId;
@@ -176,9 +191,9 @@ export function recommendCreatorItemCount(
   includeExplanationSpeech = false,
 ): number {
   const safeMin = Math.max(0.5, Math.min(30, Number(durationMinutes) || 1));
-  const itemsPerMin = includeExplanationSpeech ? 4.2 : 6.5;
+  const itemsPerMin = includeExplanationSpeech ? 2.8 : 4.5;
   const raw = Math.round(safeMin * itemsPerMin);
-  return Math.max(4, Math.min(30, raw));
+  return Math.max(4, Math.min(60, raw));
 }
 
 export function recommendTranslationItemCount(
@@ -189,11 +204,11 @@ export function recommendTranslationItemCount(
   const safeMin = Math.max(0.5, Math.min(30, Number(durationMinutes) || 1));
   const safeThink = Math.max(1, Math.min(15, Number(thinkSec) || 4));
   const safeRepeat = Math.max(1, Math.min(5, Number(repeatCount) || 2));
-  // Prompt (~2.5s) + Think (safeThink) + Repeats (safeRepeat * ~2.6s) + Tip (~2.5s)
-  const avgSecPerCard = 2.5 + safeThink + safeRepeat * 2.6 + 2.5;
+  // Prompt (~2.5s) + Think (safeThink) + Repeats (safeRepeat * ~2.6s) + Tip (~3.2s)
+  const avgSecPerCard = 2.5 + safeThink + safeRepeat * 2.6 + 3.2;
   const totalSecBudget = safeMin * 60 - 6; // reserve ~6s for intro + outro
   const raw = Math.round(totalSecBudget / Math.max(6, avgSecPerCard));
-  return Math.max(3, Math.min(30, raw));
+  return Math.max(3, Math.min(60, raw));
 }
 
 export interface ReelCardVisualConfig {
@@ -1600,12 +1615,14 @@ export function buildEnglishReelsWebAiPrompt(params: {
       : undefined;
   const durationWordsEstimate = durationMinutes ? Math.round(durationMinutes * 125) : undefined;
   const durationDirective = durationMinutes
-    ? `- **THỜI LƯỢNG RENDER MỤC TIÊU: ${durationMinutes} PHÚT (~${Math.round(durationMinutes * 60)} giây, tổng ~${durationWordsEstimate} từ lời đọc)**: ${
+    ? `- **THỜI LƯỢNG RENDER & CHIỀU SÂU MỤC TIÊU: ${durationMinutes} PHÚT (~${Math.round(durationMinutes * 60)} giây, tổng ~${durationWordsEstimate} từ lời đọc)**: ${
         durationMinutes >= 3
-          ? 'Hãy mở rộng chi tiết từng phần, bổ sung nhiều thẻ từ vựng/ví dụ, phân tích sắc thái và mẫu câu sâu hơn để video đạt đủ độ dài kiến thức mong muốn.'
+          ? 'KHÔNG được chạy vội cho đủ số lượng kiểu "1 từ + 1 ví dụ cụt lủn". Hãy đào sâu sư phạm cho TỪNG mục: giải thích TẠI SAO nghe tự nhiên (Sound More Natural), đối chiếu lỗi sai / câu cứng kiểu sách giáo khoa mà người học hay dùng nhầm, nêu rõ sắc thái & tình huống thực tế trong `explanationSpeech` và `translation` để video đạt đúng chiều sâu và độ dài ' +
+            durationMinutes +
+            ' phút.'
           : durationMinutes <= 1
-            ? 'Giữ số thẻ súc tích, tinh gọn đúng trọng tâm để video hoàn chỉnh khớp khoảng thời lượng ngắn này.'
-            : 'Cân đối số thẻ `cards[]` và độ sâu giải thích để tổng thời gian đọc vừa vặn với thời lượng mong muốn.'
+            ? 'Giữ số thẻ súc tích, tinh gọn đúng trọng tâm nhưng vẫn nêu rõ lý do dùng tự nhiên để khớp khoảng thời lượng ngắn này.'
+            : 'Cân đối số thẻ `cards[]` và chiều sâu phân tích (giải thích lý do nghe tự nhiên + lỗi dễ nhầm + ngữ cảnh thực tế) để tổng thời gian đọc vừa vặn với thời lượng mong muốn.'
       }`
     : '';
   const cleanedUserTitle = (params.title || '').trim();
@@ -1896,7 +1913,7 @@ export function buildAiCreatorWebAiPrompt(params: {
   const defaultCount = durationMinutes
     ? recommendCreatorItemCount(durationMinutes, includeExplanationSpeech)
     : 8;
-  const count = Math.max(4, Math.min(30, Math.round(params.itemCount ?? defaultCount)));
+  const count = Math.max(4, Math.min(60, Math.round(params.itemCount ?? defaultCount)));
   const countPadded = String(count).padStart(2, '0');
   const durationLabel = durationMinutes
     ? `${durationMinutes} phút (~${Math.round(durationMinutes * 60)} giây, khoảng ${Math.round(durationMinutes * 125)} từ lời đọc tổng cộng)`
@@ -2231,10 +2248,10 @@ export function buildAiCreatorWebAiPrompt(params: {
     '',
     '## 3. VIDEO PACING & STRUCTURE',
     `1. **Hook Card (\`type: "title"\`)**: Scroll-stopping \`kicker\`, **EXACT concrete \`title\` matching the lesson content & topic**, ${splitAudioByRole ? 'empty `speech: ""` with natural welcoming hook + transition into item 01 in `explanationSpeech` in ' + explainLangName : 'spoken `speech`' + (includeExplanationSpeech ? ' + `explanationSpeech`' : '')}, and \`visual\`.`,
-    `2. **Core Teaching Cards (\`${count}\` cards, \`type: "vocab"\`)**:`,
+    `2. **Core Teaching Cards (\`${count}\` cards, \`type: "vocab"\`) — PEDAGOGICAL DEPTH FIRST**:`,
     `   - Ordered cleanly with \`"indexLabel": "01 / ${countPadded}"\` through \`"${countPadded} / ${countPadded}"\`.`,
     '   - Include natural **spoken transition phrases** inside `explanationSpeech` (or `speech` if single-voice) when advancing to the next section/nuance (e.g. "Next expression...", "Moving on to...") so transitions are NEVER silent!',
-    `   - Scale detail richness across all ${count} cards so total audio fits **${durationLabel}** naturally (do NOT rush or bloat beyond target minutes).`,
+    `   - **NEVER RUSH SHALLOW 1-WORD + 1-EXAMPLE CARDS**: For themes like "Sound More Natural with Phrasal Verbs", DO NOT superficially sprint through items just to hit a number. Give real teaching depth in \`explanationSpeech\` + \`visual.labels\` + \`translation\`: explain **WHY** native speakers find it natural, explicitly contrast **what learners mistakenly say or stiff textbook equivalents** ("Don\'t say X → Say Y because..."), clarify situational register/nuance (casual vs workplace), and calibrate explanation length across **${durationLabel}** (especially rich & thorough when target duration is 3–30 minutes!).`,
     '   - If level is a progression (`N5→N1`, `A1→C2`, `HSK 1→6`, `TOPIK 1→6`), progress clearly from elementary (`01`) to advanced (`' + countPadded + '`).',
     params.includeQuiz
       ? `3. **Optional Quick Interactive Check (\`type: "quiz"\`, 1–2 concise cards)**: Place a quick 5-second check right after the items it tests (ONLY on key contrasts, NOT an unrelated quiz dumped out of nowhere).`
@@ -2850,7 +2867,7 @@ export function buildTranslationChallengePrompt(params: {
   const count = Math.max(
     3,
     Math.min(
-      30,
+      60,
       Math.round(params.itemCount ?? recommendTranslationItemCount(durationMinutes, thinkSec, repeatCount)),
     ),
   );
@@ -2935,7 +2952,7 @@ export function buildTranslationChallengePrompt(params: {
     `   - \`"vocabNotes"\`: **CRITICAL** — Chọn **CHỈ 1** cụm từ vựng/idiom quan trọng nhất câu để chú thích ngắn gọn bằng **${explainLangName}** (VD \`${exampleVocabNotes}\`). Không lặp lại ở \`grammarNote\`.`,
     `   - \`"grammarNote"\`: Nếu \`"vocabNotes"\` đã có thì để rỗng \`""\` — chỉ điền tối đa 1 ghi chú ngắn gọn nhất trên thẻ.`,
     includeNuanceTip
-      ? `   - \`"explanationSpeech"\`: Brief 1-sentence spoken tip in **${explainLangName}** explaining why native speakers say it this way (played after the ${repeatCount} repeats).`
+      ? `   - \`"explanationSpeech"\`: Rich, deeply helpful spoken nuance tip in **${explainLangName}** (played after the ${repeatCount} repeats) explaining **WHY** native speakers say it this way and what stiff literal mistake learners should avoid ("Don't translate word-by-word as X; natives say Y because...").`
       : `   - \`"explanationSpeech"\`: "" (keep empty so audio focuses 100% on Prompt -> Countdown -> ${repeatCount}x Repeats).`,
     `   - \`"thinkSec": ${thinkSec}\`, \`"repeatCount": ${repeatCount}\``,
     `   - **100% THUẦN NGÔN NGỮ CHO TTS**: \`"speech"\` chỉ chứa đúng **${langOption.nativeName}** (không trộn tiếng Việt hay ký hiệu lạ); \`"explanationSpeech"\` chỉ chứa đúng **${explainLangName}** (không chêm cụm từ dài bằng ngoại ngữ khiến TTS đọc lệch giọng).`,
@@ -4338,6 +4355,7 @@ export function reelCardsToLessonProject(
     audioFileName?: string;
     sceneJsonOverride?: FlexibleSceneDocument | null;
     watermark?: WatermarkOutroConfig;
+    titleLayout?: TitleOverlayLayout;
   },
 ): LessonProject {
   const safeCards =
@@ -5975,6 +5993,7 @@ export function reelCardsToLessonProject(
     cues,
     elements: resolvedElements,
     watermark: options?.watermark,
+    titleLayout: options?.titleLayout,
   };
 }
 

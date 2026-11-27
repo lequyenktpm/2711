@@ -1389,6 +1389,10 @@ export const AutomationPipelinePanel: React.FC<AutomationPipelinePanelProps> = (
                       <option value="3">3p</option>
                       <option value="5">5p</option>
                       <option value="10">10p</option>
+                      <option value="15">15p</option>
+                      <option value="20">20p</option>
+                      <option value="25">25p</option>
+                      <option value="30">30p</option>
                     </select>
                   </label>
                 </div>

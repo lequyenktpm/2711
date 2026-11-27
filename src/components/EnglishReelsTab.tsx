@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowRight,
   ArrowUp,
@@ -24,6 +25,7 @@ import {
   Stamp,
   Square,
   Trash2,
+  Type,
   Upload,
   Volume2,
   X,
@@ -39,9 +41,14 @@ import {
   hitTestElementLayout,
   renderProjectFrame,
   resolveElementLayoutForAspect,
+  resolveLessonTitleBox,
   seekBackgroundVideoTo,
   subscribeBgImageLoaded,
 } from '../engine/canvasRenderer';
+import {
+  detectActiveStageOverlaps,
+  reflowElementsAvoidingOverlap,
+} from '../engine/layoutSolver';
 import {
   subscribeCartoonAnimations,
   syncCartoonAnimationsFromServer,
@@ -131,6 +138,7 @@ import {
   CANVAS_THEMES,
   CanvasThemeId,
   CartoonAnimationParams,
+  ElementLayout,
   IllustrationSceneIcon,
   IllustrationVariant,
   LayoutCompositionId,
@@ -139,6 +147,7 @@ import {
   SubtitleBoxStyle,
   SubtitlePosition,
   SubtitleSize,
+  TitleOverlayLayout,
   TranscriptCue,
   WatermarkCorner,
   WatermarkOutroConfig,
@@ -601,6 +610,11 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
   const [layoutOverridesByAspect, setLayoutOverridesByAspect] = useState<
     Partial<Record<ExportAspectRatioId, Record<string, ElementLayoutOverride>>>
   >(() => initialModeSaved.layoutOverridesByAspect || {});
+  const [titleLayoutByAspect, setTitleLayoutByAspect] = useState<
+    Partial<Record<ExportAspectRatioId, TitleOverlayLayout | undefined>>
+  >({});
+  const [autoReflowOnMove, setAutoReflowOnMove] = useState(true);
+  const [dismissedOverlapSig, setDismissedOverlapSig] = useState('');
   const dragStateRef = useRef<{
     id: string;
     offsetX: number;
@@ -1181,6 +1195,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       audioFileName: generatedAudioFile?.name,
       sceneJsonOverride,
       watermark: watermarkConfig,
+      titleLayout: titleLayoutByAspect[reelsAspectRatio],
     });
     if (
       !customSyncedCues &&
@@ -1221,6 +1236,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     syncedTimingOffsetMs,
     syncedSpeedFactor,
     layoutOverridesByAspect,
+    titleLayoutByAspect,
   ]);
 
   useEffect(() => {
@@ -1245,12 +1261,13 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         await seekBackgroundVideoTo(previewProject.backgroundImage.videoUrl, videoTime);
       }
       if (!cancelled) {
-        renderProjectFrame(
-          ctx,
-          previewProject,
-          videoTime,
-          isVideoPlaying || isExportingVideo ? null : selectedPreviewElementId,
-        );
+        const activeSelectToken =
+          isVideoPlaying || isExportingVideo
+            ? null
+            : selectedPreviewOverlayZone === 'title'
+              ? '__title__'
+              : selectedPreviewElementId;
+        renderProjectFrame(ctx, previewProject, videoTime, activeSelectToken);
       }
     })();
     return () => {
@@ -1262,6 +1279,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     previewViewMode,
     bgAssetVersion,
     selectedPreviewElementId,
+    selectedPreviewOverlayZone,
     isVideoPlaying,
     isExportingVideo,
   ]);
@@ -2672,6 +2690,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       audioFileName: rawFileName,
       sceneJsonOverride,
       watermark: watermarkConfig,
+      titleLayout: titleLayoutByAspect[reelsAspectRatio],
     });
 
     // Map per-segment WordBoundary cues cleanly onto proj.cues (handles single, Dual-TTS & multi-repeat translation)
@@ -3185,6 +3204,10 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                       <option value="3">3 phút</option>
                       <option value="5">5 phút</option>
                       <option value="10">10 phút</option>
+                      <option value="15">15 phút</option>
+                      <option value="20">20 phút</option>
+                      <option value="25">25 phút</option>
+                      <option value="30">30 phút</option>
                     </select>
                   </div>
                   <div>
@@ -3506,6 +3529,10 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                       <option value="3">3 phút</option>
                       <option value="5">5 phút</option>
                       <option value="10">10 phút</option>
+                      <option value="15">15 phút</option>
+                      <option value="20">20 phút</option>
+                      <option value="25">25 phút</option>
+                      <option value="30">30 phút</option>
                     </select>
                   </div>
                   <div>
@@ -3520,12 +3547,12 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                       type="number"
                       aria-label="Số câu Phản Xạ Dịch"
                       min={3}
-                      max={30}
+                      max={60}
                       step={1}
                       value={translationItemCount}
                       onChange={(e) =>
                         setTranslationItemCount(
-                          Math.max(3, Math.min(30, Math.round(Number(e.target.value) || 6))),
+                          Math.max(3, Math.min(60, Math.round(Number(e.target.value) || 6))),
                         )
                       }
                       className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg tabular-nums"
@@ -3819,7 +3846,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                       />
                       <select
                         aria-label="Chọn nhanh thời lượng phút"
-                        value={[0.5, 1, 2, 3, 5, 10].includes(creatorDurationMinutes) ? String(creatorDurationMinutes) : 'custom'}
+                        value={[0.5, 1, 2, 3, 5, 10, 15, 20, 25, 30].includes(creatorDurationMinutes) ? String(creatorDurationMinutes) : 'custom'}
                         onChange={(e) => {
                           if (e.target.value === 'custom') return;
                           const nextMin = Number(e.target.value);
@@ -3836,7 +3863,11 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                         <option value="3">3 phút</option>
                         <option value="5">5 phút</option>
                         <option value="10">10 phút</option>
-                        {![0.5, 1, 2, 3, 5, 10].includes(creatorDurationMinutes) && (
+                        <option value="15">15 phút</option>
+                        <option value="20">20 phút</option>
+                        <option value="25">25 phút</option>
+                        <option value="30">30 phút</option>
+                        {![0.5, 1, 2, 3, 5, 10, 15, 20, 25, 30].includes(creatorDurationMinutes) && (
                           <option value="custom">{creatorDurationMinutes} phút</option>
                         )}
                       </select>
@@ -3854,11 +3885,11 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                       type="number"
                       aria-label="Số mục kiến thức"
                       min={4}
-                      max={30}
+                      max={60}
                       step={1}
                       value={creatorItemCount}
                       onChange={(e) =>
-                        setCreatorItemCount(Math.max(4, Math.min(30, Math.round(Number(e.target.value) || 8))))
+                        setCreatorItemCount(Math.max(4, Math.min(60, Math.round(Number(e.target.value) || 8))))
                       }
                       className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg tabular-nums"
                     />
@@ -4575,19 +4606,59 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                 const selectedPreviewElement = selectedPreviewElementId
                   ? previewProject.elements.find((el) => el.id === selectedPreviewElementId) ?? null
                   : null;
-                const resolvedPreviewLayouts = selectedPreviewElementId
-                  ? resolveElementLayoutForAspect(
-                      previewProject.elements,
-                      videoTime,
-                      reelsAspectRatio,
-                      previewProject.subtitleConfig,
-                      previewProject.compositionId,
-                    )
+                const resolvedPreviewLayouts = resolveElementLayoutForAspect(
+                  previewProject.elements,
+                  videoTime,
+                  reelsAspectRatio,
+                  previewProject.subtitleConfig,
+                  previewProject.compositionId,
+                );
+                const selectedCanvasLayout = selectedPreviewElementId
+                  ? resolvedPreviewLayouts.get(selectedPreviewElementId) ?? null
                   : null;
-                const selectedCanvasLayout =
-                  selectedPreviewElementId && resolvedPreviewLayouts
-                    ? resolvedPreviewLayouts.get(selectedPreviewElementId) ?? null
-                    : null;
+                const resolvedTitleBox = resolveLessonTitleBox(previewProject, reelsAspectRatio, videoTime);
+
+                const applyReelsReflowFromPin = (
+                  pinnedId: string,
+                  resolvedMapOverride?: Map<string, ElementLayout>,
+                  titleLayoutOverride?: TitleOverlayLayout,
+                ) => {
+                  const targetProj: LessonProject =
+                    titleLayoutOverride !== undefined
+                      ? { ...previewProject, titleLayout: titleLayoutOverride }
+                      : previewProject;
+                  const mapToUse = resolvedMapOverride ?? resolvedPreviewLayouts;
+                  const tBox = resolveLessonTitleBox(targetProj, reelsAspectRatio, videoTime);
+                  const reflowed = reflowElementsAvoidingOverlap(targetProj.elements, pinnedId, mapToUse, {
+                    stageWidth: stageDims.width,
+                    stageHeight: stageDims.height,
+                    titleBox: tBox
+                      ? { x: tBox.x, y: tBox.y, width: tBox.width, height: tBox.height }
+                      : null,
+                  });
+                  setLayoutOverridesByAspect((prev) => {
+                    const nextAspect = { ...(prev[reelsAspectRatio] ?? {}) };
+                    for (const el of targetProj.elements) {
+                      if (el.type === 'karaoke-card') continue;
+                      const shifted = reflowed.get(el.id);
+                      const orig = mapToUse.get(el.id) || el.layout;
+                      if (
+                        shifted &&
+                        (Math.round(shifted.x) !== Math.round(orig.x) ||
+                          Math.round(shifted.y) !== Math.round(orig.y))
+                      ) {
+                        nextAspect[el.id] = {
+                          x: Math.round(shifted.x),
+                          y: Math.round(shifted.y),
+                          width: shifted.width,
+                          height: shifted.height,
+                          scale: shifted.scale,
+                        };
+                      }
+                    }
+                    return { ...prev, [reelsAspectRatio]: nextAspect };
+                  });
+                };
 
                 const toCanvasCoords = (e: React.PointerEvent<HTMLCanvasElement>) => {
                   const canvas = videoCanvasRef.current;
@@ -4613,6 +4684,14 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                   if (overlayHit) {
                     setSelectedPreviewElementId(null);
                     setSelectedPreviewOverlayZone(overlayHit);
+                    if (overlayHit === 'title' && resolvedTitleBox) {
+                      dragStateRef.current = {
+                        id: '__title__',
+                        offsetX: resolvedTitleBox.x - x,
+                        offsetY: resolvedTitleBox.y - y,
+                      };
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                    }
                     return;
                   }
                   const hit = hitTestElementLayout(
@@ -4646,6 +4725,19 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                   const drag = dragStateRef.current;
                   if (!drag) return;
                   const { x, y } = toCanvasCoords(e);
+                  if (drag.id === '__title__') {
+                    const clampedX = Math.max(80, Math.min(stageDims.width - 80, Math.round(x + drag.offsetX)));
+                    const clampedY = Math.max(40, Math.min(stageDims.height - 60, Math.round(y + drag.offsetY)));
+                    setTitleLayoutByAspect((prev) => ({
+                      ...prev,
+                      [reelsAspectRatio]: {
+                        ...(prev[reelsAspectRatio] ?? {}),
+                        x: clampedX,
+                        y: clampedY,
+                      },
+                    }));
+                    return;
+                  }
                   const clampedX = Math.max(80, Math.min(stageDims.width - 80, Math.round(x + drag.offsetX)));
                   const clampedY = Math.max(60, Math.min(stageDims.height - 60, Math.round(y + drag.offsetY)));
                   setLayoutOverridesByAspect((prev) => ({
@@ -4664,7 +4756,11 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                 };
 
                 const handleCanvasPointerUp = () => {
+                  const finished = dragStateRef.current;
                   dragStateRef.current = null;
+                  if (finished && autoReflowOnMove) {
+                    applyReelsReflowFromPin(finished.id);
+                  }
                 };
 
                 return (
@@ -4717,6 +4813,100 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                         </div>
                       )}
                     </div>
+
+                    {(() => {
+                      const reelsOverlaps = detectActiveStageOverlaps(
+                        previewProject.elements,
+                        resolvedPreviewLayouts,
+                        videoTime,
+                        resolvedTitleBox
+                          ? {
+                              x: resolvedTitleBox.x,
+                              y: resolvedTitleBox.y,
+                              width: resolvedTitleBox.width,
+                              height: resolvedTitleBox.height,
+                            }
+                          : null,
+                      );
+                      const reelsOverlapSig = reelsOverlaps
+                        .map((w) => `${w.firstId}-${w.secondId}:${Math.round(w.overlapPx)}`)
+                        .join('|');
+                      const showReelsOverlap =
+                        reelsOverlaps.length > 0 && reelsOverlapSig !== dismissedOverlapSig;
+                      const pinForReflow =
+                        selectedPreviewOverlayZone === 'title'
+                          ? '__title__'
+                          : selectedPreviewElementId || reelsOverlaps[0]?.firstId || '__title__';
+                      return (
+                        <>
+                          <div
+                            data-testid="reels-title-and-reflow-bar"
+                            className="px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200/80 flex flex-wrap items-center justify-between gap-2 text-[10.5px]"
+                          >
+                            <button
+                              type="button"
+                              data-testid="reels-select-title-btn"
+                              onClick={() => {
+                                setSelectedPreviewElementId(null);
+                                setSelectedPreviewOverlayZone(
+                                  selectedPreviewOverlayZone === 'title' ? null : 'title',
+                                );
+                              }}
+                              className={`inline-flex items-center gap-1 px-2 py-1 font-semibold rounded border transition-colors ${
+                                selectedPreviewOverlayZone === 'title'
+                                  ? 'bg-indigo-600 border-indigo-600 text-white'
+                                  : 'bg-white border-slate-200 text-slate-700 hover:bg-indigo-50 hover:border-indigo-300'
+                              }`}
+                            >
+                              <Type className="w-3 h-3" />
+                              <span>Tiêu đề bài giảng</span>
+                            </button>
+
+                            <label className="inline-flex items-center gap-1.5 text-[10.5px] font-medium text-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={autoReflowOnMove}
+                                onChange={(e) => setAutoReflowOnMove(e.target.checked)}
+                                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                              />
+                              <span>Tự động đẩy tránh đè khi chỉnh</span>
+                            </label>
+                          </div>
+
+                          {showReelsOverlap && (
+                            <div
+                              data-testid="reels-overlap-warning"
+                              className="px-3 py-2 rounded-lg bg-amber-50 border border-amber-300 text-[11px] text-amber-950 flex flex-wrap items-center justify-between gap-2"
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                <span className="font-medium truncate">
+                                  Đang bị đè lên nhau: <strong>{reelsOverlaps[0].firstLabel}</strong> ↔{' '}
+                                  <strong>{reelsOverlaps[0].secondLabel}</strong> (~{reelsOverlaps[0].overlapPx}px)
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  data-testid="reels-reflow-btn"
+                                  onClick={() => applyReelsReflowFromPin(pinForReflow)}
+                                  className="px-2 py-0.5 text-[10.5px] font-semibold bg-amber-600 text-white rounded hover:bg-amber-700"
+                                >
+                                  Tự động đẩy tránh đè
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDismissedOverlapSig(reelsOverlapSig)}
+                                  className="px-2 py-0.5 text-[10.5px] font-semibold bg-white border border-amber-300 text-amber-900 rounded hover:bg-amber-100"
+                                >
+                                  Giữ nguyên
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
 
                     <div
                       data-testid="reels-layout-toolbar"
@@ -4886,19 +5076,28 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                         patch: Partial<SceneElement>,
                       ) => {
                         if (patch.layout) {
+                          const nextLay: ElementLayoutOverride = {
+                            x: Math.round(patch.layout.x),
+                            y: Math.round(patch.layout.y),
+                            width: patch.layout.width,
+                            height: patch.layout.height,
+                            scale: patch.layout.scale,
+                          };
                           setLayoutOverridesByAspect((prev) => ({
                             ...prev,
                             [reelsAspectRatio]: {
                               ...(prev[reelsAspectRatio] ?? {}),
-                              [elId]: {
-                                x: Math.round(patch.layout!.x),
-                                y: Math.round(patch.layout!.y),
-                                width: patch.layout!.width,
-                                height: patch.layout!.height,
-                                scale: patch.layout!.scale,
-                              },
+                              [elId]: nextLay,
                             },
                           }));
+                          if (autoReflowOnMove) {
+                            const updatedMap = new Map(resolvedPreviewLayouts);
+                            updatedMap.set(elId, {
+                              ...(resolvedPreviewLayouts.get(elId) || patch.layout),
+                              ...patch.layout,
+                            });
+                            applyReelsReflowFromPin(elId, updatedMap);
+                          }
                         }
                         if (!patch.props) return;
                         const targetCardIdx = resolveCardIdxForElement(elId);
@@ -4963,6 +5162,21 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                           selectedOverlayZone={selectedPreviewOverlayZone}
                           watermarkConfig={watermarkConfig}
                           projectTitle={lessonTitle}
+                          titleLayout={titleLayoutByAspect[reelsAspectRatio]}
+                          resolvedTitleBox={resolvedTitleBox}
+                          onChangeTitle={(nextTitle) => {
+                            setLessonTitle(nextTitle);
+                            manualTitleEditedRef.current = Boolean(nextTitle.trim());
+                          }}
+                          onChangeTitleLayout={(nextLay) => {
+                            setTitleLayoutByAspect((prev) => ({
+                              ...prev,
+                              [reelsAspectRatio]: nextLay,
+                            }));
+                            if (autoReflowOnMove && nextLay && !nextLay.hidden) {
+                              applyReelsReflowFromPin('__title__', undefined, nextLay);
+                            }
+                          }}
                           onChangeWatermark={setWatermarkConfig}
                           onUpdateElement={handleInlineUpdateReelsElement}
                           onResetElementPosition={(id) => {

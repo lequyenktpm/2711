@@ -1291,6 +1291,48 @@ async function startServer(): Promise<void> {
     });
   });
 
+  app.post('/api/output/save-file', express.json({ limit: '20mb' }), async (req, res) => {
+    try {
+      const rawName = typeof req.body?.fileName === 'string' ? req.body.fileName.trim() : '';
+      const rawBase64 = typeof req.body?.base64 === 'string' ? req.body.base64.trim() : '';
+      const relativeDir = typeof req.body?.relativeDir === 'string' ? req.body.relativeDir.trim() : '';
+      const sourceTab = typeof req.body?.sourceTab === 'string' ? req.body.sourceTab.trim() : '';
+
+      if (!rawName || !rawBase64) {
+        res.status(400).json({ error: 'Thiếu fileName hoặc dữ liệu base64 để lưu.' });
+        return;
+      }
+
+      const safeBaseName = path.basename(rawName).replace(/[<>:"/\\|?*\x00-\x1f]+/g, '_').trim() || 'output.zip';
+      const { baseDir, targetDir } = resolveSafeOutputDir(relativeDir, sourceTab);
+      await fs.promises.mkdir(targetDir, { recursive: true });
+      const diskPath = path.join(targetDir, safeBaseName);
+      if (!diskPath.startsWith(baseDir + path.sep) && diskPath !== path.join(baseDir, safeBaseName)) {
+        res.status(400).json({ error: 'Đường dẫn lưu file không hợp lệ.' });
+        return;
+      }
+
+      const buf = Buffer.from(rawBase64, 'base64');
+      await fs.promises.writeFile(diskPath, buf);
+      const relPath = path.relative(baseDir, diskPath).replace(/\\/g, '/');
+      if (sourceTab) {
+        await recordOutputMeta(relPath, sourceTab);
+      }
+
+      res.json({
+        ok: true,
+        fileName: safeBaseName,
+        relativePath: relPath,
+        savedPath: diskPath,
+        outputDir: targetDir,
+        baseDir,
+        bytes: buf.length,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Lỗi lưu file vào thư mục Output.' });
+    }
+  });
+
   // ── Custom Vector Component Database Persistence ────────────────────────────
   app.get('/api/components', async (_req, res) => {
     try {
@@ -3024,7 +3066,13 @@ async function startServer(): Promise<void> {
         return;
       }
 
-      const mode = req.body?.mode === 'adapt-url' ? 'adapt-url' : 'generate';
+      const rawMode = typeof req.body?.mode === 'string' ? req.body.mode.trim() : 'generate';
+      const mode: 'generate' | 'adapt-url' | 'adapt-text' =
+        rawMode === 'adapt-url'
+          ? 'adapt-url'
+          : rawMode === 'adapt-text'
+            ? 'adapt-text'
+            : 'generate';
       const rawLang =
         typeof req.body?.learningLanguage === 'string'
           ? req.body.learningLanguage.trim().toLowerCase()
@@ -3048,13 +3096,13 @@ async function startServer(): Promise<void> {
       const wordCountRaw = Number(
         req.body?.wordCount ?? (hasDuration ? Math.round(durationRaw * langMeta.ratePerMin) : langMeta.ratePerMin),
       );
-      const maxLen = langMeta.unit === 'chars' ? 6000 : 3800;
+      const maxLen = langMeta.unit === 'chars' ? 6500 : 4500;
       const wordCount = Number.isFinite(wordCountRaw)
         ? Math.max(40, Math.min(maxLen, Math.round(wordCountRaw)))
         : langMeta.ratePerMin;
 
-      if (mode === 'adapt-url' && !sourceText) {
-        res.status(400).json({ error: 'Thiếu nội dung trang web nguồn để chuyển thể.' });
+      if ((mode === 'adapt-url' || mode === 'adapt-text') && !sourceText) {
+        res.status(400).json({ error: 'Thiếu nội dung nguồn để AI biên tập lại.' });
         return;
       }
 
@@ -3092,8 +3140,27 @@ async function startServer(): Promise<void> {
         : `on an engaging, high-retention daily life, mindset, or storytelling topic chosen autonomously by you that fits level ${level}`;
 
       const prompt =
-        mode === 'adapt-url'
+        mode === 'adapt-text'
           ? `You are an expert ${langMeta.name} curriculum designer for Read-Along karaoke videos.
+Adapt and rewrite the user's raw source text below into a clean, natural, deeply engaging ${langMeta.name} read-along passage tailored precisely to proficiency level "${level}".
+Genre / Style guidance: ${formatInstruction}
+${furiganaWarning}
+CRITICAL: Preserve all key ideas, practical nuance, and storytelling value from the raw text while adjusting vocabulary, sentence length, and grammar strictly to level "${level}" — do NOT summarize superficially if a longer passage is requested, expand thoughtfully with vivid natural examples or transitions! Strip away any exercise numbering, headers, or UI noise.
+Target total length: ${lengthDesc}${hasDuration ? ` (for a ~${durationRaw} minute video)` : ''}.
+User topic / title hint: ${topic || sourceTitle || 'Adapted Reading Lesson'}
+Raw source content:
+"""
+${sourceText.slice(0, 12000)}
+"""
+Return ONLY valid JSON with keys:
+{
+  "title": "Short catchy ${langMeta.name} title (5–10 words/phrases, curiosity-driven)",
+  "topicBadge": "SHORT UPPERCASE BADGE (e.g. ${level} · READING)",
+  "level": "${level}",
+  "text": "Clean ${langMeta.name} sentences separated by \\n (1 sentence per line, no bullet symbols, no markdown, no HTML, no timestamps)."
+}`
+          : mode === 'adapt-url'
+            ? `You are an expert ${langMeta.name} curriculum designer for Read-Along karaoke videos.
 Convert and adapt the scraped webpage content below into a clean, engaging ${langMeta.name} read-along passage tailored to proficiency level "${level}".
 Genre / Style guidance: ${formatInstruction}
 ${furiganaWarning}
@@ -3111,7 +3178,7 @@ Return ONLY valid JSON with keys:
   "level": "${level}",
   "text": "Clean ${langMeta.name} sentences separated by \\n (1 sentence per line, no bullet symbols, no markdown, no HTML, no timestamps)."
 }`
-          : `You are an expert ${langMeta.name} curriculum designer for Read-Along karaoke videos.
+            : `You are an expert ${langMeta.name} curriculum designer for Read-Along karaoke videos.
 Write an original, engaging ${langMeta.name} read-along passage ${topicInstruction}.
 Genre / Style guidance: ${formatInstruction}
 ${furiganaWarning}

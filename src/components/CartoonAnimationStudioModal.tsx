@@ -744,7 +744,7 @@ export const CartoonAnimationStudioModal: React.FC<CartoonAnimationStudioModalPr
                   </div>
                   <div>
                     <label className="block text-[10.5px] font-semibold text-slate-600 tabular-nums">
-                      Độ nhún ({(editSpec.bounceIntensity ?? 1).toFixed(2)})
+                      Biên độ cử động khớp ({(editSpec.bounceIntensity ?? 1).toFixed(2)})
                     </label>
                     <input
                       type="range"

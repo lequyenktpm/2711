@@ -1,5 +1,6 @@
 import { computeElementFrameState } from './animationMath';
 import {
+  ElementLayout,
   LessonProject,
   SceneElement,
   SceneElementType,
@@ -653,3 +654,224 @@ export function resolveProjectElements(project: LessonProject): LessonProject {
     elements: resolveProjectOverlaps(project.elements),
   };
 }
+
+export interface StageOverlapWarning {
+  firstId: string;
+  firstLabel: string;
+  secondId: string;
+  secondLabel: string;
+  overlapPx: number;
+}
+
+export interface TitleBoundsBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function resolveBoxFromLayout(
+  el: SceneElement,
+  layout?: ElementLayout,
+): { left: number; right: number; top: number; bottom: number; halfW: number; halfH: number } {
+  const effective: SceneElement = layout ? { ...el, layout } : el;
+  const bounds = estimateElementBounds(effective);
+  return {
+    left: bounds.left,
+    right: bounds.right,
+    top: bounds.top,
+    bottom: bounds.bottom,
+    halfW: bounds.halfW,
+    halfH: bounds.halfH,
+  };
+}
+
+export function detectActiveStageOverlaps(
+  elements: SceneElement[],
+  resolvedMap: Map<string, ElementLayout>,
+  time: number,
+  titleBox?: TitleBoundsBox | null,
+): StageOverlapWarning[] {
+  const warnings: StageOverlapWarning[] = [];
+  const active = elements.filter((el) => computeElementFrameState(el, time).visible);
+
+  if (titleBox) {
+    const tbLeft = titleBox.x - titleBox.width / 2;
+    const tbRight = titleBox.x + titleBox.width / 2;
+    const tbTop = titleBox.y - titleBox.height / 2;
+    const tbBottom = titleBox.y + titleBox.height / 2;
+    for (const el of active) {
+      if (el.type === 'karaoke-card') continue;
+      const box = resolveBoxFromLayout(el, resolvedMap.get(el.id));
+      const overlapX = Math.min(tbRight, box.right) - Math.max(tbLeft, box.left);
+      const overlapY = Math.min(tbBottom, box.bottom) - Math.max(tbTop, box.top);
+      if (overlapX > 10 && overlapY > 6) {
+        warnings.push({
+          firstId: '__title__',
+          firstLabel: 'Tiêu đề bài giảng',
+          secondId: el.id,
+          secondLabel: el.label || el.type,
+          overlapPx: Math.round(overlapY),
+        });
+      }
+    }
+  }
+
+  for (let i = 0; i < active.length; i++) {
+    const a = active[i];
+    const ba = resolveBoxFromLayout(a, resolvedMap.get(a.id));
+    for (let j = i + 1; j < active.length; j++) {
+      const b = active[j];
+      const bb = resolveBoxFromLayout(b, resolvedMap.get(b.id));
+      const overlapX = Math.min(ba.right, bb.right) - Math.max(ba.left, bb.left);
+      const overlapY = Math.min(ba.bottom, bb.bottom) - Math.max(ba.top, bb.top);
+      if (overlapX > 12 && overlapY > 6) {
+        warnings.push({
+          firstId: a.id,
+          firstLabel: a.label || a.type,
+          secondId: b.id,
+          secondLabel: b.label || b.type,
+          overlapPx: Math.round(overlapY),
+        });
+      }
+    }
+  }
+
+  return warnings;
+}
+
+export function reflowElementsAvoidingOverlap(
+  elements: SceneElement[],
+  pinnedId: string,
+  resolvedMap: Map<string, ElementLayout>,
+  options?: {
+    stageWidth?: number;
+    stageHeight?: number;
+    gapPx?: number;
+    titleBox?: TitleBoundsBox | null;
+  },
+): Map<string, ElementLayout> {
+  const stageW = options?.stageWidth ?? 1080;
+  const stageH = options?.stageHeight ?? 1920;
+  const gapPx = options?.gapPx ?? 18;
+
+  const working = new Map<string, ElementLayout>();
+  for (const el of elements) {
+    working.set(el.id, { ...(resolvedMap.get(el.id) || el.layout) });
+  }
+
+  const ordered = elements
+    .map((el) => ({ el, lay: working.get(el.id)! }))
+    .filter((item) => item.el.type !== 'karaoke-card');
+
+  const isPinnedTitle = pinnedId === '__title__' && options?.titleBox;
+  const pinnedEl = ordered.find((item) => item.el.id === pinnedId);
+
+  const pushDownOrUp = (
+    blockerBox: { left: number; right: number; top: number; bottom: number },
+    el: SceneElement,
+    lay: ElementLayout,
+  ): ElementLayout | null => {
+    const box = resolveBoxFromLayout(el, lay);
+    const overlapX = Math.min(blockerBox.right, box.right) - Math.max(blockerBox.left, box.left);
+    const overlapY = Math.min(blockerBox.bottom, box.bottom) - Math.max(blockerBox.top, box.top);
+    if (overlapX <= 10 || overlapY <= -gapPx + 1) return null;
+
+    const minSafeY = Math.round(box.halfH + 40);
+    const maxSafeY = Math.round(stageH - box.halfH - 90);
+
+    // Prefer pushing sibling downward below the blocker
+    const downY = Math.round(blockerBox.bottom + gapPx + box.halfH);
+    if (downY <= maxSafeY) {
+      return { ...lay, y: downY, manualPosition: true };
+    }
+
+    // Fallback: push upward if downward runs off stage bottom
+    const upY = Math.round(blockerBox.top - gapPx - box.halfH);
+    if (upY >= minSafeY) {
+      return { ...lay, y: upY, manualPosition: true };
+    }
+
+    // Last resort: clamp horizontally away in wide stages
+    if (stageW > stageH) {
+      const shiftRightX = Math.min(stageW - box.halfW - 40, blockerBox.right + gapPx + box.halfW);
+      if (shiftRightX > blockerBox.right + 12) {
+        return { ...lay, x: Math.round(shiftRightX), manualPosition: true };
+      }
+    }
+
+    return { ...lay, y: Math.max(minSafeY, Math.min(maxSafeY, downY)), manualPosition: true };
+  };
+
+  const karaokeFixed = elements
+    .filter((el) => el.type === 'karaoke-card')
+    .map((el) => ({ el, lay: working.get(el.id)! }));
+
+  const avoidKaraokeForItem = (item: { el: SceneElement; lay: ElementLayout }) => {
+    for (const k of karaokeFixed) {
+      if (!intervalsOverlap(k.el, item.el)) continue;
+      const kBox = resolveBoxFromLayout(k.el, working.get(k.el.id));
+      const currLay = working.get(item.el.id)!;
+      const box = resolveBoxFromLayout(item.el, currLay);
+      const overlapX = Math.min(kBox.right, box.right) - Math.max(kBox.left, box.left);
+      const overlapY = Math.min(kBox.bottom, box.bottom) - Math.max(kBox.top, box.top);
+      if (overlapX <= 12 || overlapY <= 0) continue;
+      const isBottomKaraoke = kBox.top >= stageH * 0.5;
+      const minSafeY = Math.round(box.halfH + 40);
+      const maxSafeY = Math.round(stageH - box.halfH - 40);
+      const targetY = isBottomKaraoke
+        ? Math.max(minSafeY, Math.round(kBox.top - gapPx - box.halfH))
+        : Math.min(maxSafeY, Math.round(kBox.bottom + gapPx + box.halfH));
+      working.set(item.el.id, { ...currLay, y: targetY, manualPosition: true });
+    }
+  };
+
+  if (isPinnedTitle && options?.titleBox) {
+    const tb = {
+      left: options.titleBox.x - options.titleBox.width / 2,
+      right: options.titleBox.x + options.titleBox.width / 2,
+      top: options.titleBox.y - options.titleBox.height / 2,
+      bottom: options.titleBox.y + options.titleBox.height / 2,
+    };
+    for (const item of ordered) {
+      const updated = pushDownOrUp(tb, item.el, working.get(item.el.id)!);
+      if (updated) working.set(item.el.id, updated);
+    }
+  } else if (pinnedEl) {
+    const pinnedBox = resolveBoxFromLayout(pinnedEl.el, working.get(pinnedEl.el.id));
+    for (const item of ordered) {
+      if (item.el.id === pinnedId) continue;
+      if (!intervalsOverlap(pinnedEl.el, item.el)) continue;
+      const updated = pushDownOrUp(pinnedBox, item.el, working.get(item.el.id)!);
+      if (updated) working.set(item.el.id, updated);
+    }
+    // If the pinned element itself overlaps a fixed karaoke-card, nudge it clear of the subtitle bar
+    avoidKaraokeForItem(pinnedEl);
+  }
+
+  // Cascade pass: resolve any domino overlaps among shifted cards sorted by Y
+  const sortedByY = [...ordered].sort(
+    (a, b) => (working.get(a.el.id)?.y ?? a.el.layout.y) - (working.get(b.el.id)?.y ?? b.el.layout.y),
+  );
+  for (let i = 0; i < sortedByY.length; i++) {
+    const prev = sortedByY[i];
+    const prevLay = working.get(prev.el.id)!;
+    const prevBox = resolveBoxFromLayout(prev.el, prevLay);
+    for (let j = i + 1; j < sortedByY.length; j++) {
+      const next = sortedByY[j];
+      if (next.el.id === pinnedId) continue;
+      if (!intervalsOverlap(prev.el, next.el)) continue;
+      const updated = pushDownOrUp(prevBox, next.el, working.get(next.el.id)!);
+      if (updated) working.set(next.el.id, updated);
+    }
+  }
+
+  // Ensure shifted non-karaoke elements stay clear of fixed karaoke-card subtitle bands
+  for (const item of ordered) {
+    if (item.el.id === pinnedId) continue;
+    avoidKaraokeForItem(item);
+  }
+
+  return working;
+}
+

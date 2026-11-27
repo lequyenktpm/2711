@@ -176,12 +176,14 @@ Quy tắc an toàn (KHÔNG invent type hay icon ngoài danh mục):
       : `- Tổng phạm vi Transcript: \`${totalStart}\` → \`${totalEnd}\` (${effectiveCues.length} segments).`;
 
   const durationBudgetLine = targetMinutes
-    ? `- **Thời lượng & Mật độ kiến thức mục tiêu**: Người dùng mong muốn video hoàn chỉnh dài khoảng **${targetMinutes} phút (~${Math.round(targetMinutes * 60)} giây)**. ${
+    ? `- **Thời lượng & Chiều sâu sư phạm mục tiêu**: Người dùng mong muốn video hoàn chỉnh dài khoảng **${targetMinutes} phút (~${Math.round(targetMinutes * 60)} giây)**. ${
         targetMinutes >= 3
-          ? 'Hãy chia scene chi tiết, bổ sung thêm thẻ giải thích sắc thái, ví dụ đối chiếu và bước phân tích sâu để nội dung đủ giàu kiến thức cho thời lượng mục tiêu.'
+          ? 'KHÔNG được chạy vội nhồi chữ theo kiểu 1 từ + 1 ví dụ sơ sài cho đủ số lượng. Hãy chia scene thật sâu sắc: phân tích TẠI SAO cách nói đó nghe tự nhiên như người bản ngữ (Sound More Natural), đối chiếu lỗi sai / câu cứng nhắc kiểu sách giáo khoa người học hay mắc ("Don\'t say X → Say Y"), giải thích sắc thái, ngữ cảnh giao tiếp thực tế và mở rộng nhiều ví dụ phản xạ để nội dung giàu chiều sâu xứng đáng với thời lượng ' +
+            targetMinutes +
+            ' phút.'
           : targetMinutes <= 1
-            ? 'Giữ nhịp nhanh, súc tích, cô đọng đúng trọng tâm để không kéo dài lê thê vượt quá thời lượng mục tiêu.'
-            : 'Cân đối số scene và độ chi tiết vừa vặn, tự nhiên với thời lượng mục tiêu.'
+            ? 'Giữ nhịp nhanh, súc tích nhưng vẫn nêu rõ vì sao cách diễn đạt tự nhiên hơn câu thông thường và tránh nhồi chữ dư thừa.'
+            : 'Cân đối số scene và chiều sâu phân tích: mỗi mục cần giải thích ngắn gọn lý do nghe tự nhiên, lỗi dễ sai và ví dụ thực tế vừa vặn với thời lượng mục tiêu.'
       }`
     : '';
 

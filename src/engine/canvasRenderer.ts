@@ -36,6 +36,7 @@ import {
   Shape3DProps,
   SubtitleDisplayConfig,
   ThemePalette,
+  TitleOverlayLayout,
   ToneMeterProps,
   TopicPillProps,
   TranscriptCue,
@@ -271,44 +272,58 @@ export function resolveElementLayoutForAspect(
       (el) => el.type === 'comparison-strip' && el.layout.y < 900 && !el.id.includes('-quiz-opts-'),
     );
     const isTopSub916 = explicitPos === 'top';
-    let cartoonStackBottom916 = isTopSub916 ? 360 : 154;
+    let cartoonStackBottom916 = isTopSub916 ? 375 : 212;
 
     if (isCartoonHostProject) {
       const stripEl916 = visible916.find(
         (el) => el.type === 'comparison-strip' && el.layout.y < 900 && !el.id.includes('-quiz-opts-'),
       );
       if (stripEl916) {
-        const stripY = isTopSub916
-          ? Math.max(stripEl916.layout.y, 355)
-          : Math.max(stripEl916.layout.y, 196);
-        const stripScale = Math.min(stripEl916.layout.scale || 1, 0.9);
+        const stripY = stripEl916.layout.manualPosition
+          ? stripEl916.layout.y
+          : isTopSub916
+            ? Math.max(stripEl916.layout.y, 380)
+            : Math.max(stripEl916.layout.y, 252);
+        const stripScale = stripEl916.layout.manualPosition
+          ? stripEl916.layout.scale || 1
+          : Math.min(stripEl916.layout.scale || 1, 0.9);
         const stripExt = estimateElementHalfExtents({
           ...stripEl916,
           layout: { ...stripEl916.layout, scale: stripScale },
         });
         out.set(stripEl916.id, { ...stripEl916.layout, y: stripY, scale: stripScale });
-        cartoonStackBottom916 = stripY + stripExt.halfH;
+        cartoonStackBottom916 = Math.max(cartoonStackBottom916, stripY + stripExt.halfH);
       }
 
       const pillEl916 = visible916.find((el) => el.type === 'topic-pill' && el.layout.y < 520);
       if (pillEl916) {
-        const pillScale = Math.min(pillEl916.layout.scale || 1, 0.92);
+        const pillScale = pillEl916.layout.manualPosition
+          ? pillEl916.layout.scale || 1
+          : Math.min(pillEl916.layout.scale || 1, 0.92);
         const pillExt = estimateElementHalfExtents({
           ...pillEl916,
           layout: { ...pillEl916.layout, scale: pillScale },
         });
         const preferredPillY = isTopSub916
-          ? Math.max(pillEl916.layout.y, 445)
+          ? Math.max(pillEl916.layout.y, 455)
           : hasTopStrip916
-            ? Math.max(pillEl916.layout.y, 296)
-            : Math.max(pillEl916.layout.y, 204);
-        const pillY = Math.max(preferredPillY, cartoonStackBottom916 + 18 + pillExt.halfH);
+            ? Math.max(pillEl916.layout.y, 350)
+            : Math.max(pillEl916.layout.y, 258);
+        const pillY = pillEl916.layout.manualPosition
+          ? pillEl916.layout.y
+          : Math.max(preferredPillY, cartoonStackBottom916 + 18 + pillExt.halfH);
         out.set(pillEl916.id, { ...pillEl916.layout, y: pillY, scale: pillScale });
-        cartoonStackBottom916 = pillY + pillExt.halfH;
+        cartoonStackBottom916 = Math.max(cartoonStackBottom916, pillY + pillExt.halfH);
       }
 
       const cardEls916 = visible916.filter((el) => el.type === 'sentence-card');
       for (const cardEl of cardEls916) {
+        if (cardEl.layout.manualPosition) {
+          const mExt = estimateElementHalfExtents(cardEl);
+          out.set(cardEl.id, cardEl.layout);
+          cartoonStackBottom916 = Math.max(cartoonStackBottom916, cardEl.layout.y + mExt.halfH);
+          continue;
+        }
         const cardScale = Math.min(cardEl.layout.scale || 1, 0.9);
         const cardWidth = Math.min(860, cardEl.layout.width || 860);
         const cardExt = estimateElementHalfExtents({
@@ -316,7 +331,7 @@ export function resolveElementLayoutForAspect(
           layout: { ...cardEl.layout, width: cardWidth, scale: cardScale },
         });
         const cardY = Math.max(
-          isTopSub916 ? 560 : hasTopStrip916 ? 450 : 375,
+          isTopSub916 ? 580 : hasTopStrip916 ? 495 : 425,
           cartoonStackBottom916 + 22 + cardExt.halfH,
         );
         out.set(cardEl.id, { ...cardEl.layout, y: cardY, width: cardWidth, scale: cardScale });
@@ -325,13 +340,19 @@ export function resolveElementLayoutForAspect(
 
       const meterEls916 = visible916.filter((el) => el.type === 'tone-meter');
       for (const meterEl of meterEls916) {
+        if (meterEl.layout.manualPosition) {
+          const mExt = estimateElementHalfExtents(meterEl);
+          out.set(meterEl.id, meterEl.layout);
+          cartoonStackBottom916 = Math.max(cartoonStackBottom916, meterEl.layout.y + mExt.halfH);
+          continue;
+        }
         const meterScale = Math.min(meterEl.layout.scale || 0.78, 0.78);
         const meterExt = estimateElementHalfExtents({
           ...meterEl,
           layout: { ...meterEl.layout, width: 700, scale: meterScale },
         });
         const meterY = Math.max(
-          isTopSub916 ? 760 : 595,
+          isTopSub916 ? 780 : 625,
           cartoonStackBottom916 + 28 + meterExt.halfH,
         );
         out.set(meterEl.id, {
@@ -366,7 +387,7 @@ export function resolveElementLayoutForAspect(
         if (el.type === 'comparison-strip' && el.layout.y < 900 && !el.id.includes('-quiz-opts-')) {
           out.set(el.id, {
             ...el.layout,
-            y: isTopSub ? Math.max(el.layout.y, 355) : Math.max(el.layout.y, 196),
+            y: isTopSub ? Math.max(el.layout.y, 380) : Math.max(el.layout.y, 252),
             scale: Math.min(el.layout.scale || 1, 0.9),
           });
           continue;
@@ -375,10 +396,10 @@ export function resolveElementLayoutForAspect(
           out.set(el.id, {
             ...el.layout,
             y: isTopSub
-              ? Math.max(el.layout.y, 445)
+              ? Math.max(el.layout.y, 455)
               : hasTopStrip916
-                ? Math.max(el.layout.y, 296)
-                : Math.max(el.layout.y, 204),
+                ? Math.max(el.layout.y, 350)
+                : Math.max(el.layout.y, 258),
             scale: Math.min(el.layout.scale || 1, 0.92),
           });
           continue;
@@ -392,7 +413,7 @@ export function resolveElementLayoutForAspect(
           });
           out.set(el.id, {
             ...el.layout,
-            y: Math.max(isTopSub ? 570 : 375, cartoonStackBottom916 + 22 + cardExt.halfH),
+            y: Math.max(isTopSub ? 580 : 425, cartoonStackBottom916 + 22 + cardExt.halfH),
             width: cardWidth,
             scale: cardScale,
           });
@@ -407,7 +428,7 @@ export function resolveElementLayoutForAspect(
           out.set(el.id, {
             ...el.layout,
             x: 540,
-            y: Math.max(isTopSub ? 760 : 595, cartoonStackBottom916 + 28 + meterExt.halfH),
+            y: Math.max(isTopSub ? 780 : 625, cartoonStackBottom916 + 28 + meterExt.halfH),
             width: 700,
             scale: meterScale,
           });
@@ -418,14 +439,14 @@ export function resolveElementLayoutForAspect(
           const maxHostBottom = isTopSub ? 1810 : 1482;
           const halfHBase = 335;
           let hostY = Math.max(
-            isTopSub ? 1135 : 1085,
+            isTopSub ? 1155 : 1105,
             cartoonStackBottom916 + 24 + Math.round(halfHBase * hostScale),
           );
           if (hostY + Math.round(346 * hostScale) > maxHostBottom) {
             const avail = Math.max(440, maxHostBottom - (cartoonStackBottom916 + 24));
             hostScale = Math.max(0.68, Math.min(hostScale, Number((avail / (halfHBase + 346)).toFixed(3))));
             hostY = Math.max(
-              isTopSub ? 1135 : 1085,
+              isTopSub ? 1155 : 1105,
               cartoonStackBottom916 + 22 + Math.round(halfHBase * hostScale),
             );
             hostY = Math.min(hostY, maxHostBottom - Math.round(346 * hostScale));
@@ -487,38 +508,59 @@ export function resolveElementLayoutForAspect(
 
     if (aspectRatio === '4:5') {
       // 1080 x 1350: Clean stacked responsive vertical layout (Header -> Strip -> Pill -> Card -> Meter -> Gimmy -> Karaoke)
-      let stackBottom45 = hasTopSubCollision ? 305 : 132;
+      let stackBottom45 = hasTopSubCollision ? 320 : 178;
       const stripEl45 = visible.find((el) => el.type === 'comparison-strip' && !isQuizOptStrip(el));
       if (stripEl45) {
-        const sy = hasTopSubCollision ? 345 : 172;
-        out.set(stripEl45.id, { ...stripEl45.layout, x: 540, y: sy, width: 880, scale: 0.84 });
-        stackBottom45 = sy + 52;
+        const sy = stripEl45.layout.manualPosition
+          ? stripEl45.layout.y
+          : hasTopSubCollision
+            ? 365
+            : 218;
+        out.set(
+          stripEl45.id,
+          stripEl45.layout.manualPosition
+            ? stripEl45.layout
+            : { ...stripEl45.layout, x: 540, y: sy, width: 880, scale: 0.84 },
+        );
+        stackBottom45 = Math.max(stackBottom45, sy + 52);
       }
       const pillEl45 = visible.find(isTopPill);
       if (pillEl45) {
-        const pillExt = estimateElementHalfExtents({
-          ...pillEl45,
-          layout: { ...pillEl45.layout, width: 620, scale: 0.84 },
-        });
-        const py = Math.max(hasTopSubCollision ? (hasTopStrip ? 425 : 350) : hasTopStrip ? 248 : 178, stackBottom45 + 16 + pillExt.halfH);
-        out.set(pillEl45.id, { ...pillEl45.layout, x: 540, y: py, width: 620, scale: 0.84 });
-        stackBottom45 = py + pillExt.halfH;
+        if (pillEl45.layout.manualPosition) {
+          out.set(pillEl45.id, pillEl45.layout);
+        } else {
+          const pillExt = estimateElementHalfExtents({
+            ...pillEl45,
+            layout: { ...pillEl45.layout, width: 620, scale: 0.84 },
+          });
+          const py = Math.max(hasTopSubCollision ? (hasTopStrip ? 445 : 365) : hasTopStrip ? 298 : 226, stackBottom45 + 16 + pillExt.halfH);
+          out.set(pillEl45.id, { ...pillEl45.layout, x: 540, y: py, width: 620, scale: 0.84 });
+          stackBottom45 = Math.max(stackBottom45, py + pillExt.halfH);
+        }
       }
       for (const cardEl45 of visible.filter((el) => el.type === 'sentence-card')) {
+        if (cardEl45.layout.manualPosition) {
+          out.set(cardEl45.id, cardEl45.layout);
+          continue;
+        }
         const cardExt = estimateElementHalfExtents({
           ...cardEl45,
           layout: { ...cardEl45.layout, width: 820, scale: 0.8 },
         });
-        const cy = Math.max(hasTopSubCollision ? 545 : hasTopStrip ? 385 : 330, stackBottom45 + 18 + cardExt.halfH);
+        const cy = Math.max(hasTopSubCollision ? 565 : hasTopStrip ? 425 : 365, stackBottom45 + 18 + cardExt.halfH);
         out.set(cardEl45.id, { ...cardEl45.layout, x: 540, y: cy, width: 820, scale: 0.8 });
         stackBottom45 = Math.max(stackBottom45, cy + cardExt.halfH);
       }
       for (const lowerEl45 of visible.filter((el) => el.type === 'tone-meter' || isQuizOptStrip(el) || isCountdownMeter(el))) {
+        if (lowerEl45.layout.manualPosition) {
+          out.set(lowerEl45.id, lowerEl45.layout);
+          continue;
+        }
         const lowerExt = estimateElementHalfExtents({
           ...lowerEl45,
           layout: { ...lowerEl45.layout, width: 780, scale: 0.72 },
         });
-        const ly = Math.max(hasTopSubCollision ? 690 : 530, stackBottom45 + 20 + lowerExt.halfH);
+        const ly = Math.max(hasTopSubCollision ? 710 : 555, stackBottom45 + 20 + lowerExt.halfH);
         out.set(lowerEl45.id, { ...lowerEl45.layout, x: 540, y: ly, width: 780, scale: 0.72 });
         stackBottom45 = Math.max(stackBottom45, ly + lowerExt.halfH);
       }
@@ -543,7 +585,7 @@ export function resolveElementLayoutForAspect(
           out.set(el.id, {
             ...el.layout,
             x: 540,
-            y: hasTopSubCollision ? 345 : 172,
+            y: hasTopSubCollision ? 365 : 218,
             width: 880,
             scale: 0.84,
           });
@@ -553,7 +595,7 @@ export function resolveElementLayoutForAspect(
           out.set(el.id, {
             ...el.layout,
             x: 540,
-            y: hasTopSubCollision ? (hasTopStrip ? 425 : 350) : hasTopStrip ? 248 : 178,
+            y: hasTopSubCollision ? (hasTopStrip ? 445 : 365) : hasTopStrip ? 298 : 226,
             width: 620,
             scale: 0.84,
           });
@@ -563,7 +605,7 @@ export function resolveElementLayoutForAspect(
           out.set(el.id, {
             ...el.layout,
             x: 540,
-            y: hasTopSubCollision ? 545 : hasTopStrip ? 385 : 330,
+            y: hasTopSubCollision ? 565 : hasTopStrip ? 425 : 365,
             width: 820,
             scale: 0.8,
           });
@@ -573,7 +615,7 @@ export function resolveElementLayoutForAspect(
           out.set(el.id, {
             ...el.layout,
             x: 540,
-            y: Math.max(hasTopSubCollision ? 690 : 530, stackBottom45 + 20 + 58),
+            y: Math.max(hasTopSubCollision ? 710 : 555, stackBottom45 + 20 + 58),
             width: 780,
             scale: 0.72,
           });
@@ -642,7 +684,7 @@ export function resolveElementLayoutForAspect(
         out.set(el.id, {
           ...el.layout,
           x: 765,
-          y: hasTopSubCollision ? 295 : 80,
+          y: hasTopSubCollision ? 310 : 112,
           width: 560,
           scale: 0.7,
         });
@@ -652,7 +694,7 @@ export function resolveElementLayoutForAspect(
         out.set(el.id, {
           ...el.layout,
           x: 765,
-          y: hasTopSubCollision ? (hasTopStrip ? 375 : 300) : hasTopStrip ? 168 : 108,
+          y: hasTopSubCollision ? (hasTopStrip ? 385 : 310) : hasTopStrip ? 190 : 128,
           width: 480,
           scale: 0.76,
         });
@@ -764,7 +806,7 @@ export function resolveElementLayoutForAspect(
         out.set(el.id, {
           ...el.layout,
           x: hasRightColumn ? 455 : 960,
-          y: hasTopSubCollision ? 620 : 585,
+          y: hasTopSubCollision ? 595 : 562,
           width: 780,
           scale: 0.78,
         });
@@ -774,7 +816,7 @@ export function resolveElementLayoutForAspect(
         out.set(el.id, {
           ...el.layout,
           x: 1365,
-          y: hasTopSubCollision ? 295 : 88,
+          y: hasTopSubCollision ? 315 : 108,
           width: 920,
           scale: 0.88,
         });
@@ -784,7 +826,7 @@ export function resolveElementLayoutForAspect(
         out.set(el.id, {
           ...el.layout,
           x: 1365,
-          y: hasTopSubCollision ? (hasTopStrip ? 385 : 310) : hasTopStrip ? 182 : 112,
+          y: hasTopSubCollision ? (hasTopStrip ? 395 : 320) : hasTopStrip ? 202 : 132,
           width: 740,
           scale: 0.88,
         });
@@ -1271,23 +1313,77 @@ function drawCharacterAvatar(
   ctx.restore();
 }
 
-/**
- * Renders the signature @Gimmys golden-orange outlined short hook headline
- * directly in stage coordinates so it never clips or collides across 9:16, 16:9, 1:1, or 4:5.
- */
-function drawCartoonHostHeadline(
-  ctx: CanvasRenderingContext2D,
-  rawTitle: string | undefined,
+export interface ResolvedLessonTitleBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scale: number;
+  maxW: number;
+  maxH: number;
+  maxFontSize: number;
+  cleanTitle: string;
+}
+
+export function shouldRenderLessonTitle(project: LessonProject, time?: number): boolean {
+  const cleanTitle = formatCartoonHostHeadline(project.title);
+  if (!cleanTitle) return false;
+  if (project.titleLayout?.hidden) return false;
+  if (typeof time === 'number') {
+    const introSec = getEffectiveIntroSeconds(project);
+    const outroSec = getEffectiveOutroSeconds(project);
+    if (introSec > 0 && time < introSec) return false;
+    if (
+      outroSec > 0 &&
+      project.duration > 0 &&
+      project.watermark &&
+      [project.watermark.outroLine1?.trim(), project.watermark.outroLine2?.trim()].some(Boolean) &&
+      time >= Math.max(introSec, project.duration - outroSec)
+    ) {
+      return false;
+    }
+  }
+  const isCartoonStage =
+    project.compositionId === 'cartoon-host' ||
+    project.elements.some(
+      (el) => el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host',
+    );
+  const hasExplicitTitleLayout =
+    Boolean(project.titleLayout) &&
+    (project.titleLayout?.hidden === false ||
+      typeof project.titleLayout?.x === 'number' ||
+      typeof project.titleLayout?.y === 'number' ||
+      typeof project.titleLayout?.scale === 'number');
+  return isCartoonStage || hasExplicitTitleLayout;
+}
+
+export function resolveLessonTitleBox(
+  project: LessonProject,
   aspectRatio: ExportAspectRatioId = '9:16',
-  stageW: number,
-  subtitlePos?: 'top' | 'center' | 'bottom',
-  hasRightHeaderSplit = false,
-) {
-  const cleanTitle = formatCartoonHostHeadline(rawTitle);
-  if (!cleanTitle) return;
+  time = 0,
+): ResolvedLessonTitleBox | null {
+  if (!shouldRenderLessonTitle(project, time)) return null;
+  const cleanTitle = formatCartoonHostHeadline(project.title);
+  if (!cleanTitle) return null;
+
+  const stage = getStageDimensionsForAspect(aspectRatio);
+  const stageW = stage.width;
+  const subtitlePos = project.subtitleConfig?.position;
+  const introSec = getEffectiveIntroSeconds(project);
+  const lessonTime = Math.max(0, time - introSec);
+
+  const hasRightHeaderSplit =
+    (aspectRatio === '16:9' || aspectRatio === '1:1') &&
+    project.elements.some(
+      (el) =>
+        lessonTime >= el.startTime - 0.01 &&
+        lessonTime <= el.endTime + 0.01 &&
+        !(el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host') &&
+        el.type !== 'karaoke-card',
+    );
 
   let centerX = stageW / 2;
-  let centerY = 92;
+  let centerY = 148;
   let maxW = stageW - 96;
   let maxH = 104;
   let maxFontSize = 54;
@@ -1302,7 +1398,7 @@ function drawCartoonHostHeadline(
       maxW = 1480;
       maxFontSize = 52;
     }
-    centerY = subtitlePos === 'top' ? 68 : 96;
+    centerY = subtitlePos === 'top' ? 104 : 126;
     maxH = 92;
   } else if (aspectRatio === '1:1') {
     if (hasRightHeaderSplit) {
@@ -1314,21 +1410,67 @@ function drawCartoonHostHeadline(
       maxW = 920;
       maxFontSize = 44;
     }
-    centerY = subtitlePos === 'top' ? 64 : 88;
+    centerY = subtitlePos === 'top' ? 98 : 118;
     maxH = 88;
   } else if (aspectRatio === '4:5') {
     centerX = stageW / 2;
-    centerY = subtitlePos === 'top' ? 64 : 82;
+    centerY = subtitlePos === 'top' ? 102 : 124;
     maxW = 920;
     maxH = 88;
     maxFontSize = 46;
   } else {
     centerX = stageW / 2;
-    centerY = subtitlePos === 'top' ? 74 : 92;
+    centerY = subtitlePos === 'top' ? 116 : 148;
     maxW = 920;
     maxH = 104;
     maxFontSize = 54;
   }
+
+  const ov = project.titleLayout;
+  const scale =
+    typeof ov?.scale === 'number' && Number.isFinite(ov.scale)
+      ? Math.max(0.45, Math.min(2.0, ov.scale))
+      : 1;
+  const finalX =
+    typeof ov?.x === 'number' && Number.isFinite(ov.x)
+      ? Math.max(80, Math.min(stageW - 80, ov.x))
+      : centerX;
+  const finalY =
+    typeof ov?.y === 'number' && Number.isFinite(ov.y)
+      ? Math.max(48, Math.min(stage.height - 48, ov.y))
+      : centerY;
+
+  const estWidth = Math.min(maxW, Math.max(260, Math.round(cleanTitle.length * maxFontSize * 0.56))) * scale;
+  const estHeight = Math.round(maxH * scale);
+
+  return {
+    x: Math.round(finalX),
+    y: Math.round(finalY),
+    width: Math.round(estWidth),
+    height: estHeight,
+    scale,
+    maxW,
+    maxH,
+    maxFontSize,
+    cleanTitle,
+  };
+}
+
+/**
+ * Renders the signature @Gimmys golden-orange outlined short hook headline
+ * directly in stage coordinates so it never clips or collides across 9:16, 16:9, 1:1, or 4:5.
+ */
+function drawCartoonHostHeadline(
+  ctx: CanvasRenderingContext2D,
+  project: LessonProject,
+  aspectRatio: ExportAspectRatioId = '9:16',
+  time: number,
+  isSelected = false,
+) {
+  const box = resolveLessonTitleBox(project, aspectRatio, time);
+  if (!box) return;
+
+  const { x: centerX, y: centerY, maxW, maxH, maxFontSize, scale, cleanTitle } = box;
 
   const fitted = fitWrappedTextBlock(ctx, cleanTitle, maxW, maxH, {
     fontWeight: 900,
@@ -1339,28 +1481,46 @@ function drawCartoonHostHeadline(
   });
 
   ctx.save();
+  ctx.translate(centerX, centerY);
+  if (Math.abs(scale - 1) > 0.005) {
+    ctx.scale(scale, scale);
+  }
   ctx.font = `900 ${fitted.fontSize}px ${FONT_DISPLAY}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const startY = centerY - ((fitted.lines.length - 1) * fitted.lineHeight) / 2;
-  const grad = ctx.createLinearGradient(0, centerY - 36, 0, centerY + 36);
+  const startY = -((fitted.lines.length - 1) * fitted.lineHeight) / 2;
+  const grad = ctx.createLinearGradient(0, -36, 0, 36);
   grad.addColorStop(0, '#FEF08A');
   grad.addColorStop(0.55, '#FACC15');
   grad.addColorStop(1, '#F97316');
 
+  let widestLine = 180;
   fitted.lines.forEach((ln, li) => {
     const ly = startY + li * fitted.lineHeight;
+    widestLine = Math.max(widestLine, Math.min(maxW, ctx.measureText(ln).width));
     ctx.save();
     ctx.shadowColor = 'rgba(250, 204, 21, 0.50)';
     ctx.shadowBlur = 16;
     ctx.strokeStyle = '#3B1D0A';
     ctx.lineWidth = Math.max(8, Math.round(fitted.fontSize * 0.24));
     ctx.lineJoin = 'round';
-    ctx.strokeText(ln, centerX, ly, maxW);
+    ctx.strokeText(ln, 0, ly, maxW);
     ctx.restore();
     ctx.fillStyle = grad;
-    ctx.fillText(ln, centerX, ly, maxW);
+    ctx.fillText(ln, 0, ly, maxW);
   });
+
+  if (isSelected) {
+    const guideW = Math.min(maxW + 32, widestLine + 38);
+    const guideH = fitted.lines.length * fitted.lineHeight + 28;
+    ctx.save();
+    ctx.strokeStyle = '#4F46E5';
+    ctx.lineWidth = 4 / Math.max(0.45, scale);
+    ctx.setLineDash([12, 8]);
+    drawRoundedRectPath(ctx, -guideW / 2, -guideH / 2, guideW, guideH, 18);
+    ctx.stroke();
+    ctx.restore();
+  }
   ctx.restore();
 }
 
@@ -1391,17 +1551,11 @@ function drawCartoonHostCharacter(
 
   const lip = computeSpeechLipSyncState(cues, time, effectiveContext);
   const ink = '#0F172A';
-  const jumpOffsetY = lip.jumpOffsetY || 0;
   const kneeBend = clamp01(lip.kneeBend || 0);
   const clapImpact = clamp01(lip.clapImpact || 0);
-  const jumpLift = Math.max(0, -jumpOffsetY);
+  const kneeDropY = kneeBend * 18;
 
   ctx.save();
-  // Apply squash & stretch anchored around the character's current foot height
-  const squashAnchorY = 340 + jumpOffsetY;
-  ctx.translate(0, squashAnchorY);
-  ctx.scale(lip.bodySquashX || 1, lip.bodySquashY || 1);
-  ctx.translate(0, -squashAnchorY);
 
   const skinLight = '#ECC094';
 
@@ -1906,29 +2060,27 @@ function drawCartoonHostCharacter(
 
   drawFxOverlay();
 
-  // 0. Ground radial shadow under shoes (stays on floor and shrinks smoothly while jumping)
+  // 0. Ground radial shadow under shoes (feet stay firmly planted on floor)
   ctx.save();
-  const shadowScale = Math.max(0.52, 1 - jumpLift / 220);
-  const floorShadow = ctx.createRadialGradient(0, 344, 14 * shadowScale, 0, 344, 165 * shadowScale);
-  floorShadow.addColorStop(0, `rgba(12, 62, 128, ${(0.28 * shadowScale).toFixed(2)})`);
-  floorShadow.addColorStop(0.6, `rgba(12, 62, 128, ${(0.12 * shadowScale).toFixed(2)})`);
+  const floorShadow = ctx.createRadialGradient(0, 344, 14, 0, 344, 165);
+  floorShadow.addColorStop(0, 'rgba(12, 62, 128, 0.28)');
+  floorShadow.addColorStop(0.6, 'rgba(12, 62, 128, 0.12)');
   floorShadow.addColorStop(1, 'rgba(12, 62, 128, 0)');
   ctx.fillStyle = floorShadow;
   ctx.beginPath();
-  ctx.ellipse(0, 344, 165 * shadowScale, 24 * shadowScale, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 344, 165, 24, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  // 1. Thicker cartoon legs + larger oval shoes (supports crouch knee bend & airborne jump lift)
+  // 1. Thicker cartoon legs + grounded shoes (articulated knee flexion without jumping or squash)
   ctx.save();
   ctx.strokeStyle = ink;
   ctx.lineWidth = 9.6;
   ctx.lineCap = 'round';
-  const hipStartY = 194 + jumpOffsetY;
-  const airborneLift = jumpOffsetY < 0 ? jumpOffsetY * 0.92 : 0;
-  const footY = 335 + airborneLift;
-  const kneeOutOffset = kneeBend * 30;
-  const kneeMidY = (hipStartY + footY) * 0.52 + kneeBend * 14;
+  const hipStartY = 194 + kneeDropY;
+  const footY = 335;
+  const kneeOutOffset = kneeBend * 28;
+  const kneeMidY = (hipStartY + footY) * 0.52 + kneeBend * 10;
   ctx.beginPath();
   ctx.moveTo(-44, hipStartY);
   ctx.quadraticCurveTo(-50 - kneeOutOffset, kneeMidY, -46 - kneeBend * 4, footY);
@@ -1936,7 +2088,7 @@ function drawCartoonHostCharacter(
   ctx.quadraticCurveTo(50 + kneeOutOffset, kneeMidY, 46 + kneeBend * 4, footY);
   ctx.stroke();
 
-  const shoeTilt = jumpLift > 12 ? 0.08 : -0.16;
+  const shoeTilt = -0.16;
   ctx.fillStyle = ink;
   ctx.beginPath();
   ctx.ellipse(-58 - kneeBend * 4, footY + 4, 34, 13.5, shoeTilt, 0, Math.PI * 2);
@@ -1946,9 +2098,9 @@ function drawCartoonHostCharacter(
   ctx.fill();
   ctx.restore();
 
-  // 2. Breathing torso & contextual arms (follows jumpOffsetY + headBobY)
+  // 2. Stable torso & articulated arms (tracks grounded hip flexion only)
   ctx.save();
-  ctx.translate(0, lip.headBobY + jumpOffsetY);
+  ctx.translate(0, kneeDropY);
 
   const lSway = Math.sin(time * 1.35) * 4;
 
@@ -2002,9 +2154,9 @@ function drawCartoonHostCharacter(
   drawSmoothLeftArm(lSway);
   drawContinuousRightArm();
 
-  // 3. Slightly oval Tan Head rotating around neck pivot with subtle context shake/tilt
+  // 3. Slightly oval Tan Head rotating around neck pivot with subtle head nod/shake/tilt
   ctx.save();
-  ctx.translate(lip.headShakeX, -34);
+  ctx.translate(lip.headShakeX, -34 + lip.headBobY);
   ctx.rotate(lip.headTiltRad);
   ctx.translate(0, -124);
 
@@ -8349,23 +8501,13 @@ export function renderProjectFrame(
     ? computeCartoonHostContextFromElements(sorted, lessonTime, project.cues, project.aspectRatio)
     : undefined;
 
-  if (isCartoonStage) {
-    const hasRightHeaderSplit =
-      (project.aspectRatio === '16:9' || project.aspectRatio === '1:1') &&
-      sorted.some(
-        (el) =>
-          lessonTime >= el.startTime - 0.01 &&
-          lessonTime <= el.endTime + 0.01 &&
-          !(el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host') &&
-          el.type !== 'karaoke-card',
-      );
+  if (shouldRenderLessonTitle(project, time)) {
     drawCartoonHostHeadline(
       ctx,
-      project.title,
+      project,
       project.aspectRatio || '9:16',
-      stageW,
-      project.subtitleConfig?.position,
-      hasRightHeaderSplit,
+      time,
+      selectedElementId === '__title__',
     );
   }
 
@@ -8563,7 +8705,7 @@ function estimateElementBoxDimensions(
   return { width, height: activeLayout.height ?? 160 };
 }
 
-export type CanvasOverlayZone = 'intro' | 'outro' | 'watermark';
+export type CanvasOverlayZone = 'intro' | 'outro' | 'watermark' | 'title';
 
 export function hitTestCanvasOverlayZone(
   project: LessonProject,
@@ -8607,6 +8749,20 @@ export function hitTestCanvasOverlayZone(
     const outroStart = Math.max(introSec, project.duration - outroSec);
     if (outroLines.length > 0 && time >= outroStart) {
       return 'outro';
+    }
+  }
+
+  const titleBox = resolveLessonTitleBox(project, aspectRatio, time);
+  if (titleBox) {
+    const halfW = titleBox.width / 2 + 18;
+    const halfH = titleBox.height / 2 + 14;
+    if (
+      canvasX >= titleBox.x - halfW &&
+      canvasX <= titleBox.x + halfW &&
+      canvasY >= titleBox.y - halfH &&
+      canvasY <= titleBox.y + halfH
+    ) {
+      return 'title';
     }
   }
 

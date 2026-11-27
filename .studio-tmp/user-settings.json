@@ -1,5 +1,5 @@
 {
-  "activeTab": "edu-studio",
+  "activeTab": "reels",
   "studio": {
     "aspectRatio": "9:16",
     "resolution": "540p",
@@ -39,7 +39,7 @@
     "inlineRate": 1,
     "inlineWhisperSync": true
   },
-  "updatedAt": 1795745736745,
+  "updatedAt": 1795779202179,
   "reels": {
     "reelCreationMode": "creator",
     "creatorTopicHint": "",
@@ -161,17 +161,8 @@
         "mp4Resolution": "540p",
         "mp4Quality": "standard",
         "mp4Fps": 24,
-        "previewViewMode": "cards",
-        "layoutOverridesByAspect": {
-          "16:9": {
-            "reel-cartoon-host-main": {
-              "x": 455,
-              "y": 585,
-              "width": 780,
-              "scale": 0.93
-            }
-          }
-        },
+        "previewViewMode": "video",
+        "layoutOverridesByAspect": {},
         "enableCountdownSfx": true,
         "descriptionStyle": "auto"
       },
@@ -215,7 +206,7 @@
     }
   },
   "eduStudio": {
-    "subTab": "merge",
+    "subTab": "align",
     "selectedSavePath": "",
     "watermarkOutro": {
       "watermarkEnabled": true,

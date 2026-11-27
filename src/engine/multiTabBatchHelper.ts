@@ -1,7 +1,9 @@
+import { buildSceneGenerationPrompt, PromptVideoStyle } from './aiPromptBuilder';
 import { getReadingUiStrings, ReadingUiStrings } from './eduStudioEffects';
 import {
   buildAiCreatorWebAiPrompt,
   buildTranslationChallengePrompt,
+  CreatorFormatCategory,
   getQuizCardSpeechParts,
   inferLearningLangFromCards,
   LEARNING_LANGUAGE_OPTIONS,
@@ -19,7 +21,7 @@ import {
   ReadingLearningLang,
 } from './readingPromptBuilder';
 import { FlexibleSceneDocument } from './scenePlanAdapter';
-import type { TranscriptCue } from './types';
+import type { LayoutCompositionId, TranscriptCue } from './types';
 
 export type BatchSubTabId = 'studio' | 'creator' | 'translation' | 'reading';
 
@@ -684,32 +686,171 @@ export function parseTopicLinesInput(raw: string): string[] {
     .filter(Boolean);
 }
 
+const BATCH_PROMPT_ZIP_NAMES: Record<BatchSubTabId, string> = {
+  studio: 'Prompts_Tab_1_Studio.zip',
+  creator: 'Prompts_Tab_2_AI_Creator.zip',
+  translation: 'Prompts_Tab_3_Phan_Xa_Dich.zip',
+  reading: 'Prompts_Tab_4_Doc_Theo_Chu.zip',
+};
+
+const BATCH_PROMPT_SUBFOLDERS: Record<BatchSubTabId, string> = {
+  studio: 'Prompts/Tab-1-Studio',
+  creator: 'Prompts/Tab-2-AI-Creator',
+  translation: 'Prompts/Tab-3-Phan-Xa-Dich',
+  reading: 'Prompts/Tab-4-Doc-Theo-Chu',
+};
+
+export function buildBatchPromptZipName(subTab: BatchSubTabId): string {
+  return BATCH_PROMPT_ZIP_NAMES[subTab] || 'Prompts_Tab_Batch.zip';
+}
+
+export function getBatchPromptSubfolder(subTab: BatchSubTabId): string {
+  return BATCH_PROMPT_SUBFOLDERS[subTab] || 'Prompts/Tab-Batch';
+}
+
+const DEFAULT_BATCH_TOPIC_IDEAS = [
+  'Sound More Natural with Everyday Phrasal Verbs',
+  'Polite Disagreement & Softening Requests at Work',
+  'Common Learner Mistakes vs Native Expressions',
+  'Small Talk & Ordering Smoothly at a Cafe',
+  'Expressing Emotions Nuancedly Without Basic Adjectives',
+  'Storytelling Connectors That Sound Effortless',
+  'Airport, Hotel & Travel Problem-Solving',
+  'Reacting Naturally in Casual Conversations',
+  'Time & Routine Habits That Boost Clarity',
+  'Upgrade Overused Textbook Greetings & Goodbyes',
+];
+
+function buildStudioBatchPrompt(params: {
+  topic: string;
+  learningLanguage: LearningLanguageId;
+  level: string;
+  durationMinutes: number;
+  targetLang: string;
+  style?: PromptVideoStyle;
+  compositionId?: LayoutCompositionId | 'ai-decide';
+  aspectRatio?: ExportAspectRatioId;
+}): string {
+  const langMeta =
+    LEARNING_LANGUAGE_OPTIONS.find((item) => item.id === params.learningLanguage) ||
+    LEARNING_LANGUAGE_OPTIONS[0];
+  const approxCuesCount = Math.max(4, Math.min(24, Math.round(params.durationMinutes * 3)));
+  const segStepSec = Number(((params.durationMinutes * 60) / approxCuesCount).toFixed(2));
+  const syntheticCues: TranscriptCue[] = Array.from({ length: Math.min(6, approxCuesCount) }, (_, idx) => {
+    const start = Number((idx * segStepSec).toFixed(2));
+    const end = Number(((idx + 1) * segStepSec).toFixed(2));
+    return {
+      id: `seg_${String(idx + 1).padStart(3, '0')}`,
+      start,
+      end,
+      text: `[Segment ${idx + 1} placeholder for ${langMeta.nativeName} script about "${params.topic}" at level ${params.level}]`,
+      words: [],
+    };
+  });
+
+  const baseStoryboardPrompt = buildSceneGenerationPrompt(syntheticCues, {
+    title: params.topic,
+    style: params.style ?? 'tiktok-cards',
+    compositionId: params.compositionId ?? 'ai-decide',
+    targetDurationMinutes: params.durationMinutes,
+  });
+
+  return `# BÀI GIẢNG STUDIO TỰ ĐỘNG (TAB 1 STUDIO · ${params.aspectRatio || '9:16'})
+- Chủ đề trọng tâm: **${params.topic}**
+- Ngôn ngữ học: **${langMeta.label}** · Trình độ: **${params.level}**
+- Ngôn ngữ giải thích phụ đề/thẻ: **${params.targetLang === 'none' ? 'Pure target language' : params.targetLang}**
+- Thời lượng mục tiêu: **${params.durationMinutes} phút (~${Math.round(params.durationMinutes * 60)} giây)**
+- Lưu ý: Nếu chưa có audio sẵn, hãy tự viết toàn bộ kịch bản \`source_segments[]\` (${approxCuesCount} segments phân bổ đều trong **~${Math.round(params.durationMinutes * 60)} giây**) với nội dung sư phạm sâu (giải thích lý do tự nhiên, đối chiếu lỗi thường gặp, sắc thái & ví dụ thực tế) thay thế các segment placeholder bên dưới rồi dựng trọn vẹn JSON \`schema_version: "1.9"\`.
+
+${baseStoryboardPrompt}`;
+}
+
+export function pickBatchItemDurationMinutes(options: {
+  durationMode?: 'fixed' | 'random';
+  durationMinutes?: number;
+  minDurationMinutes?: number;
+  maxDurationMinutes?: number;
+  rng?: () => number;
+}): number {
+  const clampMin = (val: number) => Math.max(0.5, Math.min(30, val));
+  if (options.durationMode === 'random') {
+    const lo = clampMin(Number(options.minDurationMinutes ?? options.durationMinutes ?? 1) || 1);
+    const hi = clampMin(Number(options.maxDurationMinutes ?? options.durationMinutes ?? 5) || lo);
+    const minVal = Math.min(lo, hi);
+    const maxVal = Math.max(lo, hi);
+    const rand = (options.rng ? options.rng() : Math.random());
+    // Round to nearest 0.5 minute so durations stay clean (e.g., 1.5m, 3m, 5m)
+    const stepped = Math.round((minVal + rand * (maxVal - minVal)) * 2) / 2;
+    return Number(clampMin(stepped).toFixed(1));
+  }
+  return Number(clampMin(Number(options.durationMinutes ?? 2) || 2).toFixed(1));
+}
+
 export function generateBatchPromptsForTopics(options: {
-  subTab: 'creator' | 'translation' | 'reading';
+  subTab: BatchSubTabId;
   topics: string[];
+  promptCount?: number;
   learningLanguage: LearningLanguageId;
   level?: string;
+  durationMode?: 'fixed' | 'random';
   durationMinutes?: number;
+  minDurationMinutes?: number;
+  maxDurationMinutes?: number;
   targetLang?: string;
   aspectRatio?: ExportAspectRatioId;
+  style?: PromptVideoStyle;
+  compositionId?: LayoutCompositionId | 'ai-decide';
+  formatPreference?: CreatorFormatCategory;
   thinkSec?: number;
   repeatCount?: number;
   readingFormat?: ReadingFormatCategory;
-}): Array<{ fileName: string; topic: string; promptText: string }> {
-  const cleanTopics = options.topics.map((t) => t.trim()).filter(Boolean);
-  const targetLang = options.targetLang ?? 'vi';
-  const durationMinutes = Math.max(0.5, Math.min(30, options.durationMinutes ?? 1.5));
+  rng?: () => number;
+}): Array<{ fileName: string; topic: string; durationMinutes: number; promptText: string }> {
+  const userTopics = options.topics.map((t) => t.trim()).filter(Boolean);
+  const desiredCount = Math.max(
+    1,
+    Math.min(30, Math.round(options.promptCount ?? (userTopics.length > 0 ? userTopics.length : 5))),
+  );
+  const resolvedLevel = options.level?.trim() || 'B1';
+  const resolvedTopics: string[] = Array.from({ length: desiredCount }, (_, idx) => {
+    if (idx < userTopics.length) return userTopics[idx];
+    const seed = DEFAULT_BATCH_TOPIC_IDEAS[idx % DEFAULT_BATCH_TOPIC_IDEAS.length];
+    return `${seed} (${resolvedLevel} #${idx + 1})`;
+  });
 
-  return cleanTopics.map((topic, index) => {
+  const targetLang = options.targetLang ?? 'vi';
+
+  return resolvedTopics.map((topic, index) => {
     const indexPrefix = String(index + 1).padStart(2, '0');
+    const durationMinutes = pickBatchItemDurationMinutes({
+      durationMode: options.durationMode,
+      durationMinutes: options.durationMinutes,
+      minDurationMinutes: options.minDurationMinutes,
+      maxDurationMinutes: options.maxDurationMinutes,
+      rng: options.rng,
+    });
+
     let promptText = '';
-    if (options.subTab === 'creator') {
+    if (options.subTab === 'studio') {
+      promptText = buildStudioBatchPrompt({
+        topic,
+        learningLanguage: options.learningLanguage,
+        level: resolvedLevel,
+        durationMinutes,
+        targetLang,
+        style: options.style,
+        compositionId: options.compositionId,
+        aspectRatio: options.aspectRatio || '9:16',
+      });
+    } else if (options.subTab === 'creator') {
       promptText = buildAiCreatorWebAiPrompt({
         topicHint: topic,
         learningLanguage: options.learningLanguage,
-        level: options.level,
+        level: resolvedLevel,
         durationMinutes,
         targetLang,
+        formatPreference: options.formatPreference || 'auto',
+        compositionId: options.compositionId || 'ai-decide',
         aspectRatio: options.aspectRatio || '9:16',
         includeExplanationSpeech: targetLang !== 'none',
         splitAudioByRole: targetLang !== 'none',
@@ -719,12 +860,13 @@ export function generateBatchPromptsForTopics(options: {
       promptText = buildTranslationChallengePrompt({
         topicHint: topic,
         learningLanguage: options.learningLanguage,
-        level: options.level,
+        level: resolvedLevel,
         durationMinutes,
         targetLang: targetLang === 'none' ? 'vi' : targetLang,
         thinkSec: options.thinkSec ?? 4,
         repeatCount: options.repeatCount ?? 2,
         includeNuanceTip: true,
+        compositionId: options.compositionId || 'ai-decide',
         aspectRatio: options.aspectRatio || '9:16',
       });
     } else {
@@ -733,19 +875,20 @@ export function generateBatchPromptsForTopics(options: {
         learningLanguage: options.learningLanguage as ReadingLearningLang,
         formatPreference: options.readingFormat || 'auto',
         topic,
-        level: options.level || 'B1',
+        level: resolvedLevel,
         durationMinutes,
       });
     }
 
     const baseFile = cleanDownloadFileName(
-      `${indexPrefix}_${topic}`,
+      `${indexPrefix}_${durationMinutes}m_${topic}`,
       'prompt.txt',
-      `Topic_${indexPrefix}`,
+      `Prompt_${indexPrefix}_${durationMinutes}m`,
     );
     return {
       fileName: baseFile,
       topic,
+      durationMinutes,
       promptText,
     };
   });

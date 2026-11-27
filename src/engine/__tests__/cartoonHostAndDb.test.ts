@@ -304,7 +304,7 @@ test('eduStudioEffects: hitTestReadingAlongZone classifies watermark, outro, int
   assert.equal(hitTestReadingAlongZone(baseOpts, 250, 480), 'body');
 });
 
-test('cartoonHostAnimator: 5-frame clap-jump interpolates crouch, jump, center clap touch, cheering, and landing with lip-sync', () => {
+test('cartoonHostAnimator: 5-frame clap-jump interpolates grounded knee-bend, center clap touch, cheering, and lip-sync without jumping or body squash', () => {
   const clapDef = getCartoonAnimationById('clap-jump');
   assert.ok(clapDef, 'Built-in clap-jump preset must exist');
   assert.equal(clapDef?.params.gestureMode, 'clap-jump');
@@ -315,39 +315,51 @@ test('cartoonHostAnimator: 5-frame clap-jump interpolates crouch, jump, center c
   ];
   const spec = { ...clapDef!.params };
 
-  // Frame 1 (t ~ 0s): crouch kneeBend > 0.5, downward jumpOffsetY > 0
+  // Frame 1 (t ~ 0s): grounded kneeBend > 0.35, NO vertical jump or body squash
   const f1 = computeSpeechLipSyncState(cues, 0.02, {
     actionId: 'clap-jump',
     customSpec: spec,
   });
-  assert.ok(f1.kneeBend > 0.5, `Expected crouch kneeBend > 0.5, got ${f1.kneeBend}`);
-  assert.ok(f1.jumpOffsetY > 0, `Expected downward prep offset, got ${f1.jumpOffsetY}`);
+  assert.ok(f1.kneeBend > 0.35, `Expected grounded kneeBend > 0.35, got ${f1.kneeBend}`);
+  assert.equal(f1.jumpOffsetY, 0);
+  assert.equal(f1.bodySquashX, 1);
+  assert.equal(f1.bodySquashY, 1);
 
-  // Frame 2 (t ~ 0.3s): airborne upward jumpOffsetY < -30
+  // Frame 2 (t ~ 0.3s): remains grounded (jumpOffsetY === 0, bodySquash === 1) with articulated arm motion
   const f2 = computeSpeechLipSyncState(cues, 0.3, {
     actionId: 'clap-jump',
     customSpec: spec,
   });
-  assert.ok(f2.jumpOffsetY < -30, `Expected airborne jumpOffsetY < -30, got ${f2.jumpOffsetY}`);
+  assert.equal(f2.jumpOffsetY, 0);
+  assert.equal(f2.bodySquashX, 1);
+  assert.equal(f2.bodySquashY, 1);
 
-  // Frame 3 (t = 0.66s = 0.44 * 1.5s): palms touch together near x=0 with clapImpact > 0.6 & speech lip-sync active
+  // Frame 3 (t = 0.66s = 0.44 * 1.5s): palms touch together near x=0 with clapImpact > 0.7 & speech lip-sync active
   const f3 = computeSpeechLipSyncState(cues, 0.66, {
     actionId: 'clap-jump',
     customSpec: spec,
   });
   assert.equal(f3.isSpeaking, true);
   assert.ok(
-    typeof f3.leftWristX === 'number' && Math.abs(f3.leftWristX - f3.rightWristX) <= 30,
+    typeof f3.leftWristX === 'number' &&
+      typeof f3.rightWristX === 'number' &&
+      f3.leftWristX < 0 &&
+      f3.rightWristX > 0 &&
+      Math.abs(f3.leftWristX - f3.rightWristX) <= 30,
     `Expected clapping palms close in center, got L=${f3.leftWristX}, R=${f3.rightWristX}`,
   );
-  assert.ok(f3.clapImpact >= 0.6, `Expected strong clapImpact >= 0.6, got ${f3.clapImpact}`);
+  assert.ok(f3.clapImpact >= 0.7, `Expected strong clapImpact >= 0.7, got ${f3.clapImpact}`);
+  assert.notEqual(f3.headTiltRad, 0);
 
-  // Frame 5 (t ~ 1.2s): landing squash + bright smile
+  // Frame 5 (t ~ 1.2s): grounded finish without hop or squash
   const f5 = computeSpeechLipSyncState(cues, 1.2, {
     actionId: 'clap-jump',
     customSpec: spec,
   });
-  assert.ok(f5.kneeBend >= 0.25, `Expected landing kneeBend >= 0.25, got ${f5.kneeBend}`);
+  assert.equal(f5.jumpOffsetY, 0);
+  assert.equal(f5.bodySquashX, 1);
+  assert.equal(f5.bodySquashY, 1);
+  assert.ok(f5.kneeBend >= 0.15, `Expected landing kneeBend >= 0.15, got ${f5.kneeBend}`);
 });
 
 test('cartoonHost scene continuity, mood guard, @Gimmys prompts, translation card cleanup, and multi-aspect non-overlap', () => {

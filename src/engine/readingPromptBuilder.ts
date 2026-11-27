@@ -52,7 +52,7 @@ export const READING_FORMAT_OPTIONS: Array<{
 ];
 
 export interface ReadingWebPromptOptions {
-  mode: 'web-url' | 'topic';
+  mode: 'web-url' | 'topic' | 'adapt-text';
   learningLanguage?: ReadingLearningLang;
   formatPreference?: ReadingFormatCategory;
   url?: string;
@@ -215,7 +215,7 @@ export function computeReadingTargetLength(
   const meta = READING_LANG_META[lang] || READING_LANG_META.en;
   const safeMin = Math.max(0.5, Math.min(30, Number(durationMinutes) || 1));
   const raw = Math.round(safeMin * meta.ratePerMin);
-  const maxVal = meta.unit === 'chars' ? 5600 : 3800;
+  const maxVal = meta.unit === 'chars' ? 6500 : 4500;
   const count = Math.max(50, Math.min(maxVal, raw));
   return {
     count,
@@ -353,7 +353,7 @@ export function buildReadingWebAiPrompt(opts: ReadingWebPromptOptions): string {
       ? Math.max(0.5, Math.min(30, Number(opts.durationMinutes.toFixed(1))))
       : undefined;
   const computedTarget = computeReadingTargetLength(learningLang, durationMinutes || 1);
-  const maxAllowed = meta.unit === 'chars' ? 5600 : 3800;
+  const maxAllowed = meta.unit === 'chars' ? 6500 : 4500;
   const targetCount =
     typeof opts.wordCount === 'number' && Number.isFinite(opts.wordCount) && opts.wordCount > 0
       ? Math.max(40, Math.min(maxAllowed, Math.round(opts.wordCount)))
@@ -362,7 +362,7 @@ export function buildReadingWebAiPrompt(opts: ReadingWebPromptOptions): string {
     ? `${durationMinutes} phút (~${Math.round(durationMinutes * 60)} giây)`
     : `~${Math.max(0.5, Number((targetCount / meta.ratePerMin).toFixed(1)))} phút`;
   const cleanUrl = (opts.url || '').trim();
-  const cleanSource = (opts.sourceText || '').trim().slice(0, 8500);
+  const cleanSource = (opts.sourceText || '').trim().slice(0, 12000);
   const cleanTopic = (opts.topic || '').trim();
 
   const formatMeta =
@@ -370,21 +370,29 @@ export function buildReadingWebAiPrompt(opts: ReadingWebPromptOptions): string {
     READING_FORMAT_OPTIONS[0];
 
   const sourceBlock =
-    opts.mode === 'web-url'
-      ? cleanSource
-        ? `NGUỒN BÀI VIẾT TỪ WEB${cleanUrl ? ` (${cleanUrl})` : ''}:
+    opts.mode === 'adapt-text'
+      ? `NỘI DUNG GỐC NGƯỜI DÙNG NHẬP VÀO CẦN BIÊN TẬP LẠI THEO ĐỘ KHÓ "${level}":
+${opts.sourceTitle ? `Tiêu đề gợi ý: ${opts.sourceTitle}\n` : ''}"""
+${cleanSource || '(người dùng sẽ dán đoạn văn gốc vào đây)'}
+"""
+YÊU CẦU BIÊN TẬP CHUYÊN SÂU:
+- Giữ trọn ý nghĩa cốt lõi và mạch hấp dẫn từ nội dung gốc (nếu nguồn đang là tiếng Việt hoặc ngôn ngữ khác, hãy chuyển ngữ / biên tập lại hoàn toàn sang **${meta.nameVi}**).
+- Điều chỉnh từ vựng, độ dài câu và cấu trúc ngữ pháp chuẩn xác cho trình độ **${level}**, mở rộng chi tiết phân tích hoặc ví dụ nếu cần để đạt đúng mục tiêu thời lượng **${estimatedMinutesLabel}** (~${targetCount} ${meta.unit === 'chars' ? 'ký tự' : 'từ'}) mà KHÔNG làm mất chiều sâu.`
+      : opts.mode === 'web-url'
+        ? cleanSource
+          ? `NGUỒN BÀI VIẾT TỪ WEB${cleanUrl ? ` (${cleanUrl})` : ''}:
 Tiêu đề gốc: ${opts.sourceTitle || 'Web Article'}
 Nội dung đã trích xuất:
 """
 ${cleanSource}
 """
 Hãy loại bỏ toàn bộ tiêu đề khung bài tập/worksheet (như "Practice Reading...", "Exercise 1", "Part 1", menu web) và biên tập/chuyển thể thành bài đọc ${meta.nameVi} hay nhất từ nội dung chính trên.`
-        : `HÃY TRUY CẬP / ĐỌC NỘI DUNG TỪ ĐƯỜNG LINK SAU VÀ BIÊN TẬP THÀNH BÀI ĐỌC ${meta.nameVi.toUpperCase()}:
+          : `HÃY TRUY CẬP / ĐỌC NỘI DUNG TỪ ĐƯỜNG LINK SAU VÀ BIÊN TẬP THÀNH BÀI ĐỌC ${meta.nameVi.toUpperCase()}:
 URL: ${cleanUrl || '(người dùng sẽ dán URL)'}
 (Nếu bạn không truy cập trực tiếp được link, hãy dựa theo chủ đề trong URL "${cleanUrl}" hoặc nội dung liên quan để viết bài đọc chuẩn xác).`
-      : cleanTopic
-        ? `CHỦ ĐỀ BÀI ĐỌC BẰNG ${meta.nameVi.toUpperCase()}: "${cleanTopic}"`
-        : `CHẾ ĐỘ AI TỰ CHỌN Ý TƯỞNG: Hãy TỰ NGHĨ MỘT CHỦ ĐỀ BÀI ĐỌC THẬT CUỐN HÚT, THỰC TẾ VÀ PHÙ HỢP VỚI TRÌNH ĐỘ "${level}" (VD: câu chuyện thói quen buổi sáng, trải nghiệm quán cà phê, bài học tư duy nhẹ nhàng, văn hóa bản xứ...).`;
+        : cleanTopic
+          ? `CHỦ ĐỀ BÀI ĐỌC BẰNG ${meta.nameVi.toUpperCase()}: "${cleanTopic}"`
+          : `CHẾ ĐỘ AI TỰ CHỌN Ý TƯỞNG: Hãy TỰ NGHĨ MỘT CHỦ ĐỀ BÀI ĐỌC THẬT CUỐN HÚT, THỰC TẾ VÀ PHÙ HỢP VỚI TRÌNH ĐỘ "${level}" (VD: câu chuyện thói quen buổi sáng, trải nghiệm quán cà phê, bài học tư duy nhẹ nhàng, văn hóa bản xứ...).`;
 
   return `# VAI TRÒ
 Bạn là Chuyên gia thiết kế giáo trình luyện đọc ${meta.nameVi} (Reading Along Karaoke Video).

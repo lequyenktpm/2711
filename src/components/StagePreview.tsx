@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   Check,
   Copy,
   Download,
@@ -14,6 +15,7 @@ import {
   Stamp,
   Square,
   Trash2,
+  Type,
   Upload,
   Volume2,
   X,
@@ -42,12 +44,17 @@ import {
   hitTestElementLayout,
   renderProjectFrame,
   resolveElementLayoutForAspect,
+  resolveLessonTitleBox,
   seekBackgroundVideoTo,
   subscribeBgImageLoaded,
 } from '../engine/canvasRenderer';
 import { subscribeCartoonAnimations } from '../engine/cartoonAnimationDb';
 import { subscribeCustomComponents } from '../engine/customComponentStore';
 import { LAYOUT_COMPOSITIONS } from '../engine/illustrationLayouts';
+import {
+  detectActiveStageOverlaps,
+  reflowElementsAvoidingOverlap,
+} from '../engine/layoutSolver';
 import {
   ASPECT_RATIO_OPTIONS,
   ExportAspectRatioId,
@@ -66,6 +73,7 @@ import {
   CanvasThemeId,
   CartoonAnimationParams,
   CustomComponentPresetConfig,
+  ElementLayout,
   IllustrationSceneIcon,
   IllustrationVariant,
   LayoutCompositionId,
@@ -75,6 +83,7 @@ import {
   SubtitleDisplayConfig,
   SubtitlePosition,
   SubtitleSize,
+  TitleOverlayLayout,
   WatermarkCorner,
   WatermarkOutroConfig,
 } from '../engine/types';
@@ -127,6 +136,9 @@ interface StagePreviewProps {
   onSelectElement: (id: string | null) => void;
   onMoveElement: (id: string, x: number, y: number) => void;
   onUpdateElement?: (id: string, patch: Partial<SceneElement>) => void;
+  onChangeTitle?: (title: string) => void;
+  onChangeTitleLayout?: (next?: TitleOverlayLayout) => void;
+  onApplyReflowElements?: (reflowedMap: Map<string, ElementLayout>) => void;
   onDeleteElement?: (id: string) => void;
   onApplySubtitlePositionToAll?: (x: number, y: number) => void;
   onResetElementPosition?: (id: string) => void;
@@ -177,6 +189,9 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
   onSelectElement,
   onMoveElement,
   onUpdateElement,
+  onChangeTitle,
+  onChangeTitleLayout,
+  onApplyReflowElements,
   onDeleteElement,
   onApplySubtitlePositionToAll,
   onResetElementPosition,
@@ -210,6 +225,8 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
   const [isWatermarkOpen, setIsWatermarkOpen] = useState(false);
   const [isDescOpen, setIsDescOpen] = useState(false);
   const [copiedDescTag, setCopiedDescTag] = useState(false);
+  const [autoReflowOnMove, setAutoReflowOnMove] = useState(true);
+  const [dismissedOverlapSig, setDismissedOverlapSig] = useState('');
   const dragStateRef = useRef<{
     id: string;
     offsetX: number;
@@ -286,13 +303,14 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    renderProjectFrame(
-      ctx,
-      project,
-      currentTime,
-      isPlaying || isExportingVideo ? null : selectedElementId,
-    );
-  }, [project, currentTime, selectedElementId, isPlaying, isExportingVideo, assetVersion]);
+    const activeSelectToken =
+      isPlaying || isExportingVideo
+        ? null
+        : selectedOverlayZone === 'title'
+          ? '__title__'
+          : selectedElementId;
+    renderProjectFrame(ctx, project, currentTime, activeSelectToken);
+  }, [project, currentTime, selectedElementId, selectedOverlayZone, isPlaying, isExportingVideo, assetVersion]);
 
   const handleUploadBgImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const inputEl = e.currentTarget;
@@ -351,6 +369,34 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
     };
   };
 
+  const runReflowFromPin = (
+    pinnedId: string,
+    elementsOverride?: SceneElement[],
+    titleLayoutOverride?: TitleOverlayLayout,
+  ) => {
+    if (!onApplyReflowElements) return;
+    const targetElements = elementsOverride ?? project.elements;
+    const targetProj: LessonProject =
+      titleLayoutOverride !== undefined ? { ...project, titleLayout: titleLayoutOverride } : project;
+    const lessonTime = Math.max(0, currentTime - getEffectiveIntroSeconds(targetProj));
+    const resolvedMap = resolveElementLayoutForAspect(
+      targetElements,
+      lessonTime,
+      effectiveAspect,
+      targetProj.subtitleConfig,
+      targetProj.compositionId,
+    );
+    const titleBox = resolveLessonTitleBox(targetProj, effectiveAspect, currentTime);
+    const reflowed = reflowElementsAvoidingOverlap(targetElements, pinnedId, resolvedMap, {
+      stageWidth: stageDims.width,
+      stageHeight: stageDims.height,
+      titleBox: titleBox
+        ? { x: titleBox.x, y: titleBox.y, width: titleBox.width, height: titleBox.height }
+        : null,
+    });
+    onApplyReflowElements(reflowed);
+  };
+
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (isPlaying || isExportingVideo) return;
     const { x, y } = toCanvasCoords(e);
@@ -364,6 +410,17 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
     if (overlayZone) {
       onSelectElement(null);
       onSelectOverlayZone?.(overlayZone);
+      if (overlayZone === 'title') {
+        const titleBox = resolveLessonTitleBox(project, effectiveAspect, currentTime);
+        if (titleBox) {
+          dragStateRef.current = {
+            id: '__title__',
+            offsetX: titleBox.x - x,
+            offsetY: titleBox.y - y,
+          };
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }
+      }
       return;
     }
 
@@ -402,13 +459,27 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
     const drag = dragStateRef.current;
     if (!drag) return;
     const { x, y } = toCanvasCoords(e);
+    if (drag.id === '__title__') {
+      const clampedX = Math.max(80, Math.min(stageDims.width - 80, Math.round(x + drag.offsetX)));
+      const clampedY = Math.max(40, Math.min(stageDims.height - 60, Math.round(y + drag.offsetY)));
+      onChangeTitleLayout?.({
+        ...project.titleLayout,
+        x: clampedX,
+        y: clampedY,
+      });
+      return;
+    }
     const clampedX = Math.max(80, Math.min(stageDims.width - 80, Math.round(x + drag.offsetX)));
     const clampedY = Math.max(60, Math.min(stageDims.height - 60, Math.round(y + drag.offsetY)));
     onMoveElement(drag.id, clampedX, clampedY);
   };
 
   const handlePointerUp = () => {
+    const finished = dragStateRef.current;
     dragStateRef.current = null;
+    if (finished && autoReflowOnMove) {
+      runReflowFromPin(finished.id);
+    }
   };
 
   const fmtTime = (sec: number) => {
@@ -1296,21 +1367,60 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
             ? project.elements.find((el) => el.id === selectedElementId) ?? null
             : null;
           const lessonTime = Math.max(0, currentTime - getEffectiveIntroSeconds(project));
-          const resolvedLayout = selectedEl
-            ? resolveElementLayoutForAspect(
-                project.elements,
-                lessonTime,
-                effectiveAspect,
-                project.subtitleConfig,
-                project.compositionId,
-              ).get(selectedEl.id) || selectedEl.layout
-            : null;
+          const resolvedMap = resolveElementLayoutForAspect(
+            project.elements,
+            lessonTime,
+            effectiveAspect,
+            project.subtitleConfig,
+            project.compositionId,
+          );
+          const resolvedLayout = selectedEl ? resolvedMap.get(selectedEl.id) || selectedEl.layout : null;
+          const resolvedTitleBox = resolveLessonTitleBox(project, effectiveAspect, currentTime);
+
+          const overlaps = detectActiveStageOverlaps(
+            project.elements,
+            resolvedMap,
+            lessonTime,
+            resolvedTitleBox
+              ? {
+                  x: resolvedTitleBox.x,
+                  y: resolvedTitleBox.y,
+                  width: resolvedTitleBox.width,
+                  height: resolvedTitleBox.height,
+                }
+              : null,
+          );
+          const overlapSig = overlaps
+            .map((w) => `${w.firstId}-${w.secondId}:${Math.round(w.overlapPx)}`)
+            .join('|');
+          const hasVisibleOverlap = overlaps.length > 0 && overlapSig !== dismissedOverlapSig;
+          const pinIdForReflow =
+            selectedOverlayZone === 'title'
+              ? '__title__'
+              : selectedEl?.id || overlaps[0]?.firstId || '__title__';
+
+          const handleInlineUpdateElement = (id: string, patch: Partial<SceneElement>) => {
+            onUpdateElement?.(id, patch);
+            if (autoReflowOnMove && patch.layout) {
+              const updatedElements = project.elements.map((el) =>
+                el.id === id ? { ...el, ...patch } : el,
+              );
+              runReflowFromPin(id, updatedElements);
+            }
+          };
+
+          const handleInlineChangeTitleLayout = (next?: TitleOverlayLayout) => {
+            onChangeTitleLayout?.(next);
+            if (autoReflowOnMove && next && !next.hidden) {
+              runReflowFromPin('__title__', undefined, next);
+            }
+          };
 
           const adjustSelectedScale = (delta: number) => {
             if (!selectedEl || !onUpdateElement) return;
             const currentScale = resolvedLayout?.scale ?? selectedEl.layout.scale ?? 1;
             const nextScale = Number(Math.max(0.25, Math.min(2.4, currentScale + delta)).toFixed(2));
-            onUpdateElement(selectedEl.id, {
+            handleInlineUpdateElement(selectedEl.id, {
               layout: {
                 ...(resolvedLayout || selectedEl.layout),
                 scale: nextScale,
@@ -1325,6 +1435,72 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
 
           return (
             <>
+              <div
+                data-testid="studio-title-and-reflow-bar"
+                className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200/80 flex flex-wrap items-center justify-between gap-2 text-[10.5px]"
+              >
+                <button
+                  type="button"
+                  data-testid="studio-select-title-btn"
+                  onClick={() => {
+                    onSelectElement(null);
+                    onSelectOverlayZone?.(selectedOverlayZone === 'title' ? null : 'title');
+                  }}
+                  className={`inline-flex items-center gap-1 px-2 py-1 font-semibold rounded border transition-colors ${
+                    selectedOverlayZone === 'title'
+                      ? 'bg-indigo-600 border-indigo-600 text-white'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-indigo-50 hover:border-indigo-300'
+                  }`}
+                >
+                  <Type className="w-3 h-3" />
+                  <span>Tiêu đề bài giảng</span>
+                </button>
+
+                <label className="inline-flex items-center gap-1.5 text-[10.5px] font-medium text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoReflowOnMove}
+                    onChange={(e) => setAutoReflowOnMove(e.target.checked)}
+                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span>Tự động đẩy tránh đè khi chỉnh</span>
+                </label>
+              </div>
+
+              {hasVisibleOverlap && (
+                <div
+                  data-testid="studio-overlap-warning"
+                  className="w-full px-3 py-2 rounded-lg bg-amber-50 border border-amber-300 text-[11px] text-amber-950 flex flex-wrap items-center justify-between gap-2"
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span className="font-medium truncate">
+                      Đang bị đè lên nhau: <strong>{overlaps[0].firstLabel}</strong> ↔{' '}
+                      <strong>{overlaps[0].secondLabel}</strong> (~{overlaps[0].overlapPx}px)
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {onApplyReflowElements && (
+                      <button
+                        type="button"
+                        data-testid="studio-reflow-btn"
+                        onClick={() => runReflowFromPin(pinIdForReflow)}
+                        className="px-2 py-0.5 text-[10.5px] font-semibold bg-amber-600 text-white rounded hover:bg-amber-700"
+                      >
+                        Tự động đẩy tránh đè
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setDismissedOverlapSig(overlapSig)}
+                      className="px-2 py-0.5 text-[10.5px] font-semibold bg-white border border-amber-300 text-amber-900 rounded hover:bg-amber-100"
+                    >
+                      Giữ nguyên
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {selectedEl && resolvedLayout && (
                 <div
                   data-testid="studio-layout-toolbar"
@@ -1417,8 +1593,12 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
                 selectedOverlayZone={selectedOverlayZone}
                 watermarkConfig={wmConfig}
                 projectTitle={project.title}
+                titleLayout={project.titleLayout}
+                resolvedTitleBox={resolvedTitleBox}
+                onChangeTitle={onChangeTitle}
+                onChangeTitleLayout={handleInlineChangeTitleLayout}
                 onChangeWatermark={onChangeWatermark}
-                onUpdateElement={onUpdateElement}
+                onUpdateElement={handleInlineUpdateElement}
                 onResetElementPosition={onResetElementPosition}
                 onDeleteElement={onDeleteElement}
                 onClearSelection={() => {

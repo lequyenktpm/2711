@@ -1180,21 +1180,15 @@ export function computeSpeechLipSyncState(
   }
 
   const mood = currentState.mood;
-  const breathY = Math.sin(tAnim * 1.8) * 2.8 * bounceMult;
-  const excitedHop =
-    (mood === 'excited' || currentState.gestureMode === 'fist-pump') &&
-    currentState.gestureMode !== 'clap-jump'
-      ? -Math.abs(Math.sin(tAnim * 4.2)) * 8 * bounceMult
-      : 0;
+  // Grounded posture: zero whole-body hopping and zero body squash/stretch; express purely via limbs, knees & head
+  const breathY = Math.sin(tAnim * 1.8) * 1.2 * bounceMult;
   const speakBounceY = isSpeaking
     ? Math.sin(tAnim * 6.2) * 1.3 * bounceMult * clamp01(mouthOpen * 1.5)
     : 0;
-  let headBobY = breathY + speakBounceY + excitedHop;
+  let headBobY = breathY + speakBounceY;
 
-  const squashAmt = clampRange(currentState.params.bodySquashStretch ?? 0.04, 0, 0.35);
-  const squashWave = Math.sin(tAnim * 3.6) * squashAmt;
-  let bodySquashX = 1 - squashWave * 0.55;
-  let bodySquashY = 1 + squashWave * 0.65;
+  const bodySquashX = 1;
+  const bodySquashY = 1;
 
   const targetDir = context?.targetDirection ?? 'none';
   const mFrom = moodMetrics(prevState.mood, prevTargetDir, tAnim, isSpeaking, mouthOpen);
@@ -1212,9 +1206,9 @@ export function computeSpeechLipSyncState(
     lerp(mFrom.headTiltExtra, mTo.headTiltExtra, gestureBlend) +
     explicitTiltRad * 0.7;
 
-  // Keyframe Sequence Evaluation (e.g. 5-frame crouch -> jump -> touch clap -> cheering -> landing squash)
+  // Keyframe Sequence Evaluation (articulated arm trajectories, grounded knee flexion & head tilt only)
   let kneeBend = 0;
-  let jumpOffsetY = 0;
+  const jumpOffsetY = 0;
   let clapImpact = 0;
   let leftElbowX: number | undefined;
   let leftElbowY: number | undefined;
@@ -1266,7 +1260,6 @@ export function computeSpeechLipSyncState(
       }
     }
 
-    jumpOffsetY = lerp(kfA.jumpOffsetY ?? 0, kfB.jumpOffsetY ?? 0, localFrac) * Math.max(0.45, Math.min(1.5, bounceMult));
     kneeBend = clamp01(lerp(kfA.kneeBend ?? 0, kfB.kneeBend ?? 0, localFrac));
     clapImpact = clamp01(lerp(kfA.clapImpact ?? 0, kfB.clapImpact ?? 0, localFrac));
 
@@ -1288,12 +1281,6 @@ export function computeSpeechLipSyncState(
     rightElbowY = lerp(18, rwy, 0.56) + 28;
     rightHandAngle = lerpAngle(kfA.rightHandAngle ?? -Math.PI * 0.5, kfB.rightHandAngle ?? -Math.PI * 0.5, localFrac);
 
-    if (typeof kfA.bodySquashX === 'number' || typeof kfB.bodySquashX === 'number') {
-      bodySquashX = lerp(kfA.bodySquashX ?? 1, kfB.bodySquashX ?? 1, localFrac);
-    }
-    if (typeof kfA.bodySquashY === 'number' || typeof kfB.bodySquashY === 'number') {
-      bodySquashY = lerp(kfA.bodySquashY ?? 1, kfB.bodySquashY ?? 1, localFrac);
-    }
     if (typeof kfA.headTiltDeg === 'number' || typeof kfB.headTiltDeg === 'number') {
       headTiltRad = (lerp(kfA.headTiltDeg ?? 0, kfB.headTiltDeg ?? 0, localFrac) * Math.PI) / 180;
     }
@@ -1308,7 +1295,7 @@ export function computeSpeechLipSyncState(
         mouthWidth = 1.18;
       }
     }
-    headBobY = jumpOffsetY + speakBounceY;
+    headBobY = speakBounceY;
   }
 
   return {

@@ -2724,7 +2724,7 @@ test('getLevelsForLearningLanguage returns N5-N1 / A1-C2 / HSK / TOPIK and recom
   const shortCount = recommendCreatorItemCount(0.5, false);
   const longCount = recommendCreatorItemCount(5, true);
   assert.ok(shortCount >= 4 && shortCount < longCount);
-  assert.ok(longCount <= 30 && longCount >= 14);
+  assert.ok(longCount <= 60 && longCount >= 14);
 });
 
 test('buildAiCreatorWebAiPrompt incorporates learningLanguage, dynamic level, minute budget, 16:9 aspect, and dual-TTS explanationSpeech', () => {
@@ -3044,7 +3044,7 @@ test('Phản Xạ Dịch Câu: prompt, curated/custom card builder, AI JSON pars
   const shortCount = recommendTranslationItemCount(2, 4, 2);
   const longCount = recommendTranslationItemCount(6, 3, 1);
   assert.ok(shortCount >= 4 && shortCount <= 12);
-  assert.ok(longCount > shortCount && longCount <= 30);
+  assert.ok(longCount > shortCount && longCount <= 60);
 
   // 2. Prompt builder includes ueEyNdbRQ8Y catchy title rules, thinkSec, repeatCount, and custom input vs blank creative
   const blankPrompt = buildTranslationChallengePrompt({
