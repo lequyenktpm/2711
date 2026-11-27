@@ -445,7 +445,7 @@ function isMetadataNoiseLine(line: string): boolean {
 }
 
 export interface ReelLocaleStrings {
-  code: 'vi' | 'en' | 'ja' | 'none';
+  code: 'vi' | 'en' | 'ja' | 'zh' | 'ko' | 'fr' | 'es' | 'learning' | 'none';
   targetLanguageLabel: string;
   stageStepsQuiz: [string, string, string, string];
   stageStepsSimple: [string, string, string];
@@ -492,8 +492,71 @@ export interface ReelLocaleStrings {
   promptExampleStickyLabels: [string, string];
 }
 
-export function getReelLocaleStrings(targetLang?: string): ReelLocaleStrings {
-  const norm = (targetLang || 'Tiếng Việt').trim().toLowerCase();
+export function getReelLocaleStrings(
+  targetLang?: string,
+  learningLang?: LearningLanguageId,
+): ReelLocaleStrings {
+  const rawNorm = (targetLang || 'Tiếng Việt').trim().toLowerCase();
+  const isLearningSelf =
+    rawNorm === 'learning' ||
+    rawNorm === 'self' ||
+    rawNorm === 'target' ||
+    rawNorm.includes('ngôn ngữ muốn học') ||
+    rawNorm.includes('ngôn ngữ đang học');
+
+  if (isLearningSelf && !learningLang) {
+    return {
+      code: 'learning',
+      targetLanguageLabel:
+        'chính ngôn ngữ muốn học của bài (tự nhận diện learningLang từ nội dung nguồn và giải thích hoàn toàn bằng đúng ngôn ngữ đó, KHÔNG dịch sang tiếng Việt)',
+      stageStepsQuiz: ['1. Intro', '2. Lesson', '3. Quiz 5s', '4. Recap'],
+      stageStepsSimple: ['1. Intro', '2. Lesson', '3. Recap'],
+      roadmapLabel: 'Lesson Flow',
+      introBadgeQuiz: 'QUIZ LESSON',
+      introBadgeVocab: 'VOCAB LESSON',
+      introBadgeDefault: "TODAY'S LESSON",
+      introGoalPrefix: "Today's Focus:",
+      introRoadmapLine: 'Plan: 1. Intro · 2. Core Lesson · 3. Recap',
+      introVisualSubtitle: 'Intro · Core Expressions · Deep Explanation · Recap',
+      readingBadgePrefix: 'LESSON',
+      vocabBadgePrefix: 'KEY ITEM',
+      sentenceTitlePrefix: 'Point',
+      outroBadge: 'RECAP',
+      outroTitle: 'Lesson Recap',
+      outroContentPrefix: 'Completed:',
+      outroTranslation: 'Review these key expressions and practice speaking aloud every day!',
+      outroLabels: ['Listen', 'Understand', 'Speak Daily'],
+      quizAskTag: 'QUESTION',
+      thinkCountdown: (sec) => `⏱️ THINK: ${sec} SEC`,
+      chooseAnswerTitle: (sec) => `CHOOSE IN ${sec}s`,
+      chooseAnswerSubtitle: 'Pick the best option before time runs out!',
+      correctAnswerPill: (letter, opt) => `✓ CORRECT: ${letter}. ${opt}`,
+      correctAnswerCardTitle: (letter, opt) => `Correct Answer: ${letter}. ${opt}`,
+      correctBadge: 'CORRECT',
+      correctStamp: 'CORRECT!',
+      correctOptionSublabel: 'Correct Answer',
+      contextPassageTitle: 'REFERENCE PASSAGE',
+      contextPassageUrl: 'https://english.practice/passage-check',
+      listenChooseSubtext: 'Listen carefully and choose the best option!',
+      defaultExplanation: (letter, opt) => `The correct answer is ${letter}. ${opt}.`,
+      lessonOverviewFormula: "TODAY'S GOAL",
+      vocabPrefix: 'Key Words:',
+      grammarPrefix: 'Grammar:',
+      promptExampleBadge: '<Badge bằng đúng learningLang>',
+      promptExampleIntroContent: '<Mục tiêu bài học viết bằng đúng learningLang>',
+      promptExampleTranslation: '<Tóm tắt lộ trình viết bằng đúng learningLang>',
+      promptExampleVocabTranslation: '<Giải nghĩa & ngữ cảnh hoàn toàn bằng đúng learningLang>',
+      promptExampleContextTitle: '<Tiêu đề đoạn văn đối chiếu bằng đúng learningLang>',
+      promptExampleExplanation: '<Giải thích đáp án hoàn toàn bằng đúng learningLang>',
+      promptExampleOutroContent: '<Lời tổng kết viết bằng đúng learningLang>',
+      promptExampleOutroTranslation: '<Lời nhắc luyện tập hàng ngày bằng đúng learningLang>',
+      promptExampleOutroLabels: ['Key Point 1', 'Key Point 2', 'Speak Daily'],
+      promptExampleStickyLabels: ['Keyword nuance', 'Natural usage tip'],
+    };
+  }
+
+  const norm = isLearningSelf && learningLang ? learningLang : rawNorm;
+
   if (norm === '日本語' || norm === 'japanese' || norm === 'ja' || norm === 'tiếng nhật') {
     return {
       code: 'ja',
@@ -541,6 +604,202 @@ export function getReelLocaleStrings(targetLang?: string): ReelLocaleStrings {
       promptExampleOutroTranslation: '毎日音読して定着させましょう！',
       promptExampleOutroLabels: ['exciting / prize', 'be going to + V', 'クイズ完了'],
       promptExampleStickyLabels: ['exciting = ワクワクする', 'programme = 番組'],
+    };
+  }
+  if (norm === '中文' || norm === 'chinese' || norm === 'zh' || norm === 'zh-cn' || norm === 'tiếng trung') {
+    return {
+      code: 'zh',
+      targetLanguageLabel: '中文 (Simplified Chinese)',
+      stageStepsQuiz: ['1. 导入', '2. 精讲', '3. 测验 5秒', '4. 总结'],
+      stageStepsSimple: ['1. 导入', '2. 学习', '3. 总结'],
+      roadmapLabel: '课程结构',
+      introBadgeQuiz: '互动测验课',
+      introBadgeVocab: '词汇表达课',
+      introBadgeDefault: '今日课程',
+      introGoalPrefix: '今日主题：',
+      introRoadmapLine: '流程：1. 导入 · 2. 核心表达精讲 · 3. 测验与总结',
+      introVisualSubtitle: '导入 · 核心表达 · 深度解析 · 总结',
+      readingBadgePrefix: '精读',
+      vocabBadgePrefix: '核心表达',
+      sentenceTitlePrefix: '例句',
+      outroBadge: '总结',
+      outroTitle: '课程总结',
+      outroContentPrefix: '已完成学习：',
+      outroTranslation: '每天大声跟读今天学到的地道表达吧！',
+      outroLabels: ['听力输入', '表达解析', '开口跟读'],
+      quizAskTag: '提问',
+      thinkCountdown: (sec) => `⏱️ 思考时间：${sec}秒`,
+      chooseAnswerTitle: (sec) => `请在 ${sec}秒 内选择`,
+      chooseAnswerSubtitle: '倒计时结束前选出最自然的表达！',
+      correctAnswerPill: (letter, opt) => `✓ 正确答案：${letter}. ${opt}`,
+      correctAnswerCardTitle: (letter, opt) => `正确答案：${letter}. ${opt}`,
+      correctBadge: '正确',
+      correctStamp: '正确！',
+      correctOptionSublabel: '正确答案',
+      contextPassageTitle: '参考短文',
+      contextPassageUrl: 'https://english.practice/passage-check',
+      listenChooseSubtext: '仔细听并选出最合适的选项！',
+      defaultExplanation: (letter, opt) => `正确答案是 ${letter}. ${opt}。`,
+      lessonOverviewFormula: '今日目标',
+      vocabPrefix: '重点词汇：',
+      grammarPrefix: '语法要点：',
+      promptExampleBadge: '今日课程',
+      promptExampleIntroContent: '今日学习：用更地道的中文表达日常需求与礼貌用语',
+      promptExampleTranslation: '流程：1. 导入 → 2. 核心表达与语境辨析 → 3. 课后总结',
+      promptExampleVocabTranslation: '重点表达：不好意思（礼貌开场白）· 语境：请陌生人帮忙或道歉时使用',
+      promptExampleContextTitle: '参考语境',
+      promptExampleExplanation: '这个表达比直接提问更温和礼貌。',
+      promptExampleOutroContent: '保存这节课，每天大声练习！',
+      promptExampleOutroTranslation: '收藏并大声跟读，立刻提升口语自然度！',
+      promptExampleOutroLabels: ['礼貌开场', '地道语感', '每日跟读'],
+      promptExampleStickyLabels: ['不好意思 = 礼貌开场', '比生硬直问更自然'],
+    };
+  }
+  if (norm === '한국어' || norm === 'korean' || norm === 'ko' || norm === 'ko-kr' || norm === 'tiếng hàn') {
+    return {
+      code: 'ko',
+      targetLanguageLabel: '한국어 (Korean)',
+      stageStepsQuiz: ['1. 도입', '2. 핵심 학습', '3. 퀴즈 5초', '4. 정리'],
+      stageStepsSimple: ['1. 도입', '2. 핵심 학습', '3. 정리'],
+      roadmapLabel: '학습 흐름',
+      introBadgeQuiz: '퀴즈 레슨',
+      introBadgeVocab: '표현 레슨',
+      introBadgeDefault: '오늘의 레슨',
+      introGoalPrefix: '오늘의 주제:',
+      introRoadmapLine: '순서: 1. 도입 · 2. 핵심 표현 설명 · 3. 퀴즈 및 정리',
+      introVisualSubtitle: '도입 · 핵심 표현 · 상세 설명 · 정리',
+      readingBadgePrefix: '읽기',
+      vocabBadgePrefix: '핵심 표현',
+      sentenceTitlePrefix: '문장',
+      outroBadge: '정리',
+      outroTitle: '학습 정리',
+      outroContentPrefix: '학습 완료:',
+      outroTranslation: '오늘 배운 자연스러운 표현을 매일 큰 소리로 연습해 보세요!',
+      outroLabels: ['듣기', '표현 이해', '따라 말하기'],
+      quizAskTag: '문제',
+      thinkCountdown: (sec) => `⏱️ 생각 시간: ${sec}초`,
+      chooseAnswerTitle: (sec) => `${sec}초 안에 선택`,
+      chooseAnswerSubtitle: '시간 안에 가장 자연스러운 답을 골라 보세요!',
+      correctAnswerPill: (letter, opt) => `✓ 정답: ${letter}. ${opt}`,
+      correctAnswerCardTitle: (letter, opt) => `정답: ${letter}. ${opt}`,
+      correctBadge: '정답',
+      correctStamp: '정답!',
+      correctOptionSublabel: '정답',
+      contextPassageTitle: '참고 지문',
+      contextPassageUrl: 'https://english.practice/passage-check',
+      listenChooseSubtext: '잘 듣고 가장 알맞은 보기를 고르세요!',
+      defaultExplanation: (letter, opt) => `정답은 ${letter}. ${opt}입니다.`,
+      lessonOverviewFormula: '오늘의 목표',
+      vocabPrefix: '핵심 어휘:',
+      grammarPrefix: '문법 포인트:',
+      promptExampleBadge: '오늘의 레슨',
+      promptExampleIntroContent: '오늘의 주제: 식당과 카페에서 쓰는 자연스러운 한국어 표현',
+      promptExampleTranslation: '흐름: 1. 도입 → 2. 핵심 표현과 상황 설명 → 3. 마무리',
+      promptExampleVocabTranslation: '핵심 표현: 잠시만요 (정중히 부를 때) · 상황: 직원을 부르거나 양해를 구할 때 사용',
+      promptExampleContextTitle: '참고 문맥',
+      promptExampleExplanation: '상황에 맞는 정중한 표현을 사용하면 훨씬 자연스럽게 들립니다.',
+      promptExampleOutroContent: '오늘 배운 표현을 저장하고 매일 연습해 보세요!',
+      promptExampleOutroTranslation: '매일 큰 소리로 따라 읽으면 말하기가 훨씬 자연스러워집니다!',
+      promptExampleOutroLabels: ['핵심 표현', '자연스러운 어감', '매일 복습'],
+      promptExampleStickyLabels: ['잠시만요 = 정중한 호칭', '실제 대화에 바로 활용'],
+    };
+  }
+  if (norm === 'français' || norm === 'french' || norm === 'fr' || norm === 'tiếng pháp') {
+    return {
+      code: 'fr',
+      targetLanguageLabel: 'Français (French)',
+      stageStepsQuiz: ['1. Intro', '2. Leçon', '3. Quiz 5s', '4. Bilan'],
+      stageStepsSimple: ['1. Intro', '2. Leçon', '3. Bilan'],
+      roadmapLabel: 'Plan du cours',
+      introBadgeQuiz: 'LEÇON QUIZ',
+      introBadgeVocab: 'VOCABULAIRE',
+      introBadgeDefault: 'LEÇON DU JOUR',
+      introGoalPrefix: 'Objectif :',
+      introRoadmapLine: 'Plan : 1. Intro · 2. Expressions clés · 3. Bilan',
+      introVisualSubtitle: 'Intro · Expressions clés · Nuances · Bilan',
+      readingBadgePrefix: 'LECTURE',
+      vocabBadgePrefix: 'EXPRESSION',
+      sentenceTitlePrefix: 'Phrase',
+      outroBadge: 'BILAN',
+      outroTitle: 'Bilan de la leçon',
+      outroContentPrefix: 'Leçon terminée :',
+      outroTranslation: 'Révisez ces expressions et prononcez-les à voix haute chaque jour !',
+      outroLabels: ['Écouter', 'Comprendre', 'Pratiquer'],
+      quizAskTag: 'QUESTION',
+      thinkCountdown: (sec) => `⏱️ RÉFLEXION : ${sec}s`,
+      chooseAnswerTitle: (sec) => `CHOISISSEZ EN ${sec}s`,
+      chooseAnswerSubtitle: 'Trouvez la réponse la plus naturelle avant la fin du chrono !',
+      correctAnswerPill: (letter, opt) => `✓ RÉPONSE : ${letter}. ${opt}`,
+      correctAnswerCardTitle: (letter, opt) => `Bonne réponse : ${letter}. ${opt}`,
+      correctBadge: 'CORRECT',
+      correctStamp: 'BRAVO !',
+      correctOptionSublabel: 'Bonne réponse',
+      contextPassageTitle: 'TEXTE DE RÉFÉRENCE',
+      contextPassageUrl: 'https://english.practice/passage-check',
+      listenChooseSubtext: 'Écoutez bien et choisissez la bonne option !',
+      defaultExplanation: (letter, opt) => `La bonne réponse est ${letter}. ${opt}.`,
+      lessonOverviewFormula: 'OBJECTIF DU JOUR',
+      vocabPrefix: 'Mots clés :',
+      grammarPrefix: 'Grammaire :',
+      promptExampleBadge: 'LEÇON DU JOUR',
+      promptExampleIntroContent: 'Expressions naturelles en français au quotidien',
+      promptExampleTranslation: 'Plan : 1. Intro → 2. Nuances & exemples → 3. Bilan',
+      promptExampleVocabTranslation: 'Nuance : expression polie utilisée dans la vie courante.',
+      promptExampleContextTitle: 'CONTEXTE',
+      promptExampleExplanation: 'Cette formulation sonne beaucoup plus naturelle à l’oral.',
+      promptExampleOutroContent: 'Enregistrez cette leçon pour la revoir demain !',
+      promptExampleOutroTranslation: 'Pratiquez à voix haute chaque jour pour progresser vite !',
+      promptExampleOutroLabels: ['Expressions', 'Nuances', 'Pratique orale'],
+      promptExampleStickyLabels: ['Tournure polie', 'Usage quotidien'],
+    };
+  }
+  if (norm === 'español' || norm === 'spanish' || norm === 'es' || norm === 'tiếng tây ban nha') {
+    return {
+      code: 'es',
+      targetLanguageLabel: 'Español (Spanish)',
+      stageStepsQuiz: ['1. Intro', '2. Lección', '3. Quiz 5s', '4. Resumen'],
+      stageStepsSimple: ['1. Intro', '2. Lección', '3. Resumen'],
+      roadmapLabel: 'Estructura',
+      introBadgeQuiz: 'LECCIÓN QUIZ',
+      introBadgeVocab: 'VOCABULARIO',
+      introBadgeDefault: 'LECCIÓN DE HOY',
+      introGoalPrefix: 'Objetivo:',
+      introRoadmapLine: 'Plan: 1. Intro · 2. Expresiones clave · 3. Resumen',
+      introVisualSubtitle: 'Intro · Expresiones clave · Matices · Resumen',
+      readingBadgePrefix: 'LECTURA',
+      vocabBadgePrefix: 'EXPRESIÓN',
+      sentenceTitlePrefix: 'Frase',
+      outroBadge: 'RESUMEN',
+      outroTitle: 'Resumen de la lección',
+      outroContentPrefix: 'Lección completada:',
+      outroTranslation: '¡Repasa estas expresiones y dilas en voz alta cada día!',
+      outroLabels: ['Escuchar', 'Entender', 'Hablar'],
+      quizAskTag: 'PREGUNTA',
+      thinkCountdown: (sec) => `⏱️ PIENSA: ${sec}s`,
+      chooseAnswerTitle: (sec) => `ELIGE EN ${sec}s`,
+      chooseAnswerSubtitle: '¡Elige la expresión más natural antes de que acabe el tiempo!',
+      correctAnswerPill: (letter, opt) => `✓ CORRECTO: ${letter}. ${opt}`,
+      correctAnswerCardTitle: (letter, opt) => `Respuesta correcta: ${letter}. ${opt}`,
+      correctBadge: 'CORRECTO',
+      correctStamp: '¡CORRECTO!',
+      correctOptionSublabel: 'Respuesta correcta',
+      contextPassageTitle: 'TEXTO DE REFERENCIA',
+      contextPassageUrl: 'https://english.practice/passage-check',
+      listenChooseSubtext: '¡Escucha con atención y elige la mejor opción!',
+      defaultExplanation: (letter, opt) => `La respuesta correcta es ${letter}. ${opt}.`,
+      lessonOverviewFormula: 'OBJETIVO DE HOY',
+      vocabPrefix: 'Palabras clave:',
+      grammarPrefix: 'Gramática:',
+      promptExampleBadge: 'LECCIÓN DE HOY',
+      promptExampleIntroContent: 'Expresiones naturales en español para usar hoy mismo',
+      promptExampleTranslation: 'Plan: 1. Intro → 2. Matices y ejemplos → 3. Resumen',
+      promptExampleVocabTranslation: 'Matiz: forma natural y educada en conversaciones reales.',
+      promptExampleContextTitle: 'CONTEXTO',
+      promptExampleExplanation: 'Esta expresión suena mucho más natural al hablar con nativos.',
+      promptExampleOutroContent: '¡Guarda esta lección y practica en voz alta!',
+      promptExampleOutroTranslation: '¡Repite estas frases cada día para ganar fluidez!',
+      promptExampleOutroLabels: ['Vocabulario', 'Matiz natural', 'Práctica diaria'],
+      promptExampleStickyLabels: ['Uso cotidiano', 'Suena natural'],
     };
   }
   if (norm === 'english' || norm === 'en' || norm === 'none') {
@@ -1600,12 +1859,13 @@ export function buildEnglishReelsWebAiPrompt(params: {
   title?: string;
   mode: ReelMode;
   targetLang: string;
+  learningLanguage?: LearningLanguageId;
   durationMinutes?: number;
   style?: PromptVideoStyle;
   compositionId?: LayoutCompositionId | 'ai-decide';
   includeQuiz?: 'auto' | 'always' | 'none';
 }): string {
-  const locale = getReelLocaleStrings(params.targetLang);
+  const locale = getReelLocaleStrings(params.targetLang, params.learningLanguage);
   const includeQuiz = params.includeQuiz ?? 'auto';
   const durationMinutes =
     typeof params.durationMinutes === 'number' &&
@@ -1668,8 +1928,24 @@ export function buildEnglishReelsWebAiPrompt(params: {
 
   const targetLangConstraint =
     locale.code === 'none'
-      ? 'KHÔNG viết tiếng Việt hay bản dịch thừa trong `badge`, `translation`, `explanation`, `visual.subtitle`, `visual.labels` — toàn bộ text hiển thị trên thẻ phải viết bằng English ngắn gọn, rõ nghĩa.'
-      : `BẮT BUỘC viết toàn bộ \`badge\`, \`translation\`, \`explanation\`, \`visual.subtitle\`, \`visual.labels\` (nếu là nhãn giải thích) bằng ngôn ngữ mục tiêu: **${locale.targetLanguageLabel}**. Không trộn lẫn ngôn ngữ khác!`;
+      ? 'KHÔNG viết tiếng Việt hay bản dịch thừa trong `badge`, `translation`, `explanation`, `visual.subtitle`, `visual.labels` — toàn bộ text hiển thị trên thẻ phải viết bằng chính ngôn ngữ đang học ngắn gọn, rõ nghĩa.'
+      : locale.code === 'learning'
+        ? 'CHẾ ĐỘ GIẢI THÍCH BẰNG CHÍNH NGÔN NGỮ MUỐN HỌC (MONOLINGUAL IMMERSION): BẮT BUỘC viết toàn bộ `badge`, `translation`, `explanation`, `explanationSpeech`, `visual.subtitle`, `visual.labels` bằng **ĐÚNG NGÔN NGỮ ĐANG HỌC (`learningLang`)** mà bạn tự nhận diện từ `# NỘI DUNG GỐC` (giải thích nghĩa, sắc thái, đối chiếu cách dùng hoàn toàn bằng chính ngôn ngữ đó — TUYỆT ĐỐI KHÔNG dịch sang tiếng Việt hay ngôn ngữ thứ ba!).'
+        : `BẮT BUỘC viết toàn bộ \`badge\`, \`translation\`, \`explanation\`, \`visual.subtitle\`, \`visual.labels\` (nếu là nhãn giải thích) bằng ngôn ngữ mục tiêu: **${locale.targetLanguageLabel}**. Không trộn lẫn ngôn ngữ khác!`;
+
+  const exampleIntroExplSpeech =
+    locale.code === 'vi'
+      ? 'Chào mừng bạn đến với bài học hôm nay về <Chủ đề thật của bài>. Bây giờ chúng ta vào nội dung đầu tiên nhé.'
+      : locale.code === 'learning'
+        ? '<Lời giới thiệu mở đầu + mục tiêu bài học viết 100% bằng đúng learningLang>'
+        : `<Welcome intro and lesson overview in ${locale.targetLanguageLabel} matching the exact topic>`;
+
+  const exampleOutroExplSpeech =
+    locale.code === 'vi'
+      ? 'Tuyệt vời! Bạn vừa hoàn thành bài học về <Chủ đề thật>. Hãy lưu lại và luyện đọc to mỗi ngày nhé.'
+      : locale.code === 'learning'
+        ? '<Lời tổng kết & nhắc ôn tập viết 100% bằng đúng learningLang>'
+        : `<Encouraging lesson recap in ${locale.targetLanguageLabel}>`;
 
   return [
     '# VAI TRÒ',
@@ -1745,9 +2021,7 @@ export function buildEnglishReelsWebAiPrompt(params: {
     `      "translation": ${JSON.stringify(locale.promptExampleTranslation)},`,
     '      "ttsText": "Welcome to today\'s lesson on <Exact Topic>. Let\'s start with the first key expression.",',
     ...(locale.code !== 'none'
-      ? [
-          '      "explanationSpeech": "Chào mừng bạn đến với bài học hôm nay về <Chủ đề thật của bài>. Bây giờ chúng ta vào nội dung đầu tiên nhé.",',
-        ]
+      ? [`      "explanationSpeech": ${JSON.stringify(exampleIntroExplSpeech)},`]
       : []),
     '      "visual": {',
     ...(params.compositionId === 'cartoon-host'
@@ -1834,9 +2108,7 @@ export function buildEnglishReelsWebAiPrompt(params: {
     `      "translation": ${JSON.stringify(locale.promptExampleOutroTranslation)},`,
     '      "ttsText": "Great job! Today you practiced <Exact Topic>. Review these expressions every day.",',
     ...(locale.code !== 'none'
-      ? [
-          '      "explanationSpeech": "Tuyệt vời! Bạn vừa hoàn thành bài học về <Chủ đề thật>. Hãy lưu lại và luyện đọc to mỗi ngày nhé.",',
-        ]
+      ? [`      "explanationSpeech": ${JSON.stringify(exampleOutroExplSpeech)},`]
       : []),
     ...(params.compositionId === 'cartoon-host'
       ? [
@@ -1875,7 +2147,7 @@ export function buildAiCreatorWebAiPrompt(params: {
   durationMinutes?: number;
   audience?: string;
   targetDuration?: string;
-  itemCount?: number;
+  itemCount?: number | 'auto';
   targetLang: string;
   formatPreference?: CreatorFormatCategory;
   compositionId?: LayoutCompositionId | 'ai-decide';
@@ -1884,9 +2156,9 @@ export function buildAiCreatorWebAiPrompt(params: {
   splitAudioByRole?: boolean;
   includeQuiz?: boolean;
 }): string {
-  const locale = getReelLocaleStrings(params.targetLang);
-  const { variantsListText, sceneIconsListText } = getCatalogSummaryForPrompt();
   const learningLang: LearningLanguageId = params.learningLanguage || 'en';
+  const locale = getReelLocaleStrings(params.targetLang, learningLang);
+  const { variantsListText, sceneIconsListText } = getCatalogSummaryForPrompt();
   const langOption =
     LEARNING_LANGUAGE_OPTIONS.find((item) => item.id === learningLang) || LEARNING_LANGUAGE_OPTIONS[0];
   const levelOptions = getLevelsForLearningLanguage(learningLang);
@@ -1902,13 +2174,17 @@ export function buildAiCreatorWebAiPrompt(params: {
       : undefined;
   const includeExplanationSpeech = params.includeExplanationSpeech !== false;
   const splitAudioByRole = Boolean(params.splitAudioByRole && includeExplanationSpeech && locale.code !== 'none');
+  const isAutoItemCount = params.itemCount === 'auto';
   const defaultCount = durationMinutes
     ? recommendCreatorItemCount(durationMinutes, includeExplanationSpeech)
     : 8;
-  const count = Math.max(4, Math.min(60, Math.round(params.itemCount ?? defaultCount)));
-  const countPadded = String(count).padStart(2, '0');
+  const numericCount =
+    typeof params.itemCount === 'number' && Number.isFinite(params.itemCount)
+      ? Math.max(4, Math.min(60, Math.round(params.itemCount)))
+      : Math.max(4, Math.min(60, Math.round(defaultCount)));
+  const countPadded = isAutoItemCount ? 'N' : String(numericCount).padStart(2, '0');
   const durationLabel = durationMinutes
-    ? `${durationMinutes} phút (~${Math.round(durationMinutes * 60)} giây, khoảng ${Math.round(durationMinutes * 125)} từ lời đọc tổng cộng)`
+    ? `${durationMinutes} phút (~${Math.round(durationMinutes * 60)} giây, tối thiểu ~${Math.round(durationMinutes * 125)} từ lời đọc tổng cộng)`
     : params.targetDuration?.trim() || '30–60s';
   const topicHint = params.topicHint?.trim();
   const aspectLabel =
@@ -1929,10 +2205,11 @@ export function buildAiCreatorWebAiPrompt(params: {
   const chosenFormatInstruction = formatLabels[params.formatPreference ?? 'auto'];
 
   const explainLangName =
-    locale.code === 'none' ? 'English' : locale.targetLanguageLabel;
+    locale.code === 'none' ? langOption.nativeName : locale.targetLanguageLabel;
+  const isMonolingualExplain = locale.code === 'none' || locale.code === learningLang;
   const translationRule =
     locale.code === 'none'
-      ? 'Write short, crisp English explanations in `meaning` and keep `translation` concise in English.'
+      ? `Write short, crisp ${langOption.nativeName} explanations in \`meaning\` and keep \`translation\` concise in ${langOption.nativeName}.`
       : `Write \`meaning\` / \`translation\` / \`visual.subtitle\` / \`visual.labels\` clearly in **${locale.targetLanguageLabel}** tailored for level **${chosenLevel}**.`;
 
   const compHint =
@@ -1978,14 +2255,16 @@ export function buildAiCreatorWebAiPrompt(params: {
     : learningLang === 'ja'
       ? '今日は毎日使える大切な日本語を学びましょう。'
       : learningLang === 'zh'
-        ? `今天我们来学习${count}个超实用的中文表达。`
+        ? (isAutoItemCount ? '今天我们来学习超实用的地道中文表达。' : `今天我们来学习${numericCount}个超实用的中文表达。`)
         : learningLang === 'ko'
-          ? `오늘은 매일 쓸 수 있는 핵심 한국어 표현 ${count}가지를 배워볼게요.`
+          ? (isAutoItemCount ? '오늘은 매일 쓸 수 있는 핵심 한국어 표현을 배워볼게요.' : `오늘은 매일 쓸 수 있는 핵심 한국어 표현 ${numericCount}가지를 배워볼게요.`)
           : learningLang === 'fr'
-            ? `Aujourd'hui, découvrons ${count} expressions françaises indispensables.`
+            ? (isAutoItemCount ? "Aujourd'hui, découvrons des expressions françaises indispensables." : `Aujourd'hui, découvrons ${numericCount} expressions françaises indispensables.`)
             : learningLang === 'es'
-              ? `Hoy vamos a aprender ${count} expresiones esenciales en español.`
-              : `Stop using the same basic words every day. Here are ${count} expressions at level ${chosenLevel}.`;
+              ? (isAutoItemCount ? 'Hoy vamos a aprender expresiones esenciales en español.' : `Hoy vamos a aprender ${numericCount} expresiones esenciales en español.`)
+              : (isAutoItemCount
+                  ? `Stop using the same basic words every day. Here are practical upgrades at level ${chosenLevel}.`
+                  : `Stop using the same basic words every day. Here are ${numericCount} expressions at level ${chosenLevel}.`);
 
   const exOutroSpeech = splitAudioByRole
     ? ''
@@ -2001,27 +2280,41 @@ export function buildAiCreatorWebAiPrompt(params: {
               ? 'Guarda esta lección y practica estas expresiones hoy mismo.'
               : 'Save this lesson and use two of these expressions today.';
 
+  const explainSample = <T extends string>(viText: T, enText: string, nativeText: string): string => {
+    if (locale.code === 'vi') return viText;
+    if (locale.code === 'none' || locale.code === 'en') return enText;
+    if (isMonolingualExplain) return nativeText;
+    return `<${locale.targetLanguageLabel}: ${enText}>`;
+  };
+
+  const countDisplayZh = isAutoItemCount ? '精选' : `${numericCount}个`;
+  const countDisplayJa = isAutoItemCount ? '厳選' : `${numericCount}つの`;
+  const countDisplayKo = isAutoItemCount ? '핵심' : `${numericCount}가지`;
+  const countDisplayEn = isAutoItemCount ? 'Essential' : `${numericCount}`;
+
   const exampleBlocks =
     learningLang === 'zh'
       ? [
           '    {',
           '      "type": "title",',
           `      "kicker": "${chosenLevel} CHINESE LESSON",`,
-          `      "title": "${chosenLevel}: ${count} Mẫu Câu Tiếng Trung Thực Tế",`,
+          `      "title": ${JSON.stringify(isAutoItemCount ? `${chosenLevel}: Mẫu Câu Tiếng Trung Tự Nhiên` : `${chosenLevel}: ${numericCount} Mẫu Câu Tiếng Trung Thực Tế`)},`,
           `      "speech": ${JSON.stringify(exIntroSpeech)},`,
           ...(includeExplanationSpeech
             ? [
                 `      "explanationSpeech": ${JSON.stringify(
-                  locale.code === 'none'
-                    ? `Welcome to this ${chosenLevel} Mandarin Chinese lesson with ${count} high-frequency expressions.`
-                    : `Chào mừng bạn đến với bài học tiếng Trung trình độ ${chosenLevel}, gồm ${count} từ và mẫu câu giao tiếp dùng ngay hàng ngày.`,
+                  explainSample(
+                    `Chào mừng bạn đến với bài học tiếng Trung trình độ ${chosenLevel}, cùng khám phá các mẫu câu giao tiếp dùng ngay hàng ngày.`,
+                    `Welcome to this ${chosenLevel} Mandarin Chinese lesson with high-frequency expressions.`,
+                    `欢迎来到 ${chosenLevel} 中文课程，今天我们一起来掌握最实用的日常表达。`,
+                  ),
                 )},`,
               ]
             : []),
           '      "visual": {',
           '        "variant": "bs-card-header",',
           `        "formula": "${chosenLevel}",`,
-          `        "title": "${count} Mẫu Câu ${chosenLevel}",`,
+          `        "title": ${JSON.stringify(isAutoItemCount ? `${chosenLevel} Practical Chinese` : `${numericCount} Mẫu Câu ${chosenLevel}`)},`,
           `        "subtitle": ${JSON.stringify(locale.introVisualSubtitle)},`,
           '        "sceneIcon": "sparkles"',
           '      }',
@@ -2031,24 +2324,26 @@ export function buildAiCreatorWebAiPrompt(params: {
           `      "indexLabel": "01 / ${countPadded}",`,
           '      "word": "不好意思",',
           '      "phonetic": "bù hǎo yì si",',
-          '      "meaning": "Xin lỗi / Ngại quá (lịch sự khi làm phiền hoặc nhờ vả)",',
+          `      "meaning": ${JSON.stringify(explainSample('Xin lỗi / Ngại quá (lịch sự khi làm phiền hoặc nhờ vả)', 'Excuse me / Sorry to bother you politely', '用来礼貌地打扰别人、问路或轻声道歉'))},`,
           '      "example": "不好意思，请问洗手间在哪里？",',
           '      "speech": "不好意思。不好意思，请问洗手间在哪里？",',
           ...(includeExplanationSpeech
             ? [
                 `      "explanationSpeech": ${JSON.stringify(
-                  locale.code === 'none'
-                    ? 'Use this polite phrase before asking a stranger a question or apologizing lightly.'
-                    : 'Dùng khi muốn mở lời nhờ vả hoặc xin lỗi nhẹ nhàng rất lịch sự. Câu ví dụ nghĩa là: Xin lỗi, cho hỏi nhà vệ sinh ở đâu ạ?',
+                  explainSample(
+                    'Dùng khi muốn mở lời nhờ vả hoặc xin lỗi nhẹ nhàng rất lịch sự. Câu ví dụ nghĩa là: Xin lỗi, cho hỏi nhà vệ sinh ở đâu ạ?',
+                    'Use this polite phrase before asking a stranger a question or apologizing lightly.',
+                    '当你礼貌地向陌生人问路或请求帮忙时，用“不好意思”开头比直接提问自然得多。',
+                  ),
                 )},`,
               ]
             : []),
-          `      "translation": ${JSON.stringify(locale.code === 'none' ? 'Excuse me / Sorry to bother you' : 'Xin lỗi / Ngại quá (hỏi đường, nhờ vả)')},`,
+          `      "translation": ${JSON.stringify(explainSample('Xin lỗi / Ngại quá (hỏi đường, nhờ vả)', 'Excuse me / Sorry to bother you', '礼貌开场白（问路、求助时使用）'))},`,
           '      "visual": {',
           '        "variant": "css-magnifying-word",',
           '        "title": "不好意思",',
-          `        "subtitle": ${JSON.stringify(locale.code === 'none' ? 'Polite opener in daily Mandarin' : 'Mở lời lịch sự trong giao tiếp')},`,
-          '        "labels": ["bù hǎo yì si", "Mở lời lịch sự"],',
+          `        "subtitle": ${JSON.stringify(explainSample('Mở lời lịch sự trong giao tiếp', 'Polite opener in daily Mandarin', '日常礼貌开场白'))},`,
+          `        "labels": ${JSON.stringify(explainSample(['bù hǎo yì si', 'Mở lời lịch sự'], ['bù hǎo yì si', 'Polite opener'], ['礼貌开场', '日常高频']))},`,
           '        "highlightWord": "不好意思",',
           '        "sceneIcon": "chat"',
           '      }',
@@ -2059,21 +2354,23 @@ export function buildAiCreatorWebAiPrompt(params: {
             '    {',
             '      "type": "title",',
             `      "kicker": "JLPT ${chosenLevel} DAILY LESSON",`,
-            `      "title": "JLPT ${chosenLevel}: ${count} Essential Expressions",`,
+            `      "title": ${JSON.stringify(isAutoItemCount ? `JLPT ${chosenLevel}: Essential Natural Japanese` : `JLPT ${chosenLevel}: ${numericCount} Essential Expressions`)},`,
             `      "speech": ${JSON.stringify(exIntroSpeech)},`,
             ...(includeExplanationSpeech
               ? [
                   `      "explanationSpeech": ${JSON.stringify(
-                    locale.code === 'none'
-                      ? `Welcome to this ${chosenLevel} Japanese lesson with ${count} practical expressions.`
-                      : `Chào mừng bạn đến với bài học tiếng Nhật trình độ ${chosenLevel}, gồm ${count} mẫu câu thực tế dễ nhớ.`,
+                    explainSample(
+                      `Chào mừng bạn đến với bài học tiếng Nhật trình độ ${chosenLevel}, gồm các mẫu câu thực tế dễ nhớ.`,
+                      `Welcome to this ${chosenLevel} Japanese lesson with practical expressions.`,
+                      `JLPT ${chosenLevel} の日常会話でそのまま使える自然な日本語表現を一緒に学びましょう。`,
+                    ),
                   )},`,
                 ]
               : []),
             '      "visual": {',
             '        "variant": "bs-card-header",',
             `        "formula": "JLPT ${chosenLevel}",`,
-            `        "title": "${count} Mẫu Câu ${chosenLevel}",`,
+            `        "title": ${JSON.stringify(isAutoItemCount ? `JLPT ${chosenLevel} Expressions` : `${numericCount} Mẫu Câu ${chosenLevel}`)},`,
             `        "subtitle": ${JSON.stringify(locale.introVisualSubtitle)},`,
             '        "sceneIcon": "sparkles"',
             '      }',
@@ -2083,24 +2380,26 @@ export function buildAiCreatorWebAiPrompt(params: {
             `      "indexLabel": "01 / ${countPadded}",`,
             '      "word": "お願いします",',
             '      "phonetic": "おねがいします · onegaishimasu",',
-            '      "meaning": "Please / Requesting politely",',
+            `      "meaning": ${JSON.stringify(explainSample('Làm ơn / Xin vui lòng (nhờ vả lịch sự)', 'Please / Requesting politely', '注文やお願いをするときの丁寧な表現'))},`,
             '      "example": "お水をお願いします。",',
             '      "speech": "お願いします。お水をお願いします。",',
             ...(includeExplanationSpeech
               ? [
                   `      "explanationSpeech": ${JSON.stringify(
-                    locale.code === 'none'
-                      ? 'Use this polite phrase whenever ordering food or asking a favor. The example means water, please.'
-                      : 'Dùng để nhờ vả hoặc gọi món một cách lịch sự. Ví dụ: Cho tôi một cốc nước ạ.',
+                    explainSample(
+                      'Dùng để nhờ vả hoặc gọi món một cách lịch sự. Ví dụ: Cho tôi một cốc nước ạ.',
+                      'Use this polite phrase whenever ordering food or asking a favor. The example means water, please.',
+                      'お店で注文するときや誰かにお願いするときに使う便利な丁寧表現です。直接命令するよりずっと自然に聞こえます。',
+                    ),
                   )},`,
                 ]
               : []),
-            `      "translation": ${JSON.stringify(locale.code === 'none' ? 'Please (polite request)' : 'Làm ơn / Xin vui lòng (lịch sự)')},`,
+            `      "translation": ${JSON.stringify(explainSample('Làm ơn / Xin vui lòng (lịch sự)', 'Please (polite request)', '丁寧な依頼・注文の表現'))},`,
             '      "visual": {',
             '        "variant": "css-magnifying-word",',
             '        "title": "お願いします",',
-            '        "subtitle": "Gọi món & nhờ vả lịch sự",',
-            '        "labels": ["onegaishimasu", "Lịch sự hàng ngày"],',
+            `        "subtitle": ${JSON.stringify(explainSample('Gọi món & nhờ vả lịch sự', 'Polite orders & requests', '注文・依頼の定番'))},`,
+            `        "labels": ${JSON.stringify(explainSample(['onegaishimasu', 'Lịch sự hàng ngày'], ['onegaishimasu', 'Daily politeness'], ['丁寧表現', '日常会話']))},`,
             '        "highlightWord": "お願いします",',
             '        "sceneIcon": "cup"',
             '      }',
@@ -2111,21 +2410,23 @@ export function buildAiCreatorWebAiPrompt(params: {
               '    {',
               '      "type": "title",',
               `      "kicker": "${chosenLevel} KOREAN LESSON",`,
-              `      "title": "${chosenLevel}: ${count} Mẫu Câu Tiếng Hàn Tự Nhiên",`,
+              `      "title": ${JSON.stringify(isAutoItemCount ? `${chosenLevel}: Mẫu Câu Tiếng Hàn Tự Nhiên` : `${chosenLevel}: ${numericCount} Mẫu Câu Tiếng Hàn Tự Nhiên`)},`,
               `      "speech": ${JSON.stringify(exIntroSpeech)},`,
               ...(includeExplanationSpeech
                 ? [
                     `      "explanationSpeech": ${JSON.stringify(
-                      locale.code === 'none'
-                        ? `Welcome to this ${chosenLevel} Korean lesson with ${count} essential phrases.`
-                        : `Chào mừng bạn đến với bài học tiếng Hàn trình độ ${chosenLevel} gồm ${count} mẫu câu giao tiếp thực tế.`,
+                      explainSample(
+                        `Chào mừng bạn đến với bài học tiếng Hàn trình độ ${chosenLevel} gồm các mẫu câu giao tiếp thực tế.`,
+                        `Welcome to this ${chosenLevel} Korean lesson with essential phrases.`,
+                        `${chosenLevel} 수준에서 바로 써먹을 수 있는 자연스러운 한국어 회화 표현을 배워볼게요.`,
+                      ),
                     )},`,
                   ]
                 : []),
               '      "visual": {',
               '        "variant": "bs-card-header",',
               `        "formula": "${chosenLevel}",`,
-              `        "title": "${count} Mẫu Câu ${chosenLevel}",`,
+              `        "title": ${JSON.stringify(isAutoItemCount ? `${chosenLevel} Korean Focus` : `${numericCount} Mẫu Câu ${chosenLevel}`)},`,
               `        "subtitle": ${JSON.stringify(locale.introVisualSubtitle)},`,
               '        "sceneIcon": "sparkles"',
               '      }',
@@ -2135,24 +2436,26 @@ export function buildAiCreatorWebAiPrompt(params: {
               `      "indexLabel": "01 / ${countPadded}",`,
               '      "word": "잠시만요",',
               '      "phonetic": "jam-si-man-yo",',
-              '      "meaning": "Xin lỗi chờ chút / Cho tôi đi nhờ chút",',
+              `      "meaning": ${JSON.stringify(explainSample('Xin lỗi chờ chút / Cho tôi đi nhờ chút', 'Excuse me / Just a moment', '직원을 부르거나 잠시 양해를 구할 때 쓰는 공손한 말'))},`,
               '      "example": "잠시만요, 메뉴판 좀 주시겠어요?",',
               '      "speech": "잠시만요. 잠시만요, 메뉴판 좀 주시겠어요?",',
               ...(includeExplanationSpeech
                 ? [
                     `      "explanationSpeech": ${JSON.stringify(
-                      locale.code === 'none'
-                        ? 'Use this when calling a server or asking someone to wait a moment.'
-                        : 'Dùng để gọi nhân viên quán hoặc xin nhường đường rất tự nhiên. Ví dụ: Xin lỗi một chút, cho tôi xem thực đơn được không ạ?',
+                      explainSample(
+                        'Dùng để gọi nhân viên quán hoặc xin nhường đường rất tự nhiên. Ví dụ: Xin lỗi một chút, cho tôi xem thực đơn được không ạ?',
+                        'Use this when calling a server or asking someone to wait a moment.',
+                        '식당에서 직원을 부르거나 지나갈 때 가볍게 양해를 구할 때 아주 자연스럽게 쓰는 표현입니다.',
+                      ),
                     )},`,
                   ]
                 : []),
-              `      "translation": ${JSON.stringify(locale.code === 'none' ? 'Excuse me / Just a moment' : 'Xin chờ một chút / Xin phép gọi nhân viên')},`,
+              `      "translation": ${JSON.stringify(explainSample('Xin chờ một chút / Xin phép gọi nhân viên', 'Excuse me / Just a moment', '정중한 호칭 · 양해 표현'))},`,
               '      "visual": {',
               '        "variant": "css-magnifying-word",',
               '        "title": "잠시만요",',
-              '        "subtitle": "Gọi phục vụ & xin nhường đường",',
-              '        "labels": ["jam-si-man-yo", "Lịch sự tự nhiên"],',
+              `        "subtitle": ${JSON.stringify(explainSample('Gọi phục vụ & xin nhường đường', 'Polite opener at cafes', '식당 · 카페 필수 표현'))},`,
+              `        "labels": ${JSON.stringify(explainSample(['jam-si-man-yo', 'Lịch sự tự nhiên'], ['jam-si-man-yo', 'Polite & natural'], ['공손한 호칭', '실전 회화']))},`,
               '        "highlightWord": "잠시만요",',
               '        "sceneIcon": "chat"',
               '      }',
@@ -2162,21 +2465,23 @@ export function buildAiCreatorWebAiPrompt(params: {
               '    {',
               '      "type": "title",',
               `      "kicker": "LEVEL ${chosenLevel} UPGRADE",`,
-              `      "title": "${count} Words to Sound Smarter in Every Sentence",`,
+              `      "title": "${countDisplayEn} Smart Upgrades to Sound Natural",`,
               `      "speech": ${JSON.stringify(exIntroSpeech)},`,
               ...(includeExplanationSpeech
                 ? [
                     `      "explanationSpeech": ${JSON.stringify(
-                      locale.code === 'none'
-                        ? `Today we will master ${count} natural expressions calibrated for level ${chosenLevel}.`
-                        : `Hôm nay chúng ta cùng học ${count} từ và mẫu câu chuẩn trình độ ${chosenLevel}, dùng được ngay trong giao tiếp.`,
+                      explainSample(
+                        `Hôm nay chúng ta cùng học các từ và mẫu câu chuẩn trình độ ${chosenLevel}, dùng được ngay trong giao tiếp.`,
+                        `Today we will master natural expressions calibrated for level ${chosenLevel}.`,
+                        `Today we will master natural ${langOption.nativeName} expressions calibrated for level ${chosenLevel}.`,
+                      ),
                     )},`,
                   ]
                 : []),
               '      "visual": {',
               '        "variant": "bs-card-header",',
               `        "formula": "LEVEL ${chosenLevel}",`,
-              `        "title": "${count} Smart Upgrades",`,
+              `        "title": "${countDisplayEn} Smart Upgrades",`,
               `        "subtitle": ${JSON.stringify(locale.introVisualSubtitle)},`,
               '        "sceneIcon": "sparkles"',
               '      }',
@@ -2191,13 +2496,15 @@ export function buildAiCreatorWebAiPrompt(params: {
               ...(includeExplanationSpeech
                 ? [
                     `      "explanationSpeech": ${JSON.stringify(
-                      locale.code === 'none'
-                        ? 'Articulate describes someone who explains complex thoughts clearly and persuasively.'
-                        : 'Nghĩa là diễn đạt mạch lạc, rõ ràng và thuyết phục. Ví dụ: Cô ấy trình bày rất mạch lạc trong các buổi họp nhóm.',
+                      explainSample(
+                        'Nghĩa là diễn đạt mạch lạc, rõ ràng và thuyết phục. Ví dụ: Cô ấy trình bày rất mạch lạc trong các buổi họp nhóm.',
+                        'Articulate describes someone who explains complex thoughts clearly and persuasively, much sharper than simply saying clear.',
+                        'Articulate describes someone who explains thoughts clearly and persuasively, sounding much sharper than simply saying clear.',
+                      ),
                     )},`,
                   ]
                 : []),
-              `      "translation": ${JSON.stringify(locale.code === 'none' ? 'clear and well-spoken' : 'diễn đạt mạch lạc, rõ ràng')},`,
+              `      "translation": ${JSON.stringify(explainSample('diễn đạt mạch lạc, rõ ràng', 'clear and well-spoken', 'clear and well-spoken in meetings'))},`,
               '      "visual": {',
               '        "variant": "css-magnifying-word",',
               '        "title": "articulate",',
@@ -2209,6 +2516,18 @@ export function buildAiCreatorWebAiPrompt(params: {
               '    },',
             ];
 
+  const durationFloorLine = isAutoItemCount
+    ? `- **Minimum Video Duration Floor (CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN)**: At least **${durationLabel}** — **AI TỰ QUYẾT ĐỊNH SỐ LƯỢNG MỤC KIẾN THỨC TỐI ƯU** (KHÔNG ép cứng con số cố định như 8 mục): hãy để **số lượng kiến thức phù hợp chủ đề và chiều sâu phân tích** quyết định thời lượng thực tế của video (TUYỆT ĐỐI KHÔNG rút ngắn thấp hơn sàn thời lượng hay hy sinh chất lượng giải thích).`
+    : `- **Minimum Video Duration Floor (CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN)**: At least **${durationLabel}** with at least **${numericCount} core teaching items** — let the number of knowledge points & explanation quality determine the final runtime (NEVER compress below this floor or sacrifice explanation completeness).`;
+
+  const coreCardsHeaderLine = isAutoItemCount
+    ? `2. **Core Teaching Cards (\`type: "vocab"\` — AI tự chọn số lượng mục kiến thức \`N\` phù hợp nhất với chủ đề & thời lượng tối thiểu)** — PEDAGOGICAL DEPTH FIRST:`
+    : `2. **Core Teaching Cards (\`${numericCount}\` cards, \`type: "vocab"\`) — PEDAGOGICAL DEPTH FIRST**:`;
+
+  const coreCardsIndexLine = isAutoItemCount
+    ? `   - Ordered cleanly with \`"indexLabel": "01 / N"\` through \`"N / N"\` (where \`N\` is your chosen total item count — choose depth over arbitrary fixed counts).`
+    : `   - Ordered cleanly with \`"indexLabel": "01 / ${countPadded}"\` through \`"${countPadded} / ${countPadded}"\`.`;
+
   return [
     `# ROLE: AUTONOMOUS ${langOption.nativeName.toUpperCase()} EDUCATIONAL CONTENT DIRECTOR`,
     `You are an expert ${langOption.nativeName} teacher, educational content strategist, video scriptwriter, and curriculum designer.`,
@@ -2219,8 +2538,8 @@ export function buildAiCreatorWebAiPrompt(params: {
     '## 1. LEARNING LANGUAGE, LEVEL & DURATION TARGET',
     `- **Target Language Being Taught**: **${langOption.label}**`,
     `- **Proficiency Level (${langOption.systemName})**: **${chosenLevel}** (${levelDesc})`,
-    `- **Explanation Language**: **${explainLangName}**`,
-    `- **Minimum Video Duration Floor (CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN)**: At least **${durationLabel}** with at least **${count} core teaching items** — let the number of knowledge points & explanation quality determine the final runtime (NEVER compress below this floor or sacrifice explanation completeness).`,
+    `- **Explanation Language**: **${explainLangName}**${isMonolingualExplain ? ' (Monolingual immersion: write ALL meanings, explanations & `explanationSpeech` purely in this language!)' : ''}`,
+    durationFloorLine,
     `- **Video Frame Aspect**: ${aspectLabel}`,
     topicHint
       ? `- User topic / category direction: "${topicHint}". Craft the sharpest, most practical angle around this topic.`
@@ -2240,8 +2559,8 @@ export function buildAiCreatorWebAiPrompt(params: {
     '',
     '## 3. VIDEO PACING & STRUCTURE',
     `1. **Hook Card (\`type: "title"\`)**: Scroll-stopping \`kicker\`, **EXACT concrete \`title\` matching the lesson content & topic**, ${splitAudioByRole ? 'empty `speech: ""` with natural welcoming hook + transition into item 01 in `explanationSpeech` in ' + explainLangName : 'spoken `speech`' + (includeExplanationSpeech ? ' + `explanationSpeech`' : '')}, and \`visual\`.`,
-    `2. **Core Teaching Cards (\`${count}\` cards, \`type: "vocab"\`) — PEDAGOGICAL DEPTH FIRST**:`,
-    `   - Ordered cleanly with \`"indexLabel": "01 / ${countPadded}"\` through \`"${countPadded} / ${countPadded}"\`.`,
+    coreCardsHeaderLine,
+    coreCardsIndexLine,
     '   - Include natural **spoken transition phrases** inside `explanationSpeech` (or `speech` if single-voice) when advancing to the next section/nuance (e.g. "Next expression...", "Moving on to...") so transitions are NEVER silent!',
     '   - **EXPLANATION QUALITY & KNOWLEDGE DEPTH ARE MANDATORY (CẤM CÂU CỤT VÔ NGHĨA)**: NEVER sprint through shallow 1-word + 1-truncated-example stubs or meaningless half-sentences! Every card MUST deliver complete, self-contained pedagogical value in `explanationSpeech` + `translation` + `visual.labels`: explain **WHY** native speakers find it natural, explicitly contrast **what learners mistakenly say or stiff textbook equivalents** ("Don\'t say X → Say Y because..."), clarify situational register/nuance, and use full, natural sentences. Let the **number of knowledge items** drive final video length (longer is always welcome; NEVER shorter/truncated!).',
     '   - If level is a progression (`N5→N1`, `A1→C2`, `HSK 1→6`, `TOPIK 1→6`), progress clearly from elementary (`01`) to advanced (`' + countPadded + '`).',
@@ -2302,9 +2621,11 @@ export function buildAiCreatorWebAiPrompt(params: {
     ...(includeExplanationSpeech
       ? [
           `      "explanationSpeech": ${JSON.stringify(
-            locale.code === 'none'
-              ? 'Save this video and review these expressions again tomorrow!'
-              : 'Hãy lưu lại bài học này và luyện đọc to mỗi ngày nhé!',
+            explainSample(
+              'Hãy lưu lại bài học này và luyện đọc to mỗi ngày nhé!',
+              'Save this video and review these expressions again tomorrow!',
+              exOutroSpeech || 'Save this video and review these expressions again tomorrow!',
+            ),
           )},`,
         ]
       : []),
@@ -2832,7 +3153,7 @@ export function buildTranslationChallengePrompt(params: {
   learningLanguage?: LearningLanguageId;
   level?: string;
   durationMinutes?: number;
-  itemCount?: number;
+  itemCount?: number | 'auto';
   targetLang: string;
   thinkSec?: number;
   repeatCount?: number;
@@ -2840,9 +3161,9 @@ export function buildTranslationChallengePrompt(params: {
   compositionId?: LayoutCompositionId | 'ai-decide';
   aspectRatio?: ExportAspectRatioId;
 }): string {
-  const locale = getReelLocaleStrings(params.targetLang);
-  const { variantsListText, sceneIconsListText } = getCatalogSummaryForPrompt();
   const learningLang: LearningLanguageId = params.learningLanguage || 'en';
+  const locale = getReelLocaleStrings(params.targetLang, learningLang);
+  const { variantsListText, sceneIconsListText } = getCatalogSummaryForPrompt();
   const langOption =
     LEARNING_LANGUAGE_OPTIONS.find((item) => item.id === learningLang) || LEARNING_LANGUAGE_OPTIONS[0];
   const levelOptions = getLevelsForLearningLanguage(learningLang);
@@ -2856,15 +3177,26 @@ export function buildTranslationChallengePrompt(params: {
     typeof params.durationMinutes === 'number' && Number.isFinite(params.durationMinutes) && params.durationMinutes > 0
       ? Math.max(0.5, Math.min(30, params.durationMinutes))
       : 2;
-  const count = Math.max(
+  const isAutoItemCount = params.itemCount === 'auto';
+  const numericCount = Math.max(
     3,
     Math.min(
       60,
-      Math.round(params.itemCount ?? recommendTranslationItemCount(durationMinutes, thinkSec, repeatCount)),
+      Math.round(
+        typeof params.itemCount === 'number' && Number.isFinite(params.itemCount)
+          ? params.itemCount
+          : recommendTranslationItemCount(durationMinutes, thinkSec, repeatCount),
+      ),
     ),
   );
-  const countPadded = String(count).padStart(2, '0');
-  const explainLangName = locale.code === 'none' ? 'Tiếng Việt' : locale.targetLanguageLabel;
+  const countPadded = isAutoItemCount ? 'N' : String(numericCount).padStart(2, '0');
+  const isSameLangExplain = locale.code === learningLang || locale.code === 'learning';
+  const explainLangName =
+    locale.code === 'none'
+      ? 'Tiếng Việt'
+      : isSameLangExplain
+        ? `${langOption.nativeName} (giải thích / gợi ý bằng chính ngôn ngữ muốn học)`
+        : locale.targetLanguageLabel;
   const topicHint = params.topicHint?.trim();
   const customLines = params.customInputLines?.trim();
   const includeNuanceTip = params.includeNuanceTip !== false;
@@ -2882,7 +3214,21 @@ export function buildTranslationChallengePrompt(params: {
           ? 'Put **100% pure Korean Hangul (한국어)** inside `"speech"` and `"answer"` (NO full-sentence Romanization).'
           : `Put **100% pure natural ${langOption.nativeName}** inside \`"speech"\` and \`"answer"\`.`;
 
-  const exampleSource = 'Coi chừng cô ấy đấy!';
+  const exampleSource = isSameLangExplain
+    ? learningLang === 'zh'
+      ? '提醒朋友小心她一点！'
+      : learningLang === 'ja'
+        ? '友達に「彼女に気をつけて」と注意したいときは？'
+        : learningLang === 'ko'
+          ? '친구에게 그녀를 조심하라고 말하고 싶을 때는?'
+          : learningLang === 'fr'
+            ? 'Préviens ton ami de se méfier d’elle !'
+            : learningLang === 'es'
+              ? '¡Avisa a tu amigo que tenga cuidado con ella!'
+              : 'Tell your friend to be careful around her!'
+    : locale.code === 'en'
+      ? 'Be careful around her!'
+      : 'Coi chừng cô ấy đấy!';
   const exampleTarget =
     learningLang === 'zh'
       ? '小心她一点！'
@@ -2895,8 +3241,15 @@ export function buildTranslationChallengePrompt(params: {
             : learningLang === 'es'
               ? '¡Ten cuidado con ella!'
               : 'Watch out for her!';
-  const exampleVocabNotes =
-    learningLang === 'zh'
+  const exampleVocabNotes = isSameLangExplain
+    ? learningLang === 'zh'
+      ? '小心 (注意安全、谨慎)'
+      : learningLang === 'ja'
+        ? '気をつけて (注意を促す定番)'
+        : learningLang === 'ko'
+          ? '조심하세요 (주의를 당부)'
+          : 'watch out for (be alert around someone)'
+    : learningLang === 'zh'
       ? '小心 (cẩn thận) · 一点 (một chút)'
       : learningLang === 'ja'
         ? '彼女 (cô ấy) · 気をつけて (hãy cẩn thận)'
@@ -2910,23 +3263,63 @@ export function buildTranslationChallengePrompt(params: {
 
   const trLocale = getTranslationTargetLocale(learningLang);
   const viLangName = langOption.label.split(' (')[0].replace(/^Tiếng\s+/, 'tiếng ');
+  const durationFloorLine = isAutoItemCount
+    ? `- **Minimum Duration Floor & Knowledge Count (CHỈ ĐƯỢC DÀI HƠN, KHÔNG THẤP HƠN)**: At least **${durationMinutes} phút** (~${Math.round(durationMinutes * 60)} giây+) — **AI TỰ QUYẾT ĐỊNH SỐ LƯỢNG CÂU PHẢN XẠ TỐI ƯU** (không gò bó số lượng cố định): hãy để chất lượng giải thích & lượng kiến thức thực tế quyết định tổng số câu và thời lượng cuối cùng (TUYỆT ĐỐI KHÔNG thấp hơn ${durationMinutes} phút hoặc cắt câu cụt lủn!).`
+    : `- **Minimum Duration Floor & Knowledge Count (CHỈ ĐƯỢC DÀI HƠN, KHÔNG THẤP HƠN)**: At least **${durationMinutes} phút** (~${Math.round(durationMinutes * 60)} giây+) with at least **${numericCount} challenge sentences** — let the quantity of knowledge points & explanation depth determine the final video duration (NEVER shorten below ${durationMinutes} phút or cut sentences into meaningless stubs!).`;
+
+  const inputModeLine = customLines
+    ? isAutoItemCount
+      ? `- **USER PROVIDED WORDS / SENTENCES (USE ALL & EXPAND WITH DEEP EXAMPLES AT LEVEL ${chosenLevel})**:\n"""\n${customLines.slice(0, 6000)}\n"""`
+      : `- **USER PROVIDED WORDS / SENTENCES (MUST USE & EXPAND TO ${numericCount} ITEMS AT LEVEL ${chosenLevel})**:\n"""\n${customLines.slice(0, 6000)}\n"""`
+    : isAutoItemCount
+      ? `- **AI CREATIVE MODE**: User left custom lines blank — independently determine the optimal number of **natural, punchy, non-textbook sentences** calibrated to level **${chosenLevel}** so total spoken runtime is at least **${durationMinutes} phút**.`
+      : `- **AI CREATIVE MODE**: User left custom lines blank — invent **${numericCount} natural, punchy, non-textbook sentences** strictly calibrated to level **${chosenLevel}**.`;
+
+  const exampleIntroExplSpeech = isSameLangExplain
+    ? learningLang === 'ja'
+      ? `状況や言い換えを聞いて、${thinkSec}秒以内に自然な日本語で言ってみましょう！`
+      : learningLang === 'zh'
+        ? `听提示语境，并在${thinkSec}秒倒计时内用最地道的中文大声说出来！`
+        : learningLang === 'ko'
+          ? `상황 설명을 듣고 ${thinkSec}초 안에 자연스러운 한국어로 바로 말해 보세요!`
+          : `Listen to the situation clue and say the most natural ${langOption.nativeName} expression within ${thinkSec} seconds!`
+    : locale.code === 'en'
+      ? `Challenge yourself to speak natural ${langOption.nativeName} before the ${thinkSec}-second timer runs out!`
+      : `Thử thách phản xạ các câu ${viLangName} thực tế. Nghe câu gợi ý và bật ra ngay trong ${thinkSec} giây nhé!`;
+
+  const exampleItemExplSpeech = isSameLangExplain
+    ? learningLang === 'ja'
+      ? '直訳ではなく、実際の会話で一番よく使われる自然な言い方です。'
+      : learningLang === 'zh'
+        ? '这是母语者在真实对话中最自然、最地道的说法。'
+        : learningLang === 'ko'
+          ? '실제 원어민 대화에서 가장 자연스럽게 쓰이는 표현입니다.'
+          : 'This is the most concise and natural way native speakers say it in real conversations.'
+    : locale.code === 'en'
+      ? 'The shortest and most natural phrasing used in real conversations.'
+      : 'Cách nói ngắn gọn và tự nhiên nhất khi giao tiếp ngoài đời.';
+
+  const exampleOutroExplSpeech = isSameLangExplain
+    ? locale.promptExampleOutroTranslation
+    : locale.code === 'en'
+      ? 'Great job! Save this video and practice speaking aloud every day!'
+      : 'Tuyệt vời! Hãy lưu lại video để luyện phản xạ nghe và bật câu mỗi ngày nhé!';
+
   return [
     `# ROLE: INSTANT TRANSLATION CHALLENGE DIRECTOR (PHẢN XẠ DỊCH CÂU — KIỂU 瞬間英作文)`,
-    `You are an elite ${langOption.nativeName} speaking coach creating a high-retention **Instant Sentence Translation Challenge** video (${aspectLabel}), styled like top YouTube quick-translation drills where learners hear a natural ${explainLangName} sentence, think during a **${thinkSec}-second countdown**, and then hear the natural ${langOption.nativeName} translation repeated **${repeatCount} times**.`,
+    `You are an elite ${langOption.nativeName} speaking coach creating a high-retention **Instant Sentence Translation Challenge** video (${aspectLabel}), styled like top YouTube quick-translation drills where learners hear a natural ${explainLangName} ${isSameLangExplain ? 'situation/paraphrase prompt' : 'sentence'}, think during a **${thinkSec}-second countdown**, and then hear the natural ${langOption.nativeName} translation repeated **${repeatCount} times**.`,
     '',
     '## 1. CHALLENGE PARAMETERS',
     `- **Target Language to Speak**: **${langOption.label}**`,
-    `- **Source / Cue Language**: **${explainLangName}**`,
+    `- **Source / Cue & Explanation Language**: **${explainLangName}**${isSameLangExplain ? ` — Write \`"sourcePrompt"\` as a clear everyday situation / paraphrase clue in **${langOption.nativeName}**, and write \`"vocabNotes"\` & \`"explanationSpeech"\` 100% in **${langOption.nativeName}** (monolingual immersion, NO Vietnamese!).` : ''}`,
     `- **Difficulty Level (${langOption.systemName})**: **${chosenLevel}** (${levelDesc})`,
-    `- **Minimum Duration Floor & Knowledge Count (CHỈ ĐƯỢC DÀI HƠN, KHÔNG THẤP HƠN)**: At least **${durationMinutes} phút** (~${Math.round(durationMinutes * 60)} giây+) with at least **${count} challenge sentences** — let the quantity of knowledge points & explanation depth determine the final video duration (NEVER shorten below ${durationMinutes} phút or cut sentences into meaningless stubs!).`,
+    durationFloorLine,
     `- **Think Countdown Per Sentence**: **${thinkSec} giây** (` + `"thinkSec": ${thinkSec}` + `)`,
     `- **Repeat Spoken Translations**: **${repeatCount} lần** (` + `"repeatCount": ${repeatCount}` + `)`,
     topicHint
       ? `- **Topic / Scenario Focus**: "${topicHint}"`
       : '- **Topic Focus**: User left topic blank — choose a super relatable, daily-life conversational theme that makes viewers think "Ủa câu này nói sao cho tự nhiên nhỉ?".',
-    customLines
-      ? `- **USER PROVIDED WORDS / SENTENCES (MUST USE & EXPAND TO ${count} ITEMS AT LEVEL ${chosenLevel})**:\n"""\n${customLines.slice(0, 6000)}\n"""`
-      : `- **AI CREATIVE MODE**: User left custom lines blank — invent **${count} natural, punchy, non-textbook sentences** strictly calibrated to level **${chosenLevel}**.`,
+    inputModeLine,
     '',
     '## 2. CATCHY YOUTUBE-STYLE HOOK TITLE RULE (CRITICAL!)',
     '- Study these proven ultra-concise viral hook formulas: `【このペースで言える？】英会話のための瞬間英作文` or `【Phản xạ dịch】"Coi chừng cô ấy!" nói sao cho chuẩn?` (short, curiosity + emotion hook quoting 1 striking line from item #01 or #02!).',
@@ -2935,9 +3328,11 @@ export function buildTranslationChallengePrompt(params: {
     '',
     '## 3. CARD STRUCTURE, VOCAB GLOSS & TARGET-LANGUAGE CHROME',
     `1. **Hook Intro Card (\`type: "title"\`)**: Catchy hook title, \`"kicker"\` & \`"visual"\` labels written in **${langOption.nativeName}** (matching target learning language), \`"speech": ""\`, and energetic 1-sentence hook in \`"explanationSpeech"\` in **${explainLangName}** inviting viewers to say each sentence aloud before the ${thinkSec}-second timer runs out!`,
-    `2. **${count} Translation Challenge Cards (\`type: "translation"\`)**:`,
+    isAutoItemCount
+      ? `2. **Translation Challenge Cards (\`type: "translation"\` — AI tự chọn tổng số câu \`N\` tối ưu theo chủ đề & thời lượng sàn):**`
+      : `2. **${numericCount} Translation Challenge Cards (\`type: "translation"\`)**:`,
     `   - \`"indexLabel": "01 / ${countPadded}"\` through \`"${countPadded} / ${countPadded}"\``,
-    `   - \`"sourcePrompt"\`: Natural, idiomatic sentence in **${explainLangName}** (NOT stiff word-by-word textbook Vietnamese!).`,
+    `   - \`"sourcePrompt"\`: ${isSameLangExplain ? `Clear paraphrase / everyday situation cue in **${langOption.nativeName}** prompting the learner to produce the natural expression.` : `Natural, idiomatic sentence in **${explainLangName}** (NOT stiff word-by-word textbook translation!).`}`,
     `   - \`"answer"\`: Natural spoken target sentence in **${langOption.nativeName}**.`,
     `   - \`"speech"\`: ${scriptPurityHint}`,
     `   - **NO FULL-SENTENCE PHONETIC / HIRAGANA**: Leave \`"phonetic": ""\` empty! Do NOT write full-sentence Hiragana, Furigana, Romaji, or IPA beneath the target sentence.`,
@@ -2978,14 +3373,18 @@ export function buildTranslationChallengePrompt(params: {
     `  "level": "${chosenLevel}",`,
     `  "thinkSec": ${thinkSec},`,
     `  "repeatCount": ${repeatCount},`,
-    `  "title": ${JSON.stringify(`【Phản xạ ${chosenLevel}】"${exampleSource}" nói ${viLangName} sao cho tự nhiên?`)},`,
+    `  "title": ${JSON.stringify(
+      isSameLangExplain
+        ? `【Quick Speak ${chosenLevel}】"${exampleSource}"`
+        : `【Phản xạ ${chosenLevel}】"${exampleSource}" nói ${viLangName} sao cho tự nhiên?`,
+    )},`,
     '  "cards": [',
     '    {',
     '      "type": "title",',
     `      "kicker": ${JSON.stringify(trLocale.introKicker(thinkSec, repeatCount))},`,
-    `      "title": ${JSON.stringify(`【Phản xạ ${chosenLevel}】"${exampleSource}" nói sao cho chuẩn?`)},`,
+    `      "title": ${JSON.stringify(isSameLangExplain ? `【Quick Speak ${chosenLevel}】"${exampleSource}"` : `【Phản xạ ${chosenLevel}】"${exampleSource}" nói sao cho chuẩn?`)},`,
     '      "speech": "",',
-    `      "explanationSpeech": ${JSON.stringify(`Thử thách phản xạ ${count} câu ${viLangName} thực tế. Nghe câu tiếng Việt và bật ra ngay trong ${thinkSec} giây nhé!`)},`,
+    `      "explanationSpeech": ${JSON.stringify(exampleIntroExplSpeech)},`,
     ...(params.compositionId === 'cartoon-host'
       ? [
           '      "cartoonAction": "wave-hello",',
@@ -3005,7 +3404,7 @@ export function buildTranslationChallengePrompt(params: {
     `      "vocabNotes": ${JSON.stringify(exampleVocabNotes)},`,
     '      "grammarNote": "",',
     ...(includeNuanceTip
-      ? ['      "explanationSpeech": "Cách nói ngắn gọn và tự nhiên nhất khi giao tiếp ngoài đời.",']
+      ? [`      "explanationSpeech": ${JSON.stringify(exampleItemExplSpeech)},`]
       : ['      "explanationSpeech": "",']),
     `      "thinkSec": ${thinkSec},`,
     `      "repeatCount": ${repeatCount},`,
@@ -3015,14 +3414,14 @@ export function buildTranslationChallengePrompt(params: {
           '      "cartoonMood": "confident"',
         ]
       : [
-          '      "visual": { "variant": "css-flashcard-flip", "title": "01 / ' + countPadded + '", "sceneIcon": "chat" }',
+          `      "visual": { "variant": "css-flashcard-flip", "title": "01 / ${countPadded}", "sceneIcon": "chat" }`,
         ]),
     '    },',
     '    {',
     '      "type": "outro",',
     `      "title": ${JSON.stringify(trLocale.outroTitle)},`,
     '      "speech": "",',
-    '      "explanationSpeech": "Tuyệt vời! Hãy lưu lại video để luyện phản xạ nghe và bật câu mỗi ngày nhé!",',
+    `      "explanationSpeech": ${JSON.stringify(exampleOutroExplSpeech)},`,
     `      "translation": ${JSON.stringify(locale.promptExampleOutroTranslation)},`,
     ...(params.compositionId === 'cartoon-host'
       ? [
@@ -3030,7 +3429,7 @@ export function buildTranslationChallengePrompt(params: {
           '      "cartoonMood": "excited"',
         ]
       : [
-          `      "visual": { "variant": "css-bento-stats", "title": ${JSON.stringify(trLocale.outroTitle)}, "labels": ${JSON.stringify(trLocale.outroLabels(count, thinkSec, repeatCount))}, "sceneIcon": "sparkles" }`,
+          `      "visual": { "variant": "css-bento-stats", "title": ${JSON.stringify(trLocale.outroTitle)}, "labels": ${JSON.stringify(isAutoItemCount ? trLocale.outroLabels(10, thinkSec, repeatCount).map((l, i) => (i === 0 ? trLocale.askTitle : l)) as [string, string, string] : trLocale.outroLabels(numericCount, thinkSec, repeatCount))}, "sceneIcon": "sparkles" }`,
         ]),
     '    }',
     '  ]',
@@ -3060,7 +3459,7 @@ export function buildTranslationCardsFromInput(params: {
   const repeatCount = Math.max(1, Math.min(5, Math.round(params.repeatCount ?? 2)));
   const includeNuanceTip = params.includeNuanceTip !== false;
   const targetLang = params.targetLang || 'Tiếng Việt';
-  const locale = getReelLocaleStrings(targetLang);
+  const locale = getReelLocaleStrings(targetLang, learningLang);
   const trLocale = getTranslationTargetLocale(learningLang);
   const deck = CURATED_TRANSLATION_DECKS[learningLang] || CURATED_TRANSLATION_DECKS.en;
 
@@ -3210,7 +3609,7 @@ export function buildStarterLessonForLanguage(
   targetLang = 'Tiếng Việt',
   level?: string,
 ): { title: string; mode: ReelMode; cards: ReelCard[] } {
-  const locale = getReelLocaleStrings(targetLang);
+  const locale = getReelLocaleStrings(targetLang, learningLang);
   const langMeta =
     LEARNING_LANGUAGE_OPTIONS.find((l) => l.id === learningLang) || LEARNING_LANGUAGE_OPTIONS[0];
   const chosenLevel = level || langMeta.defaultLevel;
@@ -4348,11 +4747,15 @@ export function reelCardsToLessonProject(
     sceneJsonOverride?: FlexibleSceneDocument | null;
     watermark?: WatermarkOutroConfig;
     titleLayout?: TitleOverlayLayout;
+    enableLearningAudio?: boolean;
+    enableExplanationAudio?: boolean;
   },
 ): LessonProject {
   const safeCards =
     cards.length > 0 ? cards : buildReelCardsRuleBased('Practice English daily.').cards;
   const cues: TranscriptCue[] = [];
+  const allowLearningAudio = options?.enableLearningAudio !== false;
+  const allowExplanationAudio = options?.enableExplanationAudio !== false;
   const cardWindows: Array<{
     start: number;
     end: number;
@@ -4382,18 +4785,23 @@ export function reelCardsToLessonProject(
       const answerText =
         sanitizeTtsSpeech(card.ttsText || card.content || card.title) || 'Practice speaking aloud.';
       const nuanceText =
+        allowExplanationAudio &&
         card.explanationSpeech &&
         card.explanationSpeech.trim().toLowerCase() !== promptText.toLowerCase()
           ? sanitizeTtsSpeech(card.explanationSpeech)
           : '';
       const thinkSec = timingOverride?.thinkSec ?? Math.max(0, Math.min(15, card.thinkSec ?? 4));
-      const repeatCount = Math.max(
-        1,
-        Math.min(5, card.repeatCount ?? timingOverride?.repeatDurationsSec?.length ?? 2),
-      );
+      const explicitRepeatCount = timingOverride?.repeatDurationsSec
+        ? timingOverride.repeatDurationsSec.length
+        : allowLearningAudio
+          ? Math.max(1, Math.min(5, card.repeatCount ?? 2))
+          : 0;
+      const repeatCount = Math.max(0, Math.min(5, explicitRepeatCount));
       const repeatPause = timingOverride?.repeatPauseSec ?? 0.55;
 
-      const pDur = timingOverride?.questionSec ?? estimateCardSpeechDuration(promptText);
+      const pDur =
+        timingOverride?.questionSec ??
+        (allowExplanationAudio ? estimateCardSpeechDuration(promptText) : 0);
       const defaultRepDur = estimateCardSpeechDuration(answerText);
       const repDurs = Array.from({ length: repeatCount }, (_, r) =>
         timingOverride?.repeatDurationsSec?.[r] ?? defaultRepDur,
@@ -4448,7 +4856,7 @@ export function reelCardsToLessonProject(
         repCursor = nEnd;
       }
 
-      const end = Number(Math.max(answerStart + 0.6, repCursor).toFixed(3));
+      const end = Number(Math.max(answerStart + (repeatCount > 0 ? 0.6 : 1.5), repCursor).toFixed(3));
       cardWindows.push({
         start,
         end,
@@ -4473,10 +4881,16 @@ export function reelCardsToLessonProject(
       const qSpeech = questionSpeech || sanitizeTtsSpeech(card.content || card.title) || 'Quiz question.';
       const thinkSec = timingOverride?.thinkSec ?? baseThink;
 
-      let qDur = timingOverride?.questionSec ?? estimateCardSpeechDuration(qSpeech);
+      let qDur =
+        timingOverride?.questionSec ??
+        (allowLearningAudio ? estimateCardSpeechDuration(qSpeech) : 0);
       let aDur =
         timingOverride?.answerSec ??
-        (answerSpeech ? estimateCardSpeechDuration(answerSpeech) : 2.6);
+        (allowLearningAudio
+          ? answerSpeech
+            ? estimateCardSpeechDuration(answerSpeech)
+            : 2.6
+          : 2.4);
 
       if (!timingOverride && typeof durOverride === 'number' && Number.isFinite(durOverride) && durOverride > 1) {
         // Scale question/answer around exact thinkSec if single total duration supplied
@@ -4569,7 +4983,9 @@ export function reelCardsToLessonProject(
   const theme: CanvasThemeId = options?.theme ?? 'pastel-sunrise';
   const isDark = isDarkCanvasTheme(theme);
 
-  const locale = getReelLocaleStrings(options?.targetLang);
+  const primaryLearningLang =
+    (safeCards.find((c) => c.learningLang)?.learningLang as LearningLanguageId) || 'en';
+  const locale = getReelLocaleStrings(options?.targetLang, primaryLearningLang);
 
   if (options?.sceneJsonOverride && (!options.compositionId || options.compositionId === options.sceneJsonOverride.compositionId)) {
     const words = cues.flatMap((c) => c.words);
@@ -4850,6 +5266,15 @@ export function reelCardsToLessonProject(
             : card.type === 'quiz' && hasQuiz
               ? 2
               : 1;
+    const isCartoonHost = compId === 'cartoon-host';
+    const cardEnterAnim = isCartoonHost ? ('fade-scale' as const) : ('pop-up' as const);
+    const stripEnd =
+      isCartoonHost && idx < cardWindows.length - 1
+        ? cardWindows[idx + 1].start
+        : end;
+    const stripEnterAnim = isCartoonHost && idx > 0 ? ('none' as const) : ('fade-scale' as const);
+    const stripExitAnim =
+      isCartoonHost && idx < cardWindows.length - 1 ? ('none' as const) : ('fade-out' as const);
 
     // ── PLAIN COMPOSITION (NO CARDS/ILLUSTRATIONS — PURE BACKGROUND + SUBTITLES) ──
     if (compId === 'plain') {
@@ -5024,9 +5449,9 @@ export function reelCardsToLessonProject(
           type: 'comparison-strip',
           label: `${locale.roadmapLabel} #${idx + 1}`,
           startTime: start,
-          endTime: end,
-          enterAnimation: 'fade-scale',
-          exitAnimation: 'fade-out',
+          endTime: stripEnd,
+          enterAnimation: stripEnterAnim,
+          exitAnimation: stripExitAnim,
           layout: { x: 540, y: activeProfile.stripY, width: 960, scale: 1, zIndex: 12 },
           props: {
             kind: 'comparison-strip',
@@ -5055,7 +5480,7 @@ export function reelCardsToLessonProject(
           label: `Prompt #${idx + 1}`,
           startTime: start,
           endTime: win.questionEnd,
-          enterAnimation: 'pop-up',
+          enterAnimation: cardEnterAnim,
           exitAnimation: 'fade-out',
           layout: { x: 540, y: activeProfile.pillY, width: 700, scale: 1, zIndex: 16 },
           props: {
@@ -5106,8 +5531,8 @@ export function reelCardsToLessonProject(
             label: `${remain}s`,
             startTime: t0,
             endTime: t1,
-            enterAnimation: 'pop-up',
-            exitAnimation: 'fade-out',
+            enterAnimation: isCartoonHost ? 'none' : 'pop-up',
+            exitAnimation: isCartoonHost ? 'none' : 'fade-out',
             layout: { x: 540, y: activeProfile.pillY, width: 680, scale: 1, zIndex: 18 },
             props: {
               kind: 'topic-pill',
@@ -5123,8 +5548,8 @@ export function reelCardsToLessonProject(
             label: `Timer ${remain}s`,
             startTime: t0,
             endTime: t1,
-            enterAnimation: 'fade-scale',
-            exitAnimation: 'fade-out',
+            enterAnimation: isCartoonHost ? 'none' : 'fade-scale',
+            exitAnimation: isCartoonHost ? 'none' : 'fade-out',
             layout: {
               x: 540,
               y: compId === 'cartoon-host' ? 660 : 505,
@@ -5154,7 +5579,7 @@ export function reelCardsToLessonProject(
         label: `Prompt #${idx + 1}`,
         startTime: start,
         endTime: preRevealEnd,
-        enterAnimation: 'pop-up',
+        enterAnimation: cardEnterAnim,
         exitAnimation: 'fade-out',
         layout: {
           x: 540,
@@ -5180,7 +5605,7 @@ export function reelCardsToLessonProject(
         label: `Sub Q #${idx + 1}`,
         startTime: start,
         endTime: preRevealEnd,
-        enterAnimation: 'slide-up',
+        enterAnimation: isCartoonHost ? 'fade-scale' : 'slide-up',
         exitAnimation: 'fade-out',
         layout: { x: 540, y: karaokeCenterY, width: 900, scale: 1, zIndex: 35 },
         props: {
@@ -5210,7 +5635,7 @@ export function reelCardsToLessonProject(
             label: `Repeat ${rIdx + 1}/${totalRepeats}`,
             startTime: slot.start,
             endTime: slotEnd,
-            enterAnimation: 'pop-up',
+            enterAnimation: cardEnterAnim,
             exitAnimation: 'fade-out',
             layout: { x: 540, y: activeProfile.pillY, width: 720, scale: 1, zIndex: 18 },
             props: {
@@ -5227,7 +5652,7 @@ export function reelCardsToLessonProject(
             label: `Sub R${rIdx + 1} #${idx + 1}`,
             startTime: slot.start,
             endTime: slotEnd,
-            enterAnimation: 'pop-up',
+            enterAnimation: cardEnterAnim,
             exitAnimation: 'fade-out',
             layout: { x: 540, y: karaokeCenterY, width: 900, scale: 1, zIndex: 36 },
             props: {
@@ -5249,7 +5674,7 @@ export function reelCardsToLessonProject(
             label: `Takeaway #${idx + 1}`,
             startTime: win.nuanceSlot.start,
             endTime: end,
-            enterAnimation: 'pop-up',
+            enterAnimation: cardEnterAnim,
             exitAnimation: 'fade-out',
             layout: { x: 540, y: activeProfile.pillY, width: 720, scale: 1, zIndex: 18 },
             props: {
@@ -5266,7 +5691,7 @@ export function reelCardsToLessonProject(
             label: `Sub Tip #${idx + 1}`,
             startTime: win.nuanceSlot.start,
             endTime: end,
-            enterAnimation: 'pop-up',
+            enterAnimation: cardEnterAnim,
             exitAnimation: 'fade-out',
             layout: { x: 540, y: karaokeCenterY, width: 900, scale: 1, zIndex: 37 },
             props: {
@@ -5290,7 +5715,7 @@ export function reelCardsToLessonProject(
           label: `Answer #${idx + 1}`,
           startTime: win.answerStart,
           endTime: end,
-          enterAnimation: 'pop-up',
+          enterAnimation: cardEnterAnim,
           exitAnimation: 'fade-out',
           layout: {
             x: 540,
@@ -5327,9 +5752,9 @@ export function reelCardsToLessonProject(
         type: 'comparison-strip',
         label: `${locale.roadmapLabel} #${idx + 1}`,
         startTime: start,
-        endTime: end,
-        enterAnimation: 'fade-scale',
-        exitAnimation: 'fade-out',
+        endTime: stripEnd,
+        enterAnimation: stripEnterAnim,
+        exitAnimation: stripExitAnim,
         layout: { x: 540, y: activeProfile.stripY, width: 920, scale: 1, zIndex: 12 },
         props: {
           kind: 'comparison-strip',
@@ -5349,7 +5774,7 @@ export function reelCardsToLessonProject(
           label: `Quiz #${idx + 1}`,
           startTime: start,
           endTime: win.questionEnd,
-          enterAnimation: 'pop-up',
+          enterAnimation: cardEnterAnim,
           exitAnimation: 'fade-out',
           layout: { x: 540, y: activeProfile.pillY, width: 640, scale: 1, zIndex: 16 },
           props: {
@@ -5379,8 +5804,8 @@ export function reelCardsToLessonProject(
             label: `Countdown ${remain}s`,
             startTime: t0,
             endTime: t1,
-            enterAnimation: 'pop-up',
-            exitAnimation: 'fade-out',
+            enterAnimation: isCartoonHost ? 'none' : 'pop-up',
+            exitAnimation: isCartoonHost ? 'none' : 'fade-out',
             layout: { x: 540, y: activeProfile.pillY, width: 640, scale: 1, zIndex: 18 },
             props: {
               kind: 'topic-pill',
@@ -5396,8 +5821,8 @@ export function reelCardsToLessonProject(
             label: `Timer ${remain}s`,
             startTime: t0,
             endTime: t1,
-            enterAnimation: 'fade-scale',
-            exitAnimation: 'fade-out',
+            enterAnimation: isCartoonHost ? 'none' : 'fade-scale',
+            exitAnimation: isCartoonHost ? 'none' : 'fade-out',
             layout: {
               x: 540,
               y:
@@ -5432,7 +5857,7 @@ export function reelCardsToLessonProject(
           label: `${locale.correctBadge} #${idx + 1}`,
           startTime: win.answerStart,
           endTime: end,
-          enterAnimation: 'pop-up',
+          enterAnimation: cardEnterAnim,
           exitAnimation: 'fade-out',
           layout: { x: 540, y: activeProfile.pillY, width: 880, scale: 1, zIndex: 18 },
           props: {
@@ -5523,7 +5948,7 @@ export function reelCardsToLessonProject(
           label: `Quiz Q #${idx + 1}`,
           startTime: start,
           endTime: preRevealEnd,
-          enterAnimation: 'pop-up',
+          enterAnimation: cardEnterAnim,
           exitAnimation: 'fade-out',
           layout: {
             x: 540,
@@ -5551,7 +5976,7 @@ export function reelCardsToLessonProject(
           label: `Quiz Answer #${idx + 1}`,
           startTime: win.answerStart,
           endTime: end,
-          enterAnimation: 'pop-up',
+          enterAnimation: cardEnterAnim,
           exitAnimation: 'fade-out',
           layout: {
             x: 540,
@@ -5581,7 +6006,7 @@ export function reelCardsToLessonProject(
         label: `Options #${idx + 1}`,
         startTime: start,
         endTime: end,
-        enterAnimation: 'slide-up',
+        enterAnimation: isCartoonHost ? 'fade-scale' : 'slide-up',
         exitAnimation: 'fade-out',
         layout: {
           x: 540,
@@ -5608,7 +6033,7 @@ export function reelCardsToLessonProject(
         label: `Sub Q #${idx + 1}`,
         startTime: start,
         endTime: Math.max(win.thinkEnd, win.questionEnd),
-        enterAnimation: 'slide-up',
+        enterAnimation: isCartoonHost ? 'fade-scale' : 'slide-up',
         exitAnimation: 'fade-out',
         layout: { x: 540, y: karaokeCenterY, width: 900, scale: 1, zIndex: 35 },
         props: {
@@ -5629,7 +6054,7 @@ export function reelCardsToLessonProject(
           label: `Sub A #${idx + 1}`,
           startTime: win.answerStart,
           endTime: end,
-          enterAnimation: 'pop-up',
+          enterAnimation: cardEnterAnim,
           exitAnimation: 'fade-out',
           layout: { x: 540, y: karaokeCenterY, width: 900, scale: 1, zIndex: 36 },
           props: {
@@ -5814,9 +6239,9 @@ export function reelCardsToLessonProject(
           type: 'comparison-strip',
           label: `${locale.roadmapLabel} #${idx + 1}`,
           startTime: start,
-          endTime: end,
-          enterAnimation: 'fade-scale',
-          exitAnimation: 'fade-out',
+          endTime: stripEnd,
+          enterAnimation: stripEnterAnim,
+          exitAnimation: stripExitAnim,
           layout: { x: 540, y: activeProfile.stripY, width: 920, scale: 1, zIndex: 12 },
           props: {
             kind: 'comparison-strip',
@@ -5841,7 +6266,7 @@ export function reelCardsToLessonProject(
         label: pillLabel,
         startTime: start,
         endTime: end,
-        enterAnimation: 'pop-up',
+        enterAnimation: cardEnterAnim,
         exitAnimation: 'fade-out',
         layout: { x: 540, y: activeProfile.pillY, width: 640, scale: 1, zIndex: 14 },
         props: {
@@ -5903,7 +6328,7 @@ export function reelCardsToLessonProject(
         label: `Card #${idx + 1}: ${card.title.slice(0, 28)}`,
         startTime: start,
         endTime: end,
-        enterAnimation: 'pop-up',
+        enterAnimation: cardEnterAnim,
         exitAnimation: 'fade-out',
         layout: {
           x: 540,
@@ -5950,7 +6375,7 @@ export function reelCardsToLessonProject(
       label: `Karaoke #${idx + 1}`,
       startTime: start,
       endTime: end,
-      enterAnimation: 'slide-up',
+      enterAnimation: isCartoonHost ? 'fade-scale' : 'slide-up',
       exitAnimation: 'fade-out',
       layout: { x: 540, y: karaokeCenterY, width: 900, scale: 1, zIndex: 35 },
       props: {

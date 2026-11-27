@@ -2084,8 +2084,11 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
             className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg"
           >
             <option value="vi">Tiếng Việt</option>
+            <option value="learning">Giải thích bằng ngôn ngữ muốn học</option>
             <option value="en">English</option>
             <option value="ja">日本語</option>
+            <option value="zh">中文</option>
+            <option value="ko">한국어</option>
             <option value="none">Chỉ ngôn ngữ gốc</option>
           </select>
         </div>

@@ -530,9 +530,18 @@ function classifyLatinAsciiToken(
   return 'def-foreign';
 }
 
-export function normalizeTtsLangCode(raw?: string): SupportedTtsLang {
+export function normalizeTtsLangCode(raw?: string, learningLangFallback?: string): SupportedTtsLang {
   const low = String(raw || '').trim().toLowerCase();
   if (!low) return 'en';
+  if (
+    low === 'learning' ||
+    low === 'self' ||
+    low === 'target' ||
+    low.includes('ngôn ngữ muốn học') ||
+    low.includes('ngôn ngữ đang học')
+  ) {
+    return learningLangFallback ? normalizeTtsLangCode(learningLangFallback) : 'en';
+  }
   if (low.startsWith('vi') || low.includes('viet')) return 'vi';
   if (low.startsWith('ja') || low === 'jp' || low.includes('japan') || low.includes('nhật') || low.includes('日本')) {
     return 'ja';
@@ -601,7 +610,21 @@ export function pickLearningDefaultVoice(learningLang: string): string {
   return DEFAULT_EDGE_VOICE_BY_LANG[normalizeTtsLangCode(learningLang)] || 'en-US-JennyNeural';
 }
 
-export function pickExplanationDefaultVoice(targetExplainLang: string): string {
+export function pickExplanationDefaultVoice(
+  targetExplainLang: string,
+  learningLangFallback?: string,
+): string {
+  const low = String(targetExplainLang || '').trim().toLowerCase();
+  if (
+    low === 'learning' ||
+    low === 'self' ||
+    low === 'target' ||
+    low.includes('ngôn ngữ muốn học') ||
+    low.includes('ngôn ngữ đang học')
+  ) {
+    const code = normalizeTtsLangCode(learningLangFallback || 'en');
+    return DEFAULT_EDGE_VOICE_BY_LANG[code] || DEFAULT_EDGE_VOICE_BY_LANG.en;
+  }
   const code = normalizeTtsLangCode(targetExplainLang);
   return DEFAULT_EDGE_VOICE_BY_LANG[code] || 'vi-VN-HoaiMyNeural';
 }

@@ -41,6 +41,7 @@ export interface PersistedReelsModeSettings {
   targetLang?: string;
   ttsProvider?: string;
   ttsVoice?: string;
+  enableLearningAudio?: boolean;
   enableDualTts?: boolean;
   splitAudioByRole?: boolean;
   explanationTtsVoice?: string;
@@ -100,12 +101,14 @@ export interface PersistedStudioSettings {
     creatorLevel?: string;
     creatorDurationMinutes?: number;
     creatorItemCount?: number;
+    creatorAutoItemCount?: boolean;
     translationTopicHint?: string;
     translationCustomLines?: string;
     translationLearningLang?: LearningLanguageId;
     translationLevel?: string;
     translationDurationMinutes?: number;
     translationItemCount?: number;
+    translationAutoItemCount?: boolean;
     translationThinkSec?: number;
     translationRepeatCount?: number;
     translationIncludeNuance?: boolean;
@@ -324,6 +327,7 @@ export function resolveReelsModeSettings(
     targetLang: reels.targetLang,
     ttsProvider: reels.ttsProvider,
     ttsVoice: reels.ttsVoice,
+    enableLearningAudio: reels.enableLearningAudio,
     enableDualTts: reels.enableDualTts,
     splitAudioByRole: reels.splitAudioByRole,
     explanationTtsVoice: reels.explanationTtsVoice,

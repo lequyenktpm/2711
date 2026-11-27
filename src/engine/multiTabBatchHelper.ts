@@ -758,7 +758,7 @@ function buildStudioBatchPrompt(params: {
   return `# BÀI GIẢNG STUDIO TỰ ĐỘNG (TAB 1 STUDIO · ${params.aspectRatio || '9:16'})
 - Chủ đề trọng tâm: **${params.topic}**
 - Ngôn ngữ học: **${langMeta.label}** · Trình độ: **${params.level}**
-- Ngôn ngữ giải thích phụ đề/thẻ: **${params.targetLang === 'none' ? 'Pure target language' : params.targetLang}**
+- Ngôn ngữ giải thích phụ đề/thẻ: **${params.targetLang === 'none' ? 'Pure target language' : params.targetLang === 'learning' ? `${langMeta.nativeName} (giải thích bằng ngôn ngữ muốn học)` : params.targetLang}**
 - Thời lượng mục tiêu: **${params.durationMinutes} phút (~${Math.round(params.durationMinutes * 60)} giây)**
 - Lưu ý: Nếu chưa có audio sẵn, hãy tự viết toàn bộ kịch bản \`source_segments[]\` (${approxCuesCount} segments phân bổ đều trong **~${Math.round(params.durationMinutes * 60)} giây**) với nội dung sư phạm sâu (giải thích lý do tự nhiên, đối chiếu lỗi thường gặp, sắc thái & ví dụ thực tế) thay thế các segment placeholder bên dưới rồi dựng trọn vẹn JSON \`schema_version: "1.9"\`.
 
@@ -848,6 +848,7 @@ export function generateBatchPromptsForTopics(options: {
         learningLanguage: options.learningLanguage,
         level: resolvedLevel,
         durationMinutes,
+        itemCount: 'auto',
         targetLang,
         formatPreference: options.formatPreference || 'auto',
         compositionId: options.compositionId || 'ai-decide',
@@ -862,6 +863,7 @@ export function generateBatchPromptsForTopics(options: {
         learningLanguage: options.learningLanguage,
         level: resolvedLevel,
         durationMinutes,
+        itemCount: 'auto',
         targetLang: targetLang === 'none' ? 'vi' : targetLang,
         thinkSec: options.thinkSec ?? 4,
         repeatCount: options.repeatCount ?? 2,

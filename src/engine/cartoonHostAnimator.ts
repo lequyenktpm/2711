@@ -801,18 +801,33 @@ function sampleRawCartoonHostContext(
   );
   const hostData = hostEl?.props.kind === 'illustration-prop' ? hostEl.props.data : undefined;
 
-  const active = elements.filter(
-    (el) =>
-      time >= el.startTime - 0.02 &&
-      time <= el.endTime + 0.02 &&
-      !(el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host'),
+  const nonHostEls = elements.filter(
+    (el) => !(el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host'),
   );
+  const maxElEnd = nonHostEls.reduce((acc, el) => Math.max(acc, el.endTime), 0);
+  // Half-open [startTime, endTime) matching prevents two adjacent cards from overlapping at boundaries;
+  // allow inclusive end only at the final end of the timeline, and sort newest-start first so incoming wins cleanly.
+  let active = nonHostEls
+    .filter(
+      (el) =>
+        time >= el.startTime &&
+        (time < el.endTime || (Math.abs(time - maxElEnd) <= 0.001 && time <= el.endTime)),
+    )
+    .sort((a, b) => b.startTime - a.startTime);
+
+  if (active.length === 0) {
+    active = nonHostEls
+      .filter((el) => time >= el.startTime - 0.015 && time <= el.endTime + 0.015)
+      .sort((a, b) => b.startTime - a.startTime);
+  }
 
   const activeCard = active.find((el) => el.type === 'sentence-card');
   const activePill = active.find((el) => el.type === 'topic-pill');
   const activeMeter = active.find((el) => el.type === 'tone-meter');
   const activeIll = active.find((el) => el.type === 'illustration-prop');
-  const activeCue = cues.find((c) => time >= c.start && time <= c.end);
+  const activeCue =
+    cues.find((c) => time >= c.start && time < c.end) ??
+    cues.find((c) => time >= c.start && time <= c.end);
 
   const textParts: string[] = [];
   let activeBadge: CartoonHostContext['activeBadge'];
@@ -840,9 +855,17 @@ function sampleRawCartoonHostContext(
   }
 
   // Timed cartoonActionSegments override if active at `time`, otherwise fall back to hostData defaults
-  const activeSegment = hostData?.cartoonActionSegments?.find(
-    (seg) => time >= seg.startTime - 0.02 && time <= seg.endTime + 0.02,
-  );
+  const segs = hostData?.cartoonActionSegments ?? [];
+  const maxSegEnd = segs.reduce((acc, seg) => Math.max(acc, seg.endTime), 0);
+  const activeSegment =
+    segs
+      .filter(
+        (seg) =>
+          time >= seg.startTime &&
+          (time < seg.endTime || (Math.abs(time - maxSegEnd) <= 0.001 && time <= seg.endTime)),
+      )
+      .sort((a, b) => b.startTime - a.startTime)[0] ??
+    segs.find((seg) => time >= seg.startTime - 0.015 && time <= seg.endTime + 0.015);
 
   const hasCompanionVisual = Boolean(activeCard || activePill || activeMeter || activeIll);
   const targetDirection: CartoonHostContext['targetDirection'] = !hasCompanionVisual
@@ -880,16 +903,29 @@ export function computeCartoonHostContextFromElements(
   const RETRACT_WINDOW = 0.56;
   let latestBoundary = -1;
   for (const el of elements) {
-    if (el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host') continue;
+    if (el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host') {
+      const segs = el.props.data?.cartoonActionSegments;
+      if (segs) {
+        for (const seg of segs) {
+          if (seg.startTime > 0.05 && seg.startTime <= time && time - seg.startTime <= RETRACT_WINDOW && seg.startTime > latestBoundary) {
+            latestBoundary = seg.startTime;
+          }
+          if (seg.endTime <= time && time - seg.endTime <= RETRACT_WINDOW && seg.endTime > latestBoundary) {
+            latestBoundary = seg.endTime;
+          }
+        }
+      }
+      continue;
+    }
     if (el.type !== 'sentence-card' && el.type !== 'topic-pill' && el.type !== 'tone-meter' && el.type !== 'illustration-prop') {
       continue;
     }
-    const endBoundary = el.endTime + 0.02;
-    const startBoundary = el.startTime - 0.02;
+    const endBoundary = el.endTime;
+    const startBoundary = el.startTime;
     if (endBoundary <= time && time - endBoundary <= RETRACT_WINDOW && endBoundary > latestBoundary) {
       latestBoundary = endBoundary;
     }
-    if (startBoundary <= time && time - startBoundary <= RETRACT_WINDOW && startBoundary > latestBoundary) {
+    if (startBoundary > 0.05 && startBoundary <= time && time - startBoundary <= RETRACT_WINDOW && startBoundary > latestBoundary) {
       latestBoundary = startBoundary;
     }
   }
@@ -906,6 +942,104 @@ export function computeCartoonHostContextFromElements(
   }
 
   return current;
+}
+
+function resolveSequenceKeyframesForState(state: ClassifiedCartoonState): CartoonAnimationKeyframe[] | undefined {
+  if (state.params.keyframes && state.params.keyframes.length > 0) {
+    return state.params.keyframes;
+  }
+  if (state.gestureMode === 'clap-jump') {
+    return resolveCartoonAnimationForSignal({ actionId: 'clap-jump' }).params.keyframes;
+  }
+  return undefined;
+}
+
+function evaluateKeyframeArmPose(
+  kfs: CartoonAnimationKeyframe[],
+  seqDurRaw: number,
+  shouldLoop: boolean,
+  tSec: number,
+) {
+  const seqDur = Math.max(0.4, seqDurRaw);
+  const rawCycle = tSec / seqDur;
+  const seqPhase = shouldLoop ? rawCycle - Math.floor(rawCycle) : clamp01(rawCycle);
+
+  let kfA = kfs[0];
+  let kfB = kfs[kfs.length - 1];
+  let localFrac = 0;
+
+  if (kfs.length === 1) {
+    kfA = kfs[0];
+    kfB = kfs[0];
+  } else if (seqPhase <= kfs[0].at) {
+    kfA = kfs[0];
+    kfB = kfs[1];
+    localFrac = 0;
+  } else if (seqPhase >= kfs[kfs.length - 1].at) {
+    kfA = kfs[kfs.length - 1];
+    kfB = shouldLoop ? kfs[0] : kfs[kfs.length - 1];
+    const wrapSpan = shouldLoop ? Math.max(0.02, 1 - kfA.at + kfB.at) : 1;
+    localFrac = shouldLoop ? smoothstep((seqPhase - kfA.at) / wrapSpan) : 1;
+  } else {
+    for (let ki = 0; ki < kfs.length - 1; ki++) {
+      if (seqPhase >= kfs[ki].at && seqPhase <= kfs[ki + 1].at) {
+        kfA = kfs[ki];
+        kfB = kfs[ki + 1];
+        const span = Math.max(0.01, kfB.at - kfA.at);
+        localFrac = smoothstep((seqPhase - kfA.at) / span);
+        break;
+      }
+    }
+  }
+
+  const kneeBend = clamp01(lerp(kfA.kneeBend ?? 0, kfB.kneeBend ?? 0, localFrac));
+  const clapImpact = clamp01(lerp(kfA.clapImpact ?? 0, kfB.clapImpact ?? 0, localFrac));
+  const leftWristX = lerp(kfA.leftWristX ?? -124, kfB.leftWristX ?? -124, localFrac);
+  const leftWristY = lerp(kfA.leftWristY ?? 150, kfB.leftWristY ?? 150, localFrac);
+  const rightWristX = lerp(kfA.rightWristX ?? 124, kfB.rightWristX ?? 124, localFrac);
+  const rightWristY = lerp(kfA.rightWristY ?? 150, kfB.rightWristY ?? 150, localFrac);
+
+  const leftElbowX = Math.min(-72, leftWristX * 0.45 - 92);
+  const leftElbowY = lerp(18, leftWristY, 0.56) + 28;
+  const leftHandAngle = lerpAngle(kfA.leftHandAngle ?? -Math.PI * 0.5, kfB.leftHandAngle ?? -Math.PI * 0.5, localFrac);
+
+  const rightElbowX = Math.max(72, rightWristX * 0.45 + 92);
+  const rightElbowY = lerp(18, rightWristY, 0.56) + 28;
+  const rightHandAngle = lerpAngle(kfA.rightHandAngle ?? -Math.PI * 0.5, kfB.rightHandAngle ?? -Math.PI * 0.5, localFrac);
+
+  const hasHeadTilt = typeof kfA.headTiltDeg === 'number' || typeof kfB.headTiltDeg === 'number';
+  const headTiltDeg = hasHeadTilt ? lerp(kfA.headTiltDeg ?? 0, kfB.headTiltDeg ?? 0, localFrac) : undefined;
+  const activeKf = localFrac < 0.5 ? kfA : kfB;
+
+  return {
+    kneeBend,
+    clapImpact,
+    leftWristX,
+    leftWristY,
+    leftElbowX,
+    leftElbowY,
+    leftHandAngle,
+    rightWristX,
+    rightWristY,
+    rightElbowX,
+    rightElbowY,
+    rightHandAngle,
+    headTiltDeg,
+    eyeStyle: activeKf.eyeStyle,
+    mouthStyle: activeKf.mouthStyle,
+  };
+}
+
+function defaultRestingLeftArmCoords(shoulderAngle: number, elbowAngle: number) {
+  // Approximate left shoulder origin in mascot coordinate space (-74, 34) with upperArm ~72, forearm ~66
+  const upperLen = 72;
+  const foreLen = 66;
+  const ex = -74 - Math.sin(Math.max(0.25, Math.abs(shoulderAngle))) * upperLen;
+  const ey = 34 + Math.cos(shoulderAngle) * upperLen;
+  const totalFore = shoulderAngle + elbowAngle;
+  const wx = Math.min(-88, ex - Math.sin(totalFore * 0.5) * foreLen * 0.65);
+  const wy = ey + Math.cos(totalFore * 0.4) * foreLen;
+  return { ex, ey, wx, wy, handAngle: -Math.PI * 0.45 };
 }
 
 function moodMetrics(
@@ -1077,12 +1211,22 @@ export function computeSpeechLipSyncState(
   let prevTargetDir = context?.targetDirection ?? 'none';
 
   if (hasContextTransition && context?.transitionFrom) {
+    const tf = context.transitionFrom;
+    const prevCueMatch = tf.cueText
+      ? cues.find((c) => c.text === tf.cueText)
+      : undefined;
+    const prevCueIdxForCtx = prevCueMatch
+      ? cues.indexOf(prevCueMatch)
+      : activeCueIdx > 0
+        ? prevCueIdx
+        : effectiveCueIdx;
+    const prevCueForCtx = prevCueMatch ?? cues[prevCueIdxForCtx] ?? activeCue;
     prevState = classifyMoodAndGesture(
-      activeCue ?? cues[effectiveCueIdx],
-      effectiveCueIdx,
-      context.transitionFrom,
+      prevCueForCtx,
+      Math.max(0, prevCueIdxForCtx),
+      tf,
     );
-    prevTargetDir = context.transitionFrom.targetDirection ?? 'none';
+    prevTargetDir = tf.targetDirection ?? 'none';
     gestureBlend = clamp01(context.transitionProgress ?? 1);
   } else if (activeCue) {
     prevState =
@@ -1115,15 +1259,22 @@ export function computeSpeechLipSyncState(
     mouthRound = 0;
   }
 
-  const animSpeed = Math.max(0.4, Math.min(2.2, currentState.params.speed || 1));
-  const tAnim = t * animSpeed;
-  const bounceMult = clampRange(currentState.params.bounceIntensity ?? 1, 0, 2);
+  // Keep cyclic phases on continuous clock `t` (never `t * animSpeed`) so action switches never jump phase!
+  const prevSpeed = Math.max(0.4, Math.min(2.2, prevState.params.speed || 1));
+  const currSpeed = Math.max(0.4, Math.min(2.2, currentState.params.speed || 1));
+  const blendedSpeed = lerp(prevSpeed, currSpeed, gestureBlend);
+  const swayGain = 0.8 + 0.2 * blendedSpeed;
+  const bounceMult = clampRange(
+    lerp(prevState.params.bounceIntensity ?? 1, currentState.params.bounceIntensity ?? 1, gestureBlend),
+    0,
+    2,
+  );
 
   const pA = ARM_POSES[prevState.gestureMode] ?? ARM_POSES.present;
   const pB = ARM_POSES[currentState.gestureMode] ?? ARM_POSES.present;
-  const swayA = Math.sin(tAnim * 1.45) * 0.045;
-  const swayB = Math.cos(tAnim * 1.25) * 0.04;
-  const hipSway = Math.sin(tAnim * 1.55) * 14;
+  const swayA = Math.sin(t * 1.45) * 0.045 * swayGain;
+  const swayB = Math.cos(t * 1.25) * 0.04 * swayGain;
+  const hipSway = Math.sin(t * 1.55) * 14;
   const speechActivity = isSpeaking ? clamp01(0.35 + mouthOpen * 0.9) : 0;
 
   const leftShoulderAngle = lerp(pA.leftShoulder, pB.leftShoulder, gestureBlend) + swayA;
@@ -1131,8 +1282,8 @@ export function computeSpeechLipSyncState(
   const rightShoulderAngle = lerp(pA.rightShoulder, pB.rightShoulder, gestureBlend) - swayB * 0.7;
   const rightElbowAngle = lerp(pA.rightElbow, pB.rightElbow, gestureBlend) + swayA * 0.6;
 
-  const armFrom = getRightArmTargetPose(prevState.gestureMode, tAnim, speechActivity, hipSway);
-  const armTo = getRightArmTargetPose(currentState.gestureMode, tAnim, speechActivity, hipSway);
+  const armFrom = getRightArmTargetPose(prevState.gestureMode, t, speechActivity, hipSway);
+  const armTo = getRightArmTargetPose(currentState.gestureMode, t, speechActivity, hipSway);
 
   // Subtle outward arc boost mid-transition so the wrist never slices across the torso/head silhouette
   const arcSwing = Math.sin(Math.PI * clamp01(gestureBlend)) * 24;
@@ -1181,9 +1332,9 @@ export function computeSpeechLipSyncState(
 
   const mood = currentState.mood;
   // Grounded posture: zero whole-body hopping and zero body squash/stretch; express purely via limbs, knees & head
-  const breathY = Math.sin(tAnim * 1.8) * 1.2 * bounceMult;
+  const breathY = Math.sin(t * 1.8) * 1.2 * bounceMult;
   const speakBounceY = isSpeaking
-    ? Math.sin(tAnim * 6.2) * 1.3 * bounceMult * clamp01(mouthOpen * 1.5)
+    ? Math.sin(t * 6.2) * 1.3 * bounceMult * clamp01(mouthOpen * 1.5)
     : 0;
   let headBobY = breathY + speakBounceY;
 
@@ -1191,8 +1342,8 @@ export function computeSpeechLipSyncState(
   const bodySquashY = 1;
 
   const targetDir = context?.targetDirection ?? 'none';
-  const mFrom = moodMetrics(prevState.mood, prevTargetDir, tAnim, isSpeaking, mouthOpen);
-  const mTo = moodMetrics(mood, targetDir, tAnim, isSpeaking, mouthOpen);
+  const mFrom = moodMetrics(prevState.mood, prevTargetDir, t, isSpeaking, mouthOpen);
+  const mTo = moodMetrics(mood, targetDir, t, isSpeaking, mouthOpen);
 
   const headShakeX = lerp(mFrom.headShakeX, mTo.headShakeX, gestureBlend);
   const eyeTargetX = clampRange(lerp(mFrom.eyeTargetX, mTo.eyeTargetX, gestureBlend), -1, 1);
@@ -1200,13 +1351,16 @@ export function computeSpeechLipSyncState(
   const browSlope = lerp(mFrom.browSlope, mTo.browSlope, gestureBlend);
   const smileBias = lerp(mFrom.smileBias, mTo.smileBias, gestureBlend);
   const browLift = lerp(mFrom.browLift, mTo.browLift, gestureBlend);
-  const explicitTiltRad = ((currentState.params.headTiltDeg ?? 0) * Math.PI) / 180;
+  const explicitTiltRad =
+    (lerp(prevState.params.headTiltDeg ?? 0, currentState.params.headTiltDeg ?? 0, gestureBlend) *
+      Math.PI) /
+    180;
   let headTiltRad =
-    Math.sin(tAnim * 0.95) * 0.022 +
+    Math.sin(t * 0.95) * 0.022 +
     lerp(mFrom.headTiltExtra, mTo.headTiltExtra, gestureBlend) +
     explicitTiltRad * 0.7;
 
-  // Keyframe Sequence Evaluation (articulated arm trajectories, grounded knee flexion & head tilt only)
+  // Keyframe Sequence Evaluation (articulated arm trajectories, grounded knee flexion & head tilt)
   let kneeBend = 0;
   const jumpOffsetY = 0;
   let clapImpact = 0;
@@ -1218,85 +1372,131 @@ export function computeSpeechLipSyncState(
   let activeEyeStyle = currentState.params.eyeStyle;
   let activeMouthStyle = currentState.params.mouthStyle;
 
-  const resolvedSequenceKeyframes: CartoonAnimationKeyframe[] | undefined =
-    currentState.params.keyframes && currentState.params.keyframes.length > 0
-      ? currentState.params.keyframes
-      : currentState.gestureMode === 'clap-jump'
-        ? resolveCartoonAnimationForSignal({ actionId: 'clap-jump' }).params.keyframes
-        : undefined;
+  const currKfs = resolveSequenceKeyframesForState(currentState);
+  const prevKfs = hasContextTransition ? resolveSequenceKeyframesForState(prevState) : undefined;
+  const currKfPose =
+    currKfs && currKfs.length > 0
+      ? evaluateKeyframeArmPose(
+          currKfs,
+          currentState.params.sequenceDurationSec ?? 1.5,
+          currentState.params.loopSequence !== false,
+          t * currSpeed,
+        )
+      : undefined;
+  const prevKfPose =
+    prevKfs && prevKfs.length > 0
+      ? evaluateKeyframeArmPose(
+          prevKfs,
+          prevState.params.sequenceDurationSec ?? 1.5,
+          prevState.params.loopSequence !== false,
+          t * prevSpeed,
+        )
+      : undefined;
 
-  if (resolvedSequenceKeyframes && resolvedSequenceKeyframes.length > 0) {
-    const seqDur = Math.max(0.4, currentState.params.sequenceDurationSec ?? 1.5);
-    const shouldLoop = currentState.params.loopSequence !== false;
-    const rawCycle = tAnim / seqDur;
-    const seqPhase = shouldLoop ? rawCycle - Math.floor(rawCycle) : clamp01(rawCycle);
+  if (currKfPose || prevKfPose) {
+    const kfMix = currKfPose && prevKfPose
+      ? gestureBlend
+      : currKfPose
+        ? (hasContextTransition ? gestureBlend : 1)
+        : 1 - gestureBlend;
 
-    const kfs = resolvedSequenceKeyframes;
-    let kfA = kfs[0];
-    let kfB = kfs[kfs.length - 1];
-    let localFrac = 0;
-
-    if (kfs.length === 1) {
-      kfA = kfs[0];
-      kfB = kfs[0];
-    } else if (seqPhase <= kfs[0].at) {
-      kfA = kfs[0];
-      kfB = kfs[1];
-      localFrac = 0;
-    } else if (seqPhase >= kfs[kfs.length - 1].at) {
-      kfA = kfs[kfs.length - 1];
-      kfB = shouldLoop ? kfs[0] : kfs[kfs.length - 1];
-      const wrapSpan = shouldLoop ? Math.max(0.02, 1 - kfA.at + kfB.at) : 1;
-      localFrac = shouldLoop ? smoothstep((seqPhase - kfA.at) / wrapSpan) : 1;
-    } else {
-      for (let ki = 0; ki < kfs.length - 1; ki++) {
-        if (seqPhase >= kfs[ki].at && seqPhase <= kfs[ki + 1].at) {
-          kfA = kfs[ki];
-          kfB = kfs[ki + 1];
-          const span = Math.max(0.01, kfB.at - kfA.at);
-          localFrac = smoothstep((seqPhase - kfA.at) / span);
-          break;
+    if (currKfPose && !prevKfPose && !hasContextTransition) {
+      kneeBend = currKfPose.kneeBend;
+      clapImpact = currKfPose.clapImpact;
+      leftWristX = currKfPose.leftWristX;
+      leftWristY = currKfPose.leftWristY;
+      leftElbowX = currKfPose.leftElbowX;
+      leftElbowY = currKfPose.leftElbowY;
+      leftHandAngleOut = currKfPose.leftHandAngle;
+      rightWristX = currKfPose.rightWristX;
+      rightWristY = currKfPose.rightWristY;
+      rightElbowX = currKfPose.rightElbowX;
+      rightElbowY = currKfPose.rightElbowY;
+      rightHandAngle = currKfPose.rightHandAngle;
+      if (typeof currKfPose.headTiltDeg === 'number') {
+        headTiltRad = (currKfPose.headTiltDeg * Math.PI) / 180;
+      }
+      if (currKfPose.eyeStyle) activeEyeStyle = currKfPose.eyeStyle;
+      if (!isSpeaking && currKfPose.mouthStyle) {
+        activeMouthStyle = currKfPose.mouthStyle;
+        if (currKfPose.mouthStyle === 'big-grin') {
+          mouthOpen = Math.max(mouthOpen, 0.34);
+          mouthWidth = 1.18;
         }
       }
-    }
+      headBobY = speakBounceY;
+    } else {
+      const restLeft = defaultRestingLeftArmCoords(leftShoulderAngle, leftElbowAngle);
+      const fromKnee = prevKfPose?.kneeBend ?? 0;
+      const toKnee = currKfPose?.kneeBend ?? 0;
+      kneeBend = clamp01(lerp(fromKnee, toKnee, gestureBlend));
 
-    kneeBend = clamp01(lerp(kfA.kneeBend ?? 0, kfB.kneeBend ?? 0, localFrac));
-    clapImpact = clamp01(lerp(kfA.clapImpact ?? 0, kfB.clapImpact ?? 0, localFrac));
+      const fromClap = prevKfPose?.clapImpact ?? 0;
+      const toClap = currKfPose?.clapImpact ?? 0;
+      clapImpact = clamp01(lerp(fromClap, toClap, gestureBlend));
 
-    const lwx = lerp(kfA.leftWristX ?? -124, kfB.leftWristX ?? -124, localFrac);
-    const lwy = lerp(kfA.leftWristY ?? 150, kfB.leftWristY ?? 150, localFrac);
-    const rwx = lerp(kfA.rightWristX ?? 124, kfB.rightWristX ?? 124, localFrac);
-    const rwy = lerp(kfA.rightWristY ?? 150, kfB.rightWristY ?? 150, localFrac);
+      const fromLWX = prevKfPose?.leftWristX ?? restLeft.wx;
+      const fromLWY = prevKfPose?.leftWristY ?? restLeft.wy;
+      const fromLEX = prevKfPose?.leftElbowX ?? restLeft.ex;
+      const fromLEY = prevKfPose?.leftElbowY ?? restLeft.ey;
+      const fromLHA = prevKfPose?.leftHandAngle ?? restLeft.handAngle;
 
-    leftWristX = lwx;
-    leftWristY = lwy;
-    // Elbow gracefully tracks outward arc except when hands come inward to touch at center
-    leftElbowX = Math.min(-72, lwx * 0.45 - 92);
-    leftElbowY = lerp(18, lwy, 0.56) + 28;
-    leftHandAngleOut = lerpAngle(kfA.leftHandAngle ?? -Math.PI * 0.5, kfB.leftHandAngle ?? -Math.PI * 0.5, localFrac);
+      const toLWX = currKfPose?.leftWristX ?? restLeft.wx;
+      const toLWY = currKfPose?.leftWristY ?? restLeft.wy;
+      const toLEX = currKfPose?.leftElbowX ?? restLeft.ex;
+      const toLEY = currKfPose?.leftElbowY ?? restLeft.ey;
+      const toLHA = currKfPose?.leftHandAngle ?? restLeft.handAngle;
 
-    rightWristX = rwx;
-    rightWristY = rwy;
-    rightElbowX = Math.max(72, rwx * 0.45 + 92);
-    rightElbowY = lerp(18, rwy, 0.56) + 28;
-    rightHandAngle = lerpAngle(kfA.rightHandAngle ?? -Math.PI * 0.5, kfB.rightHandAngle ?? -Math.PI * 0.5, localFrac);
-
-    if (typeof kfA.headTiltDeg === 'number' || typeof kfB.headTiltDeg === 'number') {
-      headTiltRad = (lerp(kfA.headTiltDeg ?? 0, kfB.headTiltDeg ?? 0, localFrac) * Math.PI) / 180;
-    }
-
-    const activeKf = localFrac < 0.5 ? kfA : kfB;
-    if (activeKf.eyeStyle) activeEyeStyle = activeKf.eyeStyle;
-    // Preserve live lip-sync when speaking, otherwise use keyframe mouth (e.g., big cheer mouth on frame 4)
-    if (!isSpeaking && activeKf.mouthStyle) {
-      activeMouthStyle = activeKf.mouthStyle;
-      if (activeKf.mouthStyle === 'big-grin') {
-        mouthOpen = Math.max(mouthOpen, 0.34);
-        mouthWidth = 1.18;
+      if (kfMix > 0.02) {
+        leftWristX = lerp(fromLWX, toLWX, gestureBlend);
+        leftWristY = lerp(fromLWY, toLWY, gestureBlend);
+        leftElbowX = lerp(fromLEX, toLEX, gestureBlend);
+        leftElbowY = lerp(fromLEY, toLEY, gestureBlend);
+        leftHandAngleOut = lerpAngle(fromLHA, toLHA, gestureBlend);
       }
+
+      const fromRWX = prevKfPose?.rightWristX ?? armFrom.wx;
+      const fromRWY = prevKfPose?.rightWristY ?? armFrom.wy;
+      const fromREX = prevKfPose?.rightElbowX ?? armFrom.ex;
+      const fromREY = prevKfPose?.rightElbowY ?? armFrom.ey;
+      const fromRHA = prevKfPose?.rightHandAngle ?? armFrom.handAngle;
+
+      const toRWX = currKfPose?.rightWristX ?? Math.max(116, armTo.wx);
+      const toRWY = currKfPose?.rightWristY ?? armTo.wy;
+      const toREX = currKfPose?.rightElbowX ?? armTo.ex;
+      const toREY = currKfPose?.rightElbowY ?? armTo.ey;
+      const toRHA = currKfPose?.rightHandAngle ?? armTo.handAngle;
+
+      rightWristX = lerp(fromRWX, toRWX, gestureBlend);
+      rightWristY = lerp(fromRWY, toRWY, gestureBlend);
+      rightElbowX = lerp(fromREX, toREX, gestureBlend);
+      rightElbowY = lerp(fromREY, toREY, gestureBlend);
+      rightHandAngle = lerpAngle(fromRHA, toRHA, gestureBlend);
+
+      const baseTiltDeg = (headTiltRad * 180) / Math.PI;
+      const fromTiltDeg = prevKfPose?.headTiltDeg ?? baseTiltDeg;
+      const toTiltDeg = currKfPose?.headTiltDeg ?? baseTiltDeg;
+      headTiltRad = (lerp(fromTiltDeg, toTiltDeg, gestureBlend) * Math.PI) / 180;
+
+      if (currKfPose) {
+        if (gestureBlend >= 0.45 && currKfPose.eyeStyle) activeEyeStyle = currKfPose.eyeStyle;
+        if (!isSpeaking && gestureBlend >= 0.45 && currKfPose.mouthStyle) {
+          activeMouthStyle = currKfPose.mouthStyle;
+          if (currKfPose.mouthStyle === 'big-grin') {
+            mouthOpen = Math.max(mouthOpen, lerp(0.08, 0.34, gestureBlend));
+            mouthWidth = lerp(1.06, 1.18, gestureBlend);
+          }
+        }
+      }
+      headBobY = lerp(breathY + speakBounceY, speakBounceY, kfMix);
     }
-    headBobY = speakBounceY;
   }
+
+  const blushIntensity = lerp(
+    prevState.params.blushIntensity ?? 0,
+    currentState.params.blushIntensity ?? 0,
+    gestureBlend,
+  );
 
   return {
     isSpeaking,
@@ -1346,7 +1546,7 @@ export function computeSpeechLipSyncState(
     mouthStyle: activeMouthStyle,
     fxOverlay: currentState.params.fxOverlay,
     accessory: currentState.params.accessory,
-    blushIntensity: currentState.params.blushIntensity,
+    blushIntensity: blushIntensity > 0.02 ? blushIntensity : undefined,
     bodySquashX,
     bodySquashY,
   };

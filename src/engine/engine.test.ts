@@ -118,6 +118,7 @@ import {
   detectReelMode,
   getLevelsForLearningLanguage,
   getQuizCardSpeechParts,
+  getReelLocaleStrings,
   inferLearningLangFromCards,
   parseEnglishReelsAiJson,
   recommendCreatorItemCount,
@@ -129,10 +130,13 @@ import {
 import {
   getLocaleForTtsLang,
   isMultilingualVoiceId,
+  normalizeTtsLangCode,
+  pickExplanationDefaultVoice,
   pickVoiceForLangCode,
   sanitizeSpanTextForSpeech,
   splitMixedLanguageTtsSpans,
 } from './bilingualTtsHelper';
+import { generateBatchPromptsForTopics } from './multiTabBatchHelper';
 import {
   compileVisualBuilderToPrimitives,
   createDefaultVisualBuilderConfig,
@@ -4605,6 +4609,164 @@ test('AI prompt builders enforce knowledge depth and target duration as minimum 
   assert.ok(translationPrompt.includes('CHỈ ĐƯỢC DÀI HƠN, KHÔNG THẤP HƠN'));
   assert.ok(translationPrompt.includes('MANDATORY QUALITY & DEPTH'));
 });
+
+test('AI auto itemCount removes fixed 8 requirement and learning explanation resolves target voice & monolingual rules', () => {
+  const autoCreatorJa = buildAiCreatorWebAiPrompt({
+    learningLanguage: 'ja',
+    level: 'N4',
+    durationMinutes: 3,
+    itemCount: 'auto',
+    targetLang: 'learning',
+  });
+  assert.ok(autoCreatorJa.includes('AI TỰ QUYẾT ĐỊNH SỐ LƯỢNG MỤC KIẾN THỨC TỐI ƯU'));
+  assert.ok(autoCreatorJa.includes('"01 / N"'));
+  assert.ok(!autoCreatorJa.includes('8 core teaching items'));
+  assert.ok(!autoCreatorJa.includes('01 / 08'));
+  assert.ok(autoCreatorJa.includes('Monolingual immersion'));
+
+  const autoTransKo = buildTranslationChallengePrompt({
+    learningLanguage: 'ko',
+    level: 'TOPIK 2',
+    durationMinutes: 3,
+    itemCount: 'auto',
+    targetLang: 'learning',
+  });
+  assert.ok(autoTransKo.includes('AI TỰ QUYẾT ĐỊNH SỐ LƯỢNG CÂU PHẢN XẠ TỐI ƯU'));
+  assert.ok(autoTransKo.includes('"indexLabel": "01 / N"'));
+  assert.ok(!autoTransKo.includes('01 / 08'));
+  assert.ok(autoTransKo.includes('monolingual immersion'));
+
+  const sourceLearningAuto = buildEnglishReelsWebAiPrompt({
+    sourceText: 'Could you pass me the salt?',
+    mode: 'vocab',
+    targetLang: 'learning',
+  });
+  assert.ok(/monolingual/i.test(sourceLearningAuto));
+
+  const sourceLearningEn = buildEnglishReelsWebAiPrompt({
+    sourceText: 'Could you pass me the salt?',
+    mode: 'vocab',
+    targetLang: 'learning',
+    learningLanguage: 'en',
+  });
+  assert.ok(sourceLearningEn.includes('English (clear concise English vocabulary'));
+
+  const studioBatchLearning = generateBatchPromptsForTopics({
+    subTab: 'studio',
+    topics: ['Polite Requests'],
+    promptCount: 1,
+    learningLanguage: 'ja',
+    level: 'N4',
+    durationMode: 'fixed',
+    durationMinutes: 2,
+    targetLang: 'learning',
+  })[0]?.promptText || '';
+  assert.ok(studioBatchLearning.includes('giải thích bằng ngôn ngữ muốn học'));
+
+  const zhLocale = getReelLocaleStrings('learning', 'zh');
+  assert.equal(zhLocale.code, 'zh');
+  assert.equal(normalizeTtsLangCode('learning', 'ja'), 'ja');
+  assert.equal(pickExplanationDefaultVoice('learning', 'ja'), 'ja-JP-NanamiNeural');
+  assert.equal(pickExplanationDefaultVoice('learning', 'ko'), 'ko-KR-SunHiNeural');
+  assert.equal(pickExplanationDefaultVoice('learning', 'zh'), 'zh-CN-XiaoxiaoNeural');
+  assert.equal(pickExplanationDefaultVoice('learning', 'en'), 'en-US-JennyNeural');
+});
+
+test('reelCardsToLessonProject honors enableLearningAudio/enableExplanationAudio and keeps cartoon-host steady across transitions', () => {
+  const starter = buildStarterLessonForLanguage('en', 'Tiếng Việt', 'B1');
+  const explOnlyProj = reelCardsToLessonProject(starter.cards, {
+    title: starter.title,
+    compositionId: 'cartoon-host',
+    aspectRatio: '9:16',
+    enableLearningAudio: false,
+    enableExplanationAudio: true,
+  });
+
+  // Top roadmap strip stays continuous without re-entering on subsequent cards, and cards use smooth fade-scale instead of pop-up bounce
+  const stageStrips = explOnlyProj.elements.filter((e) => e.id.startsWith('reel-stage-'));
+  assert.ok(stageStrips.length >= 2);
+  assert.equal(stageStrips[0].enterAnimation, 'fade-scale');
+  assert.equal(stageStrips[1].enterAnimation, 'none');
+
+  const cardEls = explOnlyProj.elements.filter((e) => e.id.startsWith('reel-card-'));
+  assert.ok(cardEls.length >= 2);
+  assert.ok(cardEls.every((el) => el.enterAnimation !== 'pop-up'));
+
+  // Cartoon host remains anchored at invariant layout coordinates before, inside, and after a 0.08s card gap
+  const hostEl = explOnlyProj.elements.find((e) => e.id.includes('cartoon-host'))!;
+  assert.ok(hostEl);
+  const firstCardEnd = cardEls[0].endTime;
+  const gapMidTime = firstCardEnd + 0.04;
+  const secondCardStart = cardEls[1].startTime + 0.05;
+  const layoutBeforeGap = resolveElementLayoutForAspect(
+    explOnlyProj.elements,
+    Math.max(0.1, firstCardEnd - 0.05),
+    '9:16',
+    explOnlyProj.subtitleConfig,
+    'cartoon-host',
+  ).get(hostEl.id)!;
+  const layoutInGap = resolveElementLayoutForAspect(
+    explOnlyProj.elements,
+    gapMidTime,
+    '9:16',
+    explOnlyProj.subtitleConfig,
+    'cartoon-host',
+  ).get(hostEl.id)!;
+  const layoutAfterGap = resolveElementLayoutForAspect(
+    explOnlyProj.elements,
+    secondCardStart,
+    '9:16',
+    explOnlyProj.subtitleConfig,
+    'cartoon-host',
+  ).get(hostEl.id)!;
+  assert.equal(layoutBeforeGap.y, layoutInGap.y);
+  assert.equal(layoutInGap.y, layoutAfterGap.y);
+  assert.equal(layoutBeforeGap.x, layoutInGap.x);
+  assert.equal(layoutInGap.x, layoutAfterGap.x);
+
+  // Translation cues respect enableLearningAudio=false (0 repeat cues) and enableExplanationAudio=false (0 nuance cues)
+  const trDeck = buildTranslationCardsFromInput({
+    learningLanguage: 'en',
+    level: 'B1',
+    itemCount: 3,
+    targetLang: 'Tiếng Việt',
+    thinkSec: 3,
+    repeatCount: 2,
+    includeNuanceTip: true,
+  });
+  const trExplOnly = reelCardsToLessonProject(trDeck.cards, {
+    title: trDeck.title,
+    enableLearningAudio: false,
+    enableExplanationAudio: true,
+  });
+  assert.equal(
+    trExplOnly.cues.some((c) => /-r\d+$/.test(c.id)),
+    false,
+    'Should emit zero repeat cues when learning audio is OFF',
+  );
+  assert.equal(
+    trExplOnly.cues.some((c) => /-n$/.test(c.id)),
+    true,
+    'Should keep nuance cue when explanation audio is ON',
+  );
+
+  const trLearningOnly = reelCardsToLessonProject(trDeck.cards, {
+    title: trDeck.title,
+    enableLearningAudio: true,
+    enableExplanationAudio: false,
+  });
+  assert.equal(
+    trLearningOnly.cues.some((c) => /-r\d+$/.test(c.id)),
+    true,
+    'Should keep repeat cues when learning audio is ON',
+  );
+  assert.equal(
+    trLearningOnly.cues.some((c) => /-n$/.test(c.id)),
+    false,
+    'Should omit nuance cue when explanation audio is OFF',
+  );
+});
+
 
 
 

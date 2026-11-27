@@ -247,6 +247,237 @@ function enforceNonOverlappingResolvedLayouts(
   return layoutMap;
 }
 
+function collectSampleTimesForCartoonSlices(elements: SceneElement[]): number[] {
+  const times = new Set<number>();
+  for (const el of elements) {
+    if (el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host') continue;
+    if (el.type === 'karaoke-card') continue;
+    const mid = Number(((el.startTime + el.endTime) * 0.5).toFixed(3));
+    if (Number.isFinite(mid) && mid >= 0) times.add(mid);
+  }
+  return Array.from(times);
+}
+
+function computeStackBottom916ForSlice(
+  slice: SceneElement[],
+  isTopSub: boolean,
+  outMap?: Map<string, ElementLayout>,
+): number {
+  const hasTopStrip = slice.some(
+    (el) => el.type === 'comparison-strip' && el.layout.y < 900 && !el.id.includes('-quiz-opts-'),
+  );
+  let stackBottom = isTopSub ? 375 : 212;
+
+  const stripEl = slice.find(
+    (el) => el.type === 'comparison-strip' && el.layout.y < 900 && !el.id.includes('-quiz-opts-'),
+  );
+  if (stripEl) {
+    const stripY = stripEl.layout.manualPosition
+      ? stripEl.layout.y
+      : isTopSub
+        ? Math.max(stripEl.layout.y, 380)
+        : Math.max(stripEl.layout.y, 252);
+    const stripScale = stripEl.layout.manualPosition
+      ? stripEl.layout.scale || 1
+      : Math.min(stripEl.layout.scale || 1, 0.9);
+    const stripExt = estimateElementHalfExtents({
+      ...stripEl,
+      layout: { ...stripEl.layout, scale: stripScale },
+    });
+    if (outMap) outMap.set(stripEl.id, { ...stripEl.layout, y: stripY, scale: stripScale });
+    stackBottom = Math.max(stackBottom, stripY + stripExt.halfH);
+  }
+
+  const pillEl = slice.find((el) => el.type === 'topic-pill' && el.layout.y < 520);
+  if (pillEl) {
+    const pillScale = pillEl.layout.manualPosition
+      ? pillEl.layout.scale || 1
+      : Math.min(pillEl.layout.scale || 1, 0.92);
+    const pillExt = estimateElementHalfExtents({
+      ...pillEl,
+      layout: { ...pillEl.layout, scale: pillScale },
+    });
+    const preferredPillY = isTopSub
+      ? Math.max(pillEl.layout.y, 455)
+      : hasTopStrip
+        ? Math.max(pillEl.layout.y, 350)
+        : Math.max(pillEl.layout.y, 258);
+    const pillY = pillEl.layout.manualPosition
+      ? pillEl.layout.y
+      : Math.max(preferredPillY, stackBottom + 18 + pillExt.halfH);
+    if (outMap) outMap.set(pillEl.id, { ...pillEl.layout, y: pillY, scale: pillScale });
+    stackBottom = Math.max(stackBottom, pillY + pillExt.halfH);
+  }
+
+  for (const cardEl of slice.filter((el) => el.type === 'sentence-card')) {
+    if (cardEl.layout.manualPosition) {
+      const mExt = estimateElementHalfExtents(cardEl);
+      if (outMap) outMap.set(cardEl.id, cardEl.layout);
+      stackBottom = Math.max(stackBottom, cardEl.layout.y + mExt.halfH);
+      continue;
+    }
+    const cardScale = Math.min(cardEl.layout.scale || 1, 0.9);
+    const cardWidth = Math.min(860, cardEl.layout.width || 860);
+    const cardExt = estimateElementHalfExtents({
+      ...cardEl,
+      layout: { ...cardEl.layout, width: cardWidth, scale: cardScale },
+    });
+    const cardY = Math.max(
+      isTopSub ? 580 : hasTopStrip ? 495 : 425,
+      stackBottom + 22 + cardExt.halfH,
+    );
+    if (outMap) {
+      outMap.set(cardEl.id, { ...cardEl.layout, y: cardY, width: cardWidth, scale: cardScale });
+    }
+    stackBottom = Math.max(stackBottom, cardY + cardExt.halfH);
+  }
+
+  for (const lowerEl of slice.filter(
+    (el) =>
+      el.type === 'tone-meter' ||
+      (el.type === 'comparison-strip' && (el.id.includes('-quiz-opts-') || el.layout.y >= 900)) ||
+      el.id.includes('-q-countdown-meter-') ||
+      el.id.includes('-tr-q-countdown-meter-'),
+  )) {
+    if (lowerEl.layout.manualPosition) {
+      const mExt = estimateElementHalfExtents(lowerEl);
+      if (outMap) outMap.set(lowerEl.id, lowerEl.layout);
+      stackBottom = Math.max(stackBottom, lowerEl.layout.y + mExt.halfH);
+      continue;
+    }
+    const isMeter = lowerEl.type === 'tone-meter';
+    const meterScale = isMeter ? Math.min(lowerEl.layout.scale || 0.78, 0.78) : Math.min(lowerEl.layout.scale || 0.76, 0.76);
+    const meterWidth = isMeter ? 700 : Math.min(860, lowerEl.layout.width || 860);
+    const meterExt = estimateElementHalfExtents({
+      ...lowerEl,
+      layout: { ...lowerEl.layout, width: meterWidth, scale: meterScale },
+    });
+    const meterY = Math.max(
+      isTopSub ? 780 : 625,
+      stackBottom + 28 + meterExt.halfH,
+    );
+    if (outMap) {
+      outMap.set(lowerEl.id, {
+        ...lowerEl.layout,
+        x: 540,
+        y: meterY,
+        width: meterWidth,
+        scale: meterScale,
+      });
+    }
+    stackBottom = Math.max(stackBottom, meterY + meterExt.halfH);
+  }
+
+  return stackBottom;
+}
+
+function computeStackBottom45ForSlice(
+  slice: SceneElement[],
+  hasTopSubCollision: boolean,
+  outMap?: Map<string, ElementLayout>,
+): number {
+  const isQuizOpt = (el: SceneElement): boolean =>
+    el.type === 'comparison-strip' && (el.id.includes('-quiz-opts-') || el.layout.y >= 900);
+  const isCountdown = (el: SceneElement): boolean =>
+    el.id.includes('-q-countdown-meter-') || el.id.includes('-tr-q-countdown-meter-');
+  const isPill = (el: SceneElement): boolean =>
+    (el.type === 'topic-pill' && el.layout.y < 520) ||
+    (el.type === 'shape-3d' &&
+      el.props.kind === 'shape-3d' &&
+      el.props.shapeType === 'pill_3d' &&
+      el.layout.y < 420);
+
+  const hasTopStrip = slice.some((el) => el.type === 'comparison-strip' && !isQuizOpt(el));
+  let stackBottom = hasTopSubCollision ? 320 : 178;
+
+  const stripEl = slice.find((el) => el.type === 'comparison-strip' && !isQuizOpt(el));
+  if (stripEl) {
+    const sy = stripEl.layout.manualPosition
+      ? stripEl.layout.y
+      : hasTopSubCollision
+        ? 365
+        : 218;
+    if (outMap) {
+      outMap.set(
+        stripEl.id,
+        stripEl.layout.manualPosition
+          ? stripEl.layout
+          : { ...stripEl.layout, x: 540, y: sy, width: 880, scale: 0.84 },
+      );
+    }
+    stackBottom = Math.max(stackBottom, sy + 52);
+  }
+
+  const pillEl = slice.find(isPill);
+  if (pillEl) {
+    if (pillEl.layout.manualPosition) {
+      if (outMap) outMap.set(pillEl.id, pillEl.layout);
+      stackBottom = Math.max(stackBottom, pillEl.layout.y + estimateElementHalfExtents(pillEl).halfH);
+    } else {
+      const pillExt = estimateElementHalfExtents({
+        ...pillEl,
+        layout: { ...pillEl.layout, width: 620, scale: 0.84 },
+      });
+      const py = Math.max(
+        hasTopSubCollision ? (hasTopStrip ? 445 : 365) : hasTopStrip ? 298 : 226,
+        stackBottom + 16 + pillExt.halfH,
+      );
+      if (outMap) outMap.set(pillEl.id, { ...pillEl.layout, x: 540, y: py, width: 620, scale: 0.84 });
+      stackBottom = Math.max(stackBottom, py + pillExt.halfH);
+    }
+  }
+
+  for (const cardEl of slice.filter((el) => el.type === 'sentence-card')) {
+    if (cardEl.layout.manualPosition) {
+      if (outMap) outMap.set(cardEl.id, cardEl.layout);
+      stackBottom = Math.max(stackBottom, cardEl.layout.y + estimateElementHalfExtents(cardEl).halfH);
+      continue;
+    }
+    const cardExt = estimateElementHalfExtents({
+      ...cardEl,
+      layout: { ...cardEl.layout, width: 820, scale: 0.8 },
+    });
+    const cy = Math.max(hasTopSubCollision ? 565 : hasTopStrip ? 425 : 365, stackBottom + 18 + cardExt.halfH);
+    if (outMap) outMap.set(cardEl.id, { ...cardEl.layout, x: 540, y: cy, width: 820, scale: 0.8 });
+    stackBottom = Math.max(stackBottom, cy + cardExt.halfH);
+  }
+
+  for (const lowerEl of slice.filter((el) => el.type === 'tone-meter' || isQuizOpt(el) || isCountdown(el))) {
+    if (lowerEl.layout.manualPosition) {
+      if (outMap) outMap.set(lowerEl.id, lowerEl.layout);
+      stackBottom = Math.max(stackBottom, lowerEl.layout.y + estimateElementHalfExtents(lowerEl).halfH);
+      continue;
+    }
+    const lowerExt = estimateElementHalfExtents({
+      ...lowerEl,
+      layout: { ...lowerEl.layout, width: 780, scale: 0.72 },
+    });
+    const ly = Math.max(hasTopSubCollision ? 710 : 555, stackBottom + 20 + lowerExt.halfH);
+    if (outMap) outMap.set(lowerEl.id, { ...lowerEl.layout, x: 540, y: ly, width: 780, scale: 0.72 });
+    stackBottom = Math.max(stackBottom, ly + lowerExt.halfH);
+  }
+
+  return stackBottom;
+}
+
+function computeStableProjectCartoonStackBottom(
+  elements: SceneElement[],
+  aspectRatio: '9:16' | '4:5',
+  isTopSub: boolean,
+): number {
+  const sampleTimes = collectSampleTimesForCartoonSlices(elements);
+  let maxBottom = aspectRatio === '9:16' ? (isTopSub ? 375 : 212) : isTopSub ? 320 : 178;
+  for (const st of sampleTimes) {
+    const slice = elements.filter((el) => st >= el.startTime - 0.01 && st <= el.endTime + 0.01);
+    const sb =
+      aspectRatio === '9:16'
+        ? computeStackBottom916ForSlice(slice, isTopSub)
+        : computeStackBottom45ForSlice(slice, isTopSub);
+    if (sb > maxBottom) maxBottom = sb;
+  }
+  return maxBottom;
+}
+
 export function resolveElementLayoutForAspect(
   elements: SceneElement[],
   time: number,
@@ -272,99 +503,14 @@ export function resolveElementLayoutForAspect(
       (el) => el.type === 'comparison-strip' && el.layout.y < 900 && !el.id.includes('-quiz-opts-'),
     );
     const isTopSub916 = explicitPos === 'top';
-    let cartoonStackBottom916 = isTopSub916 ? 375 : 212;
-
-    if (isCartoonHostProject) {
-      const stripEl916 = visible916.find(
-        (el) => el.type === 'comparison-strip' && el.layout.y < 900 && !el.id.includes('-quiz-opts-'),
-      );
-      if (stripEl916) {
-        const stripY = stripEl916.layout.manualPosition
-          ? stripEl916.layout.y
-          : isTopSub916
-            ? Math.max(stripEl916.layout.y, 380)
-            : Math.max(stripEl916.layout.y, 252);
-        const stripScale = stripEl916.layout.manualPosition
-          ? stripEl916.layout.scale || 1
-          : Math.min(stripEl916.layout.scale || 1, 0.9);
-        const stripExt = estimateElementHalfExtents({
-          ...stripEl916,
-          layout: { ...stripEl916.layout, scale: stripScale },
-        });
-        out.set(stripEl916.id, { ...stripEl916.layout, y: stripY, scale: stripScale });
-        cartoonStackBottom916 = Math.max(cartoonStackBottom916, stripY + stripExt.halfH);
-      }
-
-      const pillEl916 = visible916.find((el) => el.type === 'topic-pill' && el.layout.y < 520);
-      if (pillEl916) {
-        const pillScale = pillEl916.layout.manualPosition
-          ? pillEl916.layout.scale || 1
-          : Math.min(pillEl916.layout.scale || 1, 0.92);
-        const pillExt = estimateElementHalfExtents({
-          ...pillEl916,
-          layout: { ...pillEl916.layout, scale: pillScale },
-        });
-        const preferredPillY = isTopSub916
-          ? Math.max(pillEl916.layout.y, 455)
-          : hasTopStrip916
-            ? Math.max(pillEl916.layout.y, 350)
-            : Math.max(pillEl916.layout.y, 258);
-        const pillY = pillEl916.layout.manualPosition
-          ? pillEl916.layout.y
-          : Math.max(preferredPillY, cartoonStackBottom916 + 18 + pillExt.halfH);
-        out.set(pillEl916.id, { ...pillEl916.layout, y: pillY, scale: pillScale });
-        cartoonStackBottom916 = Math.max(cartoonStackBottom916, pillY + pillExt.halfH);
-      }
-
-      const cardEls916 = visible916.filter((el) => el.type === 'sentence-card');
-      for (const cardEl of cardEls916) {
-        if (cardEl.layout.manualPosition) {
-          const mExt = estimateElementHalfExtents(cardEl);
-          out.set(cardEl.id, cardEl.layout);
-          cartoonStackBottom916 = Math.max(cartoonStackBottom916, cardEl.layout.y + mExt.halfH);
-          continue;
-        }
-        const cardScale = Math.min(cardEl.layout.scale || 1, 0.9);
-        const cardWidth = Math.min(860, cardEl.layout.width || 860);
-        const cardExt = estimateElementHalfExtents({
-          ...cardEl,
-          layout: { ...cardEl.layout, width: cardWidth, scale: cardScale },
-        });
-        const cardY = Math.max(
-          isTopSub916 ? 580 : hasTopStrip916 ? 495 : 425,
-          cartoonStackBottom916 + 22 + cardExt.halfH,
-        );
-        out.set(cardEl.id, { ...cardEl.layout, y: cardY, width: cardWidth, scale: cardScale });
-        cartoonStackBottom916 = Math.max(cartoonStackBottom916, cardY + cardExt.halfH);
-      }
-
-      const meterEls916 = visible916.filter((el) => el.type === 'tone-meter');
-      for (const meterEl of meterEls916) {
-        if (meterEl.layout.manualPosition) {
-          const mExt = estimateElementHalfExtents(meterEl);
-          out.set(meterEl.id, meterEl.layout);
-          cartoonStackBottom916 = Math.max(cartoonStackBottom916, meterEl.layout.y + mExt.halfH);
-          continue;
-        }
-        const meterScale = Math.min(meterEl.layout.scale || 0.78, 0.78);
-        const meterExt = estimateElementHalfExtents({
-          ...meterEl,
-          layout: { ...meterEl.layout, width: 700, scale: meterScale },
-        });
-        const meterY = Math.max(
-          isTopSub916 ? 780 : 625,
-          cartoonStackBottom916 + 28 + meterExt.halfH,
-        );
-        out.set(meterEl.id, {
-          ...meterEl.layout,
-          x: 540,
-          y: meterY,
-          width: 700,
-          scale: meterScale,
-        });
-        cartoonStackBottom916 = Math.max(cartoonStackBottom916, meterY + meterExt.halfH);
-      }
-    }
+    const cartoonStackBottom916 = isCartoonHostProject
+      ? computeStackBottom916ForSlice(visible916, isTopSub916, out)
+      : isTopSub916
+        ? 375
+        : 212;
+    const stableHostStackBottom916 = isCartoonHostProject
+      ? computeStableProjectCartoonStackBottom(elements, '9:16', isTopSub916)
+      : cartoonStackBottom916;
 
     for (const el of elements) {
       if (el.layout.manualPosition) {
@@ -435,19 +581,20 @@ export function resolveElementLayoutForAspect(
           continue;
         }
         if (el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host') {
+          // Project-wide invariant anchor keeps Gimmy rock-steady across every card & transition gap
           let hostScale = Math.min(el.layout.scale || 0.92, 0.92);
           const maxHostBottom = isTopSub ? 1810 : 1482;
           const halfHBase = 335;
           let hostY = Math.max(
             isTopSub ? 1155 : 1105,
-            cartoonStackBottom916 + 24 + Math.round(halfHBase * hostScale),
+            stableHostStackBottom916 + 24 + Math.round(halfHBase * hostScale),
           );
           if (hostY + Math.round(346 * hostScale) > maxHostBottom) {
-            const avail = Math.max(440, maxHostBottom - (cartoonStackBottom916 + 24));
+            const avail = Math.max(440, maxHostBottom - (stableHostStackBottom916 + 24));
             hostScale = Math.max(0.68, Math.min(hostScale, Number((avail / (halfHBase + 346)).toFixed(3))));
             hostY = Math.max(
               isTopSub ? 1155 : 1105,
-              cartoonStackBottom916 + 22 + Math.round(halfHBase * hostScale),
+              stableHostStackBottom916 + 22 + Math.round(halfHBase * hostScale),
             );
             hostY = Math.min(hostY, maxHostBottom - Math.round(346 * hostScale));
           }
@@ -502,68 +649,22 @@ export function resolveElementLayoutForAspect(
   const hasTopSubCollision = explicitPos === 'top';
 
   if (isCartoonHostProject && (aspectRatio === '1:1' || aspectRatio === '4:5')) {
-    const hasLowerRight = midQuizOpts.length > 0 || midMeters.length > 0 || visible.some((v) => v.type === 'tone-meter');
-    const hasCompanion =
-      midCards.length > 0 || midQuizOpts.length > 0 || midMeters.length > 0 || hasTopStrip || visible.some(isTopPill);
+    const projectHasLowerRight = elements.some(
+      (v) => v.type === 'tone-meter' || isQuizOptStrip(v) || isCountdownMeter(v),
+    );
+    const projectHasCompanion = elements.some(
+      (v) =>
+        isRightFocal(v) ||
+        isQuizOptStrip(v) ||
+        isCountdownMeter(v) ||
+        (v.type === 'comparison-strip' && v.layout.y < 900 && !v.id.includes('-quiz-opts-')) ||
+        isTopPill(v),
+    );
 
     if (aspectRatio === '4:5') {
       // 1080 x 1350: Clean stacked responsive vertical layout (Header -> Strip -> Pill -> Card -> Meter -> Gimmy -> Karaoke)
-      let stackBottom45 = hasTopSubCollision ? 320 : 178;
-      const stripEl45 = visible.find((el) => el.type === 'comparison-strip' && !isQuizOptStrip(el));
-      if (stripEl45) {
-        const sy = stripEl45.layout.manualPosition
-          ? stripEl45.layout.y
-          : hasTopSubCollision
-            ? 365
-            : 218;
-        out.set(
-          stripEl45.id,
-          stripEl45.layout.manualPosition
-            ? stripEl45.layout
-            : { ...stripEl45.layout, x: 540, y: sy, width: 880, scale: 0.84 },
-        );
-        stackBottom45 = Math.max(stackBottom45, sy + 52);
-      }
-      const pillEl45 = visible.find(isTopPill);
-      if (pillEl45) {
-        if (pillEl45.layout.manualPosition) {
-          out.set(pillEl45.id, pillEl45.layout);
-        } else {
-          const pillExt = estimateElementHalfExtents({
-            ...pillEl45,
-            layout: { ...pillEl45.layout, width: 620, scale: 0.84 },
-          });
-          const py = Math.max(hasTopSubCollision ? (hasTopStrip ? 445 : 365) : hasTopStrip ? 298 : 226, stackBottom45 + 16 + pillExt.halfH);
-          out.set(pillEl45.id, { ...pillEl45.layout, x: 540, y: py, width: 620, scale: 0.84 });
-          stackBottom45 = Math.max(stackBottom45, py + pillExt.halfH);
-        }
-      }
-      for (const cardEl45 of visible.filter((el) => el.type === 'sentence-card')) {
-        if (cardEl45.layout.manualPosition) {
-          out.set(cardEl45.id, cardEl45.layout);
-          continue;
-        }
-        const cardExt = estimateElementHalfExtents({
-          ...cardEl45,
-          layout: { ...cardEl45.layout, width: 820, scale: 0.8 },
-        });
-        const cy = Math.max(hasTopSubCollision ? 565 : hasTopStrip ? 425 : 365, stackBottom45 + 18 + cardExt.halfH);
-        out.set(cardEl45.id, { ...cardEl45.layout, x: 540, y: cy, width: 820, scale: 0.8 });
-        stackBottom45 = Math.max(stackBottom45, cy + cardExt.halfH);
-      }
-      for (const lowerEl45 of visible.filter((el) => el.type === 'tone-meter' || isQuizOptStrip(el) || isCountdownMeter(el))) {
-        if (lowerEl45.layout.manualPosition) {
-          out.set(lowerEl45.id, lowerEl45.layout);
-          continue;
-        }
-        const lowerExt = estimateElementHalfExtents({
-          ...lowerEl45,
-          layout: { ...lowerEl45.layout, width: 780, scale: 0.72 },
-        });
-        const ly = Math.max(hasTopSubCollision ? 710 : 555, stackBottom45 + 20 + lowerExt.halfH);
-        out.set(lowerEl45.id, { ...lowerEl45.layout, x: 540, y: ly, width: 780, scale: 0.72 });
-        stackBottom45 = Math.max(stackBottom45, ly + lowerExt.halfH);
-      }
+      const stackBottom45 = computeStackBottom45ForSlice(visible, hasTopSubCollision, out);
+      const stableHostStackBottom45 = computeStableProjectCartoonStackBottom(elements, '4:5', hasTopSubCollision);
 
       for (const el of elements) {
         if (el.layout.manualPosition) {
@@ -622,25 +723,26 @@ export function resolveElementLayoutForAspect(
           continue;
         }
         if (isCartoonHostEl(el)) {
-          let hScale = hasLowerRight ? 0.66 : 0.72;
+          // Project-wide invariant anchor keeps Gimmy rock-steady across every card & transition gap
+          let hScale = projectHasLowerRight ? 0.66 : 0.72;
           const maxB = hasTopSubCollision ? 1270 : 1065;
           const halfHBase = 335;
           const footBase = 346;
           let hy = Math.max(
-            hasTopSubCollision ? 920 : hasLowerRight ? 835 : 795,
-            stackBottom45 + 18 + Math.round(halfHBase * hScale),
+            hasTopSubCollision ? 920 : projectHasLowerRight ? 835 : 795,
+            stableHostStackBottom45 + 18 + Math.round(halfHBase * hScale),
           );
           if (hy + Math.round(footBase * hScale) > maxB) {
-            const avail = Math.max(300, maxB - (stackBottom45 + 16));
+            const avail = Math.max(300, maxB - (stableHostStackBottom45 + 16));
             hScale = Math.max(
               0.44,
               Math.min(hScale, Number((avail / (halfHBase + footBase)).toFixed(3))),
             );
             hy = Math.max(
-              stackBottom45 + 16 + Math.round(halfHBase * hScale),
+              stableHostStackBottom45 + 16 + Math.round(halfHBase * hScale),
               Math.min(
                 maxB - Math.round(footBase * hScale),
-                stackBottom45 + 18 + Math.round(halfHBase * hScale),
+                stableHostStackBottom45 + 18 + Math.round(halfHBase * hScale),
               ),
             );
           }
@@ -665,6 +767,7 @@ export function resolveElementLayoutForAspect(
     }
 
     // 1:1 Square (1080 x 1080): Two-column split (Gimmy left pointing right, cards right)
+    const hasLowerRight = midQuizOpts.length > 0 || midMeters.length > 0 || visible.some((v) => v.type === 'tone-meter');
     for (const el of elements) {
       if (el.layout.manualPosition) {
         out.set(el.id, el.layout);
@@ -723,10 +826,10 @@ export function resolveElementLayoutForAspect(
       if (isCartoonHostEl(el)) {
         out.set(el.id, {
           ...el.layout,
-          x: hasCompanion ? 280 : 540,
+          x: projectHasCompanion ? 280 : 540,
           y: hasTopSubCollision ? 595 : 550,
           width: 680,
-          scale: hasCompanion ? 0.65 : 0.74,
+          scale: projectHasCompanion ? 0.65 : 0.74,
         });
         continue;
       }
@@ -777,12 +880,15 @@ export function resolveElementLayoutForAspect(
     const hasQuiz = midQuizOpts.length > 0;
     const hasLowerRight =
       hasQuiz || midMeters.length > 0 || visible.some((v) => v.type === 'tone-meter');
-    const hasRightColumn =
-      hasTopStrip ||
-      visible.some(isTopPill) ||
-      midCards.length > 0 ||
-      hasLowerRight ||
-      midVisuals.some((v) => !isCartoonHostEl(v));
+    const projectHasRightColumn = elements.some(
+      (v) =>
+        (v.type === 'comparison-strip' && v.layout.y < 900 && !v.id.includes('-quiz-opts-')) ||
+        isTopPill(v) ||
+        isRightFocal(v) ||
+        isQuizOptStrip(v) ||
+        isCountdownMeter(v) ||
+        (isLeftVisual(v) && !isCartoonHostEl(v)),
+    );
 
     for (const el of elements) {
       if (el.layout.manualPosition) {
@@ -805,7 +911,7 @@ export function resolveElementLayoutForAspect(
       if (isCartoonHostEl(el)) {
         out.set(el.id, {
           ...el.layout,
-          x: hasRightColumn ? 455 : 960,
+          x: projectHasRightColumn ? 455 : 960,
           y: hasTopSubCollision ? 595 : 562,
           width: 780,
           scale: 0.78,
