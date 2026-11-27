@@ -1,5 +1,6 @@
 import { TYPOGRAPHY_MOBILE_READABILITY_PROMPT_BLOCK } from './englishReelsEngine';
 import { LAYOUT_COMPOSITIONS } from './illustrationLayouts';
+import { formatAudienceLevelLabel } from './outputNaming';
 import { buildSourceSegmentsFromCues, clampCuesToAudioDuration } from './storyboardV19';
 import { formatTimeToken } from './transcriptParser';
 import {
@@ -23,6 +24,8 @@ export function buildSceneGenerationPrompt(
     customConfig?: CustomComponentPresetConfig;
     audioDurationSec?: number | null;
     targetDurationMinutes?: number;
+    level?: string;
+    learningLanguage?: string;
   },
 ): string {
   const style = options?.style ?? 'tiktok-cards';
@@ -93,7 +96,7 @@ export function buildSceneGenerationPrompt(
     styleGuide = `PHONG CÁCH NHÂN VẬT HOẠT HÌNH LIP-SYNC (@Gimmys — Nền trời xanh & Thẻ tương tác):
 - BẮT BUỘC đặt \`"compositionId": "cartoon-host"\` ở JSON gốc và \`"composition": "cartoon-host"\` trên từng scene.
 - Đặt \`"theme": "${options?.theme ?? 'pastel-sunrise'}"\`.
-- **TIÊU ĐỀ BÀI HỌC (\`"title"\`) NGẮN GỌN ĐÚNG NGÔN NGỮ NGƯỜI HỌC**: Tối đa 6–10 từ mang tính câu hỏi gợi tò mò (VD: \`"水が欲しい時、CanとCouldどっち？"\` hoặc \`"Bạn đã biết phân biệt 3 từ này chưa?"\`). Tuyệt đối KHÔNG ghi chú thích kỹ thuật kiểu \`(Transcript ... 1:42)\`.
+- **TIÊU ĐỀ BÀI HỌC (\`"title"\`) NGẮN GỌN, RÕ LEVEL & CHỦ ĐỀ TÁCH BẰNG \`|\`**: Đặt theo mẫu \`"<Level> | <Chủ đề ngắn gọn súc tích>"\` (VD: \`"B1 | Cách gọi nước lịch sự"\` hoặc \`"N4 | CanとCouldの使い分け"\`). Tuyệt đối KHÔNG ghi chú thích kỹ thuật kiểu \`(Transcript ... 1:42)\`.
 - **KHÔNG TẠO BONG BÓNG THOẠI LẶP LẠI CÂU NÓI**: App đã có phụ đề vàng nổi bật bên dưới và nhân vật Gimmy tự nhép miệng từng âm tiết.
 - **ĐIỀU KHIỂN HÀNH ĐỘNG & BIỂU CẢM NHÂN VẬT @GIMMYS TRÊN TỪNG SCENE**:
   + Mỗi scene có thể gắn \`"cartoonAction": "<actionId>"\` và/hoặc \`"cartoonMood": "excited|happy|curious|warning|neutral|proud|thinking|surprised|celebrate|shy"\` hoặc sáng tạo thông số riêng qua \`"cartoonAnimationSpec"\`!
@@ -209,7 +212,7 @@ ${audioDiagLine}${durationBudgetLine ? `\n${durationBudgetLine}` : ''}
 
 ## STAGE 3 — MOTION GRAPHICS DIRECTOR (TỌA ĐỘ 0..1 & ĐỒNG BỘ \`sync_anchor\`)
 ### ${styleGuide}
-Tiêu đề bài học: "${options?.title || 'Language Lesson'}"
+Tiêu đề bài học (đặt thật hay, gợi tò mò ở trước và trình độ dành cho ai bằng đúng ngôn ngữ học ở sau dấu \`|\`, CẤM đặt tên phẳng khô khan): "${options?.title || `It started with one small favor… and changed everything | ${formatAudienceLevelLabel(options?.level || 'B1', options?.learningLanguage)}`}"
 
 ### Hệ tọa độ chuẩn hóa 0..1 (Top-Left Origin, CHỐNG CHỒNG HÌNH)
 Mỗi element dùng \`position: { "x": 0..1, "y": 0..1, "width": 0..1, "height": 0..1 }\` tính từ góc **trên-trái**:
@@ -379,7 +382,7 @@ ${
 }`
     : `{
   "schema_version": "1.9",
-  "title": "${options?.title || '【Đừng nói sai nữa!】Cách mở lời tự nhiên nhất'}",
+  "title": "${options?.title || `It started with one small favor… and changed everything | ${formatAudienceLevelLabel(options?.level || 'B1', options?.learningLanguage)}`}",
   "theme": "${resolvedTemplateTheme}",
   "compositionId": "${aiDecideComposition ? 'story-scenes' : compMeta?.id || 'story-scenes'}",
   "compositionReason": "<1 câu ngắn nêu đúng mô típ bài học>",

@@ -28,7 +28,7 @@ import {
   STUDIO_BGM_PRESETS,
   StudioBgmPresetId,
 } from '../engine/audioMixHelper';
-import { cleanOutputTitleStem } from '../engine/outputNaming';
+import { buildLeveledOutputStem } from '../engine/outputNaming';
 import { downloadTextAsPlainFile } from '../utils/safeFileDownload';
 import {
   VideoDescriptionOutput,
@@ -1820,7 +1820,10 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      const stem = cleanOutputTitleStem(project.title || project.id, 'Studio Video');
+                      const stem = buildLeveledOutputStem({
+                        title: project.title || project.id,
+                        fallback: 'Studio Video',
+                      });
                       downloadTextAsPlainFile(descriptionOutput.txtContent, `${stem}.txt`);
                     }}
                     className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold bg-indigo-50 border border-indigo-200 text-indigo-700 rounded hover:bg-indigo-100"

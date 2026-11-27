@@ -13,7 +13,11 @@ import {
   ReelCardTimingMeta,
 } from './englishReelsEngine';
 import type { ExportAspectRatioId } from './mp4Config';
-import { cleanDownloadFileName, cleanOutputTitleStem } from './outputNaming';
+import {
+  buildLeveledOutputStem,
+  cleanDownloadFileName,
+  cleanOutputTitleStem,
+} from './outputNaming';
 import {
   buildReadingWebAiPrompt,
   parseReadingWebAiResponse,
@@ -28,6 +32,7 @@ export type BatchSubTabId = 'studio' | 'creator' | 'translation' | 'reading';
 export interface ParsedCreatorBatchPayload {
   subTab: 'creator' | 'translation';
   title: string;
+  level?: string;
   learningLanguage: LearningLanguageId;
   cards: ReelCard[];
   sceneJsonOverride?: FlexibleSceneDocument;
@@ -271,11 +276,17 @@ export function parseCreatorOrTranslationBatchInput(
   const fallbackStem = options.fileName
     ? options.fileName.replace(/\.[^.]+$/, '').trim()
     : 'Batch Lesson';
-  const cleanTitle = cleanOutputTitleStem(parsed.title || fallbackStem, 'Batch Lesson');
+  const cleanTitle = buildLeveledOutputStem({
+    title: parsed.title || fallbackStem,
+    level: parsed.level,
+    learningLanguage: detectedLang,
+    fallback: 'Batch Lesson',
+  });
 
   return {
     subTab: options.mode,
     title: cleanTitle,
+    level: parsed.level,
     learningLanguage: detectedLang,
     cards: parsed.cards,
     sceneJsonOverride: parsed.sceneJson || undefined,
@@ -750,10 +761,25 @@ function buildStudioBatchPrompt(params: {
 
   const baseStoryboardPrompt = buildSceneGenerationPrompt(syntheticCues, {
     title: params.topic,
+    level: params.level,
+    learningLanguage: params.learningLanguage,
     style: params.style ?? 'tiktok-cards',
     compositionId: params.compositionId ?? 'ai-decide',
     targetDurationMinutes: params.durationMinutes,
   });
+
+  const isBilingualStudio =
+    params.targetLang !== 'none' &&
+    params.targetLang !== 'learning' &&
+    params.targetLang !== params.learningLanguage;
+  const bilingualTtsGuidance = isBilingualStudio
+    ? [
+        `- **Quy tắc TTS song ngữ (${params.targetLang} + ${langMeta.nativeName})**:`,
+        `  + Phần mở đầu (Intro) và kết thúc (Outro) trong \`source_segments[]\` chỉ cần viết bằng **${params.targetLang}** (ngôn ngữ gốc), không cần lặp lại toàn bộ intro/outro bằng ${langMeta.nativeName}.`,
+        `  + Kể cả trong các câu/đoạn bằng **${params.targetLang}** (kể cả intro, outro và giải thích), mọi **từ vựng mục tiêu, từ khóa chủ đề và cấu trúc ngữ pháp** được nhắc tới vẫn PHẢI viết bằng đúng **${langMeta.nativeName}** tự nhiên (không viết Romaji/Pinyin/phiên âm bồi và không dịch mất từ gốc) để giọng đọc TTS phát âm tự nhiên.`,
+        `  + **Hạn chế tối đa chuỗi ${params.targetLang} chỉ có 1 từ & cấm ký tự đơn lẻ**: Tránh sinh segment/câu nói chỉ có 1 từ đơn lẻ bằng ${params.targetLang} (luôn viết cụm ≥ 2–4 từ hoặc câu đầy đủ) và tuyệt đối không viết chữ cái đơn lẻ rời rạc (\`"A"\`, \`"B"\`, \`"S"\`, \`"V"\`, \`"O"\`, \`"X"\`, \`"Y"\`) trong lời đọc \`source_segments[]\` để tránh TTS đọc nhầm thành chữ cái.`,
+      ].join('\n')
+    : `- Lưu ý giọng đọc TTS: Tránh viết đoạn nói chỉ 1 từ đơn lẻ hay chữ cái đơn lẻ rời rạc (\`"A"\`, \`"B"\`, \`"S"\`, \`"V"\`, \`"O"\`, \`"X"\`, \`"Y"\`) trong \`source_segments[]\` để TTS không đọc nhầm thành từng ký tự.`;
 
   return `# BÀI GIẢNG STUDIO TỰ ĐỘNG (TAB 1 STUDIO · ${params.aspectRatio || '9:16'})
 - Chủ đề trọng tâm: **${params.topic}**
@@ -761,6 +787,7 @@ function buildStudioBatchPrompt(params: {
 - Ngôn ngữ giải thích phụ đề/thẻ: **${params.targetLang === 'none' ? 'Pure target language' : params.targetLang === 'learning' ? `${langMeta.nativeName} (giải thích bằng ngôn ngữ muốn học)` : params.targetLang}**
 - Thời lượng mục tiêu: **${params.durationMinutes} phút (~${Math.round(params.durationMinutes * 60)} giây)**
 - Lưu ý: Nếu chưa có audio sẵn, hãy tự viết toàn bộ kịch bản \`source_segments[]\` (${approxCuesCount} segments phân bổ đều trong **~${Math.round(params.durationMinutes * 60)} giây**) với nội dung sư phạm sâu (giải thích lý do tự nhiên, đối chiếu lỗi thường gặp, sắc thái & ví dụ thực tế) thay thế các segment placeholder bên dưới rồi dựng trọn vẹn JSON \`schema_version: "1.9"\`.
+${bilingualTtsGuidance}
 
 ${baseStoryboardPrompt}`;
 }
@@ -883,9 +910,15 @@ export function generateBatchPromptsForTopics(options: {
     }
 
     const baseFile = cleanDownloadFileName(
-      `${indexPrefix}_${durationMinutes}m_${topic}`,
+      buildLeveledOutputStem({
+        prefix: indexPrefix,
+        level: resolvedLevel,
+        title: topic,
+        learningLanguage: options.learningLanguage,
+        fallback: `Prompt ${indexPrefix}`,
+      }),
       'prompt.txt',
-      `Prompt_${indexPrefix}_${durationMinutes}m`,
+      `Prompt ${indexPrefix}`,
     );
     return {
       fileName: baseFile,

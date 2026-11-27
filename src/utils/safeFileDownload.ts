@@ -1,3 +1,5 @@
+import { toPlatformSafeDiskFileName } from '../engine/outputNaming';
+
 export function isHtmlPayload(payload: string, contentType?: string | null): boolean {
   const ct = (contentType || '').toLowerCase();
   if (ct.includes('text/html') || ct.includes('application/xhtml+xml')) {
@@ -42,7 +44,7 @@ export function ensureExpectedExtension(fileName: string, expectedExt: string): 
 
 export function downloadTextAsPlainFile(text: string, fileName: string): void {
   if (typeof document === 'undefined') return;
-  const safeName = fileName.trim() || 'output.txt';
+  const safeName = toPlatformSafeDiskFileName(fileName.trim() || 'output.txt');
   const mime = resolveOutputMimeType(safeName);
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -102,7 +104,7 @@ export async function downloadServerOutputFile(
     const url = URL.createObjectURL(typedBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = targetName;
+    a.download = toPlatformSafeDiskFileName(targetName);
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

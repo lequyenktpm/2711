@@ -3,6 +3,7 @@ import type { VectorPrimitive } from './customComponentTypes';
 import { normalizeCustomComponent } from './customComponentStore';
 import { resolveProjectOverlaps } from './layoutSolver';
 import type { ExportAspectRatioId } from './mp4Config';
+import { formatAudienceLevelLabel } from './outputNaming';
 import {
   cleanReadingWorksheetInput,
   isWorksheetScaffoldingLine,
@@ -294,6 +295,7 @@ export interface ReelScrapeResult {
 export interface ParsedEnglishReelsResponse {
   title: string;
   mode: Exclude<ReelMode, 'auto'>;
+  level?: string;
   creatorSubMode?: string;
   compositionId?: LayoutCompositionId;
   learningLang?: LearningLanguageId;
@@ -1933,37 +1935,48 @@ export function buildEnglishReelsWebAiPrompt(params: {
         ? 'CHẾ ĐỘ GIẢI THÍCH BẰNG CHÍNH NGÔN NGỮ MUỐN HỌC (MONOLINGUAL IMMERSION): BẮT BUỘC viết toàn bộ `badge`, `translation`, `explanation`, `explanationSpeech`, `visual.subtitle`, `visual.labels` bằng **ĐÚNG NGÔN NGỮ ĐANG HỌC (`learningLang`)** mà bạn tự nhận diện từ `# NỘI DUNG GỐC` (giải thích nghĩa, sắc thái, đối chiếu cách dùng hoàn toàn bằng chính ngôn ngữ đó — TUYỆT ĐỐI KHÔNG dịch sang tiếng Việt hay ngôn ngữ thứ ba!).'
         : `BẮT BUỘC viết toàn bộ \`badge\`, \`translation\`, \`explanation\`, \`visual.subtitle\`, \`visual.labels\` (nếu là nhãn giải thích) bằng ngôn ngữ mục tiêu: **${locale.targetLanguageLabel}**. Không trộn lẫn ngôn ngữ khác!`;
 
+  const isBilingualMode =
+    locale.code !== 'none' &&
+    locale.code !== 'learning' &&
+    (!params.learningLanguage || locale.code !== params.learningLanguage);
+
   const exampleIntroExplSpeech =
     locale.code === 'vi'
-      ? 'Chào mừng bạn đến với bài học hôm nay về <Chủ đề thật của bài>. Bây giờ chúng ta vào nội dung đầu tiên nhé.'
+      ? 'Chào mừng bạn đến với bài học hôm nay về chủ đề <Tên chủ đề / cụm từ chính bằng đúng learningLang> và cách dùng tự nhiên. Bây giờ chúng ta vào nội dung đầu tiên nhé.'
       : locale.code === 'learning'
         ? '<Lời giới thiệu mở đầu + mục tiêu bài học viết 100% bằng đúng learningLang>'
-        : `<Welcome intro and lesson overview in ${locale.targetLanguageLabel} matching the exact topic>`;
+        : `<Welcome intro and lesson overview in ${locale.targetLanguageLabel} keeping target topic/words/grammar in natural learningLang>`;
 
   const exampleOutroExplSpeech =
     locale.code === 'vi'
-      ? 'Tuyệt vời! Bạn vừa hoàn thành bài học về <Chủ đề thật>. Hãy lưu lại và luyện đọc to mỗi ngày nhé.'
+      ? 'Tuyệt vời! Bạn vừa hoàn thành bài học về <Chủ đề / mẫu ngữ pháp bằng đúng learningLang>. Hãy lưu lại và luyện đọc to mỗi ngày nhé.'
       : locale.code === 'learning'
         ? '<Lời tổng kết & nhắc ôn tập viết 100% bằng đúng learningLang>'
-        : `<Encouraging lesson recap in ${locale.targetLanguageLabel}>`;
+        : `<Encouraging lesson recap in ${locale.targetLanguageLabel} keeping target topic/grammar in natural learningLang>`;
 
   return [
     '# VAI TRÒ',
     'Bạn là giáo viên ngôn ngữ bản ngữ & đạo diễn kịch bản video bài giảng dọc 9:16 (TikTok / Reels / Shorts), tương thích chuẩn JSON cố định của English Reels Studio + KineticSub Studio.',
     '',
     '# QUY TẮC ĐẶT TÊN BÀI HỌC & MẠCH CHUYỂN TIẾP (CỰC KỲ QUAN TRỌNG)',
-    '- **TÊN BÀI HỌC (`"title"`) PHẢI NGẮN GỌN, SÚC TÍCH, GÂY TÒ MÒ & CẢM XÚC (KHÔNG DÀI DÒNG)**: Đọc kỹ toàn bộ `# NỘI DUNG GỐC CẦN CHUYỂN HÓA` bên dưới và đặt `"title"` (ở JSON gốc và ở thẻ `intro`) thật ngắn gọn (~6–12 từ), đúng chủ đề bài học và mang sức hút tò mò (VD kiểu `"【Bạn có biết cách nói này?】..."` hoặc `"【このペースで言える？】..."` phù hợp ngôn ngữ bài học). KHÔNG lấy tên mẫu minh họa, KHÔNG bịa tên lạc đề!',
+    '- **TÊN BÀI HỌC (`"title"`) PHẢI THẬT HAY, GỢI TÒ MÒ, VÀ PHẦN LEVEL PHẢI TRÙNG NGÔN NGỮ HỌC (`learningLang`)**: Đọc kỹ `# NỘI DUNG GỐC` bên dưới, viết `"title"` (ở JSON gốc và thẻ `intro`) theo cấu trúc **TÊN HOOK CUỐN HÚT TRƯỚC | LEVEL DÀNH CHO AI BẰNG ĐÚNG NGÔN NGỮ HỌC SAU**: **`"<Tiêu đề hook gợi tò mò / nút thắt cảm xúc> | <Level nói rõ dành cho ai bằng đúng learningLang>"`**:',
+    '  + **CẤM đặt tên phẳng kiểu tên truyện / sách giáo khoa khô khan** (CẤM kiểu `"La bicicleta roja que esperaba a Mateo"`, `"Hotel Vocabulary"`, `"Lesson 1"`). Phải đặt theo kiểu câu hỏi gợi tò mò hoặc nút thắt cuốn hút như: `"Todo empezó con un pequeño favor… y terminó en un reencuentro inesperado | Para nivel básico (ESPAÑOL A2)"`, `"その誘い方、英語で自然に言える？ | For Intermediate Learners (ENGLISH B1)"`, `"One tiny mistake at the cafe changed everything… | For Elementary Learners (ENGLISH A2)"`, `"たった一言で空気が変わった夜… | 初中級者向け (日本語 N4)"`.',
+    '  + **PHẦN LEVEL SAU DẤU `|` BẮT BUỘC TRÙNG VỚI NGÔN NGỮ HỌC (`learningLang`)** — tuyệt đối KHÔNG ghi tiếng Việt kiểu `"Cho người cơ bản (A2)"` khi bài học là tiếng Tây Ban Nha / Anh / Nhật / Trung / Hàn / Pháp!',
     '- **CHUYỂN TIẾP PHẢI CÓ LỜI DẪN NÓI (KHÔNG CHUYỂN TRONG IM LẶNG)**: Khi chuyển từ Mở đầu → Bài 1, từ Phần/Bài 1 → Phần/Bài 2, từ Bài đọc → Quiz, hoặc trước Tổng kết, BẮT BUỘC phải có lời dẫn nói tự nhiên trong `ttsText` / `explanationSpeech` (VD: `"Now let\'s move on to the next part..."`, `"Chuyển sang phần tiếp theo..."`, `"Now let\'s check what we just learned!"`).',
     '',
     '# CẤU TRÚC BÀI GIẢNG BẮT BUỘC (KHÔNG ĐƯỢC CHỈ XUẤT SUBTITLE TRƠN)',
     'Video bài học PHẢI sinh động, có lộ trình rõ ràng:',
-    '1. **Mở đầu (`type: "intro"`)**: Giới thiệu rõ **mục tiêu thực tế & đúng tên bài học** (VD: `"Welcome to today\'s lesson on <Exact Lesson Title>..."`). Chọn `visual.variant: "bs-card-header"` hoặc `"css-roadmap-steps"`.',
+    isBilingualMode
+      ? `1. **Mở đầu (\`type: "intro"\`) — CHẾ ĐỘ SONG NGỮ CHỈ ĐỌC NGÔN NGỮ GỐC**: Ở chế độ 2 thứ tiếng, phần mở đầu **CHỈ cần \`"explanationSpeech"\` bằng ${locale.targetLanguageLabel} (ngôn ngữ gốc)** và đặt \`"ttsText": ""\` (KHÔNG cần đọc lặp bằng ngôn ngữ học ở intro). Tuy nhiên, **tên chủ đề, từ vựng chính hoặc mẫu ngữ pháp được nhắc tới trong \`explanationSpeech\` vẫn PHẢI viết bằng đúng \`learningLang\` tự nhiên** (VD: \`"Chào mừng bạn đến với bài học về Hotel Check-in và mẫu câu lịch sự Could I have..."\`) để TTS đọc chuẩn tự nhiên. Chọn \`visual.variant: "bs-card-header"\` hoặc \`"css-roadmap-steps"\`.`
+      : '1. **Mở đầu (`type: "intro"`)**: Giới thiệu rõ **mục tiêu thực tế & đúng tên bài học** (VD: `"Welcome to today\'s lesson on <Exact Lesson Title>..."`). Chọn `visual.variant: "bs-card-header"` hoặc `"css-roadmap-steps"`.',
     '2. **Nội dung bài đọc / Từ vựng (`type: "vocab"`)**:',
     '   - **KHÔNG** nhồi nhét phiên âm `/IPA/` vào `ttsText` (tránh TTS đọc sai).',
-    `   - Ở trường \`"translation"\` và \`"explanationSpeech"\`, giải thích ĐẦY ĐỦ, SÂU SẮC ý nghĩa từ khó, sắc thái ngữ cảnh & cấu trúc ngữ pháp bằng **${locale.targetLanguageLabel}** (tránh câu cụt vô nghĩa; phần chữ hiển thị trên thẻ gọn rõ, còn phần giải thích chi tiết đưa vào \`explanationSpeech\`).`,
+    `   - Ở trường \`"translation"\` và \`"explanationSpeech"\`, giải thích ĐẦY ĐỦ, SÂU SẮC ý nghĩa từ khó, sắc thái ngữ cảnh & cấu trúc ngữ pháp bằng **${locale.targetLanguageLabel}** (tránh câu cụt vô nghĩa; riêng **từ vựng mục tiêu, chủ đề và mẫu ngữ pháp** được nhắc tới trong \`explanationSpeech\` phải viết bằng đúng \`learningLang\` tự nhiên).`,
     '   - Nếu nguồn có nhiều phần nhỏ / nhiều mục kiến thức, tách từng mục trọn vẹn có lời dẫn chuyển phần tự nhiên (không gộp vội hay cắt cụt câu).',
     ...quizPolicyBlock,
-    '4. **Tổng kết (`type: "outro"`)**: Bắt buộc có lời đọc `"ttsText"` (và `"explanationSpeech"` nếu có giải thích) tổng kết đúng bài vừa học qua component `"css-bento-stats"` hoặc `"bs-list-group"`.',
+    isBilingualMode
+      ? `4. **Tổng kết (\`type: "outro"\`) — CHẾ ĐỘ SONG NGỮ CHỈ ĐỌC NGÔN NGỮ GỐC**: Ở chế độ 2 thứ tiếng, phần tổng kết **CHỈ cần \`"explanationSpeech"\` bằng ${locale.targetLanguageLabel} (ngôn ngữ gốc)** và đặt \`"ttsText": ""\` (KHÔNG cần \`ttsText\` bằng ngôn ngữ học ở outro); nhưng nếu nhắc lại chủ đề, từ khóa hay ngữ pháp vừa học thì vẫn viết bằng đúng \`learningLang\` tự nhiên. Dùng component \`"css-bento-stats"\` hoặc \`"bs-list-group"\`.`
+      : '4. **Tổng kết (`type: "outro"`)**: Bắt buộc có lời đọc `"ttsText"` (và `"explanationSpeech"` nếu có giải thích) tổng kết đúng bài vừa học qua component `"css-bento-stats"` hoặc `"bs-list-group"`.',
     '',
     TYPOGRAPHY_MOBILE_READABILITY_PROMPT_BLOCK,
     '',
@@ -1993,9 +2006,19 @@ export function buildEnglishReelsWebAiPrompt(params: {
     '',
     '# QUY TẮC VÀNG CHO GIỌNG ĐỌC TTS ("ttsText", "explanationSpeech", "ttsAnswerText", "learningLang")',
     '- **NHẬN DIỆN ĐÚNG NGÔN NGỮ NGUỒN (`"learningLang"`)**: Tự động phát hiện ngôn ngữ đang học trong `# NỘI DUNG GỐC` (`en` = Tiếng Anh, `es` = Tây Ban Nha, `fr` = Pháp, `ja` = Nhật, `zh` = Trung, `ko` = Hàn) và ghi rõ vào `"learningLang"`.',
-    '- **100% THUẦN NGÔN NGỮ TRONG TỪNG TRƯỜNG TTS (CẤM ĐẶT LỜI DẪN TIẾNG ANH NẾU NGUỒN KHÔNG PHẢI TIẾNG ANH!)**:',
-    '  + Toàn bộ `"ttsText"` và `"ttsAnswerText"` PHẢI viết **100% thuần ngôn ngữ nguồn (`learningLang`)** — nếu nguồn là tiếng Tây Ban Nha / Pháp / Nhật / Trung / Hàn, lời dẫn mở đầu, chuyển phần và công bố đáp án trong `"ttsText"` / `"ttsAnswerText"` CŨNG PHẢI viết bằng đúng ngôn ngữ đó (TUYỆT ĐỐI KHÔNG chèn mẫu câu tiếng Anh kiểu `"Welcome to today\'s lesson"` hay `"Take five seconds to think"` khi bài học không phải tiếng Anh!).',
-    `  + Toàn bộ \`"explanationSpeech"\` PHẢI viết **100% thuần ${locale.targetLanguageLabel}** để giọng giải thích riêng đọc, không trộn từ ngoại ngữ khác vào cùng câu.`,
+    '- **PHÂN TÁCH NGÔN NGỮ CHUẨN XÁC CHO DUAL-TTS**:',
+    '  + Toàn bộ `"ttsText"` (ở các thẻ `vocab` / `quiz`) và `"ttsAnswerText"` PHẢI viết **100% THUẦN NGÔN NGỮ NGUỒN (`learningLang`)** — nếu nguồn là tiếng Tây Ban Nha / Pháp / Nhật / Trung / Hàn, lời dẫn chuyển phần và công bố đáp án trong `"ttsText"` / `"ttsAnswerText"` CŨNG PHẢI viết bằng đúng ngôn ngữ đó (TUYỆT ĐỐI KHÔNG chèn mẫu câu tiếng Anh kiểu `"Take five seconds to think"` khi bài học không phải tiếng Anh!).',
+    ...(isBilingualMode
+      ? [
+          `  + Khi đọc 2 thứ tiếng, thẻ \`"intro"\` và \`"outro"\` chỉ dùng \`"explanationSpeech"\` bằng **${locale.targetLanguageLabel}** (đặt \`"ttsText": ""\`).`,
+          `  + Trong toàn bộ \`"explanationSpeech"\` (kể cả khi chỉ bật đọc ngôn ngữ gốc hay ở \`intro\`/\`outro\`), hãy viết khung câu bằng **${locale.targetLanguageLabel}**, nhưng mọi **TỪ VỰNG mục tiêu, CHỦ ĐỀ bài học và MẪU NGỮ PHÁP** được nhắc tới **PHẢI viết trực tiếp bằng \`learningLang\` tự nhiên** (chữ viết gốc thật — KHÔNG dịch chay sang tiếng Việt, KHÔNG viết Pinyin/Romaji/phiên âm bồi) để hệ thống TTS song ngữ tự tách và đọc phần từ/chủ đề/ngữ pháp đó bằng giọng bản ngữ tự nhiên!`,
+        ]
+      : [
+          `  + Toàn bộ \`"explanationSpeech"\` PHẢI viết **100% thuần ${locale.targetLanguageLabel}** để giọng giải thích đọc chuẩn.`,
+        ]),
+    '- **HẠN CHẾ TỐI ĐA CHUỖI NGÔN NGỮ GỐC CHỈ CÓ 1 TỪ & CẤM KÝ TỰ ĐƠN LẺ (TRÁNH TTS ĐỌC NHẦM THÀNH CHỮ CÁI)**:',
+    '  + Trong `"explanationSpeech"`, `"translation"`, hay nhãn giải thích bằng ngôn ngữ gốc, **TUYỆT ĐỐI HẠN CHẾ sinh chuỗi chỉ có 1 từ đơn lẻ** (kiểu `"Đi"`, `"Tốt"`, `"Sai"`, `"Đúng"`, `"Mệt"`). Luôn viết thành **cụm từ hoàn chỉnh từ 2–4 từ trở lên hoặc cả câu tự nhiên** để TTS không đọc nhầm thành ký tự.',
+    '  + **CẤM** viết chữ cái đơn lẻ hoặc ký hiệu viết tắt rời rạc kiểu `"A"`, `"B"`, `"X"`, `"Y"`, `"S"`, `"V"`, `"O"`, `"N"`, `"Adj"`, `"VD"`, `"ĐT"`, `"S + V + O"` trong `ttsText` / `explanationSpeech` / `ttsAnswerText` — hãy viết thành từ/cụm tự nhiên hoàn chỉnh (VD: thay `"S + used to + V"` bằng `"cấu trúc chủ ngữ cộng used to cộng động từ nguyên mẫu"`).',
     '- TUYỆT ĐỐI KHÔNG đưa ký tự `&` (viết thành `and` / `y` / `và`), IPA `/.../`, Pinyin/Romaji, emoji, URL, hay ký hiệu markdown vào `ttsText` / `explanationSpeech` / `ttsAnswerText`.',
     ...(includeQuiz !== 'none'
       ? [
@@ -2006,7 +2029,8 @@ export function buildEnglishReelsWebAiPrompt(params: {
     `# ĐỊNH DẠNG JSON CỐ ĐỊNH BẮT BUỘC TRẢ VỀ (MINH HỌA SCHEMA — PHẢI THAY BẰNG NỘI DUNG THẬT TỪ NGUỒN VÀ ĐÚNG NGÔN NGỮ "learningLang")`,
     '```json',
     '{',
-    '  "title": "<Tiêu đề ngắn gọn, ĐÚNG NỘI DUNG bài học thực tế bên dưới>",',
+    '  "title": "<Tiêu đề hook thật hay, gợi tò mò (VD: \'Todo empezó con un pequeño favor… y terminó en un reencuentro inesperado\' hoặc \'その誘い方、英語で自然に言える？\')> | <Đối tượng & Level viết bằng ĐÚNG learningLang (VD: Para nivel básico (ESPAÑOL A2) / For Intermediate Learners (ENGLISH B1))>",',
+    '  "level": "<A1|A2|B1|B2|C1|C2|N5|N4|N3|N2|N1|HSK 1..6|TOPIK 1..6>",',
     ...(params.compositionId && params.compositionId !== 'ai-decide'
       ? [`  "compositionId": "${params.compositionId}",`]
       : []),
@@ -2019,7 +2043,9 @@ export function buildEnglishReelsWebAiPrompt(params: {
     '      "title": "<Tên bài học khớp với title gốc>",',
     `      "content": ${JSON.stringify(locale.promptExampleIntroContent)},`,
     `      "translation": ${JSON.stringify(locale.promptExampleTranslation)},`,
-    '      "ttsText": "Welcome to today\'s lesson on <Exact Topic>. Let\'s start with the first key expression.",',
+    ...(isBilingualMode
+      ? ['      "ttsText": "",']
+      : ['      "ttsText": "Welcome to today\'s lesson on <Exact Topic>. Let\'s start with the first key expression.",']),
     ...(locale.code !== 'none'
       ? [`      "explanationSpeech": ${JSON.stringify(exampleIntroExplSpeech)},`]
       : []),
@@ -2106,7 +2132,9 @@ export function buildEnglishReelsWebAiPrompt(params: {
     '      "title": "Key Takeaways",',
     `      "content": ${JSON.stringify(locale.promptExampleOutroContent)},`,
     `      "translation": ${JSON.stringify(locale.promptExampleOutroTranslation)},`,
-    '      "ttsText": "Great job! Today you practiced <Exact Topic>. Review these expressions every day.",',
+    ...(isBilingualMode
+      ? ['      "ttsText": "",']
+      : ['      "ttsText": "Great job! Today you practiced <Exact Topic>. Review these expressions every day.",']),
     ...(locale.code !== 'none'
       ? [`      "explanationSpeech": ${JSON.stringify(exampleOutroExplSpeech)},`]
       : []),
@@ -2207,6 +2235,8 @@ export function buildAiCreatorWebAiPrompt(params: {
   const explainLangName =
     locale.code === 'none' ? langOption.nativeName : locale.targetLanguageLabel;
   const isMonolingualExplain = locale.code === 'none' || locale.code === learningLang;
+  const isBilingualTwoLang = includeExplanationSpeech && !isMonolingualExplain;
+  const introOutroNativeOnly = splitAudioByRole || isBilingualTwoLang;
   const translationRule =
     locale.code === 'none'
       ? `Write short, crisp ${langOption.nativeName} explanations in \`meaning\` and keep \`translation\` concise in ${langOption.nativeName}.`
@@ -2231,26 +2261,44 @@ export function buildAiCreatorWebAiPrompt(params: {
           ? 'Put **100% pure Korean Hangul (한국어)** inside `"speech"` (put Romanization inside `"phonetic"` only!).'
           : `Put **100% pure ${langOption.nativeName}** inside \`"speech"\`.`;
 
+  const bilingualEmbeddedLearningRule = isBilingualTwoLang
+    ? [
+        `  + **BILINGUAL INTRO / OUTRO RULE (2 LANGUAGES)**: On \`type: "title"\` (intro) and \`type: "outro"\` cards, ONLY the native explanation voice is needed — set \`"speech": ""\` and write the full intro/outro script in \`"explanationSpeech"\` framed in **${explainLangName}** (no duplicate ${langOption.nativeName} \`"speech"\` on intro/outro!).`,
+        `  + **NATURAL LEARNING LANGUAGE FOR TARGET TERMS, TOPIC & GRAMMAR (EVEN WHEN ONLY NATIVE AUDIO IS ON)**: Inside \`"explanationSpeech"\` (on \`title\` intro, \`vocab\` cards, and \`outro\`), frame the sentence naturally in **${explainLangName}**, **BUT write every target word/phrase, lesson topic term, and grammar pattern directly in natural ${langOption.nativeName}** (actual native script—NEVER Pinyin/Romaji/phonetic approximation and NEVER translated away into ${explainLangName}!) so our bilingual TTS auto-splitter pronounces target words, topics, and grammar naturally in the **${langOption.nativeName}** voice even if the user disables the learning audio track.`,
+      ]
+    : [
+        `  + \`"explanationSpeech"\` MUST be **100% pure ${explainLangName}** ONLY (1–2 natural spoken sentences explaining meaning, usage tip, or nuance so learners understand just by listening).`,
+      ];
+
+  const antiOneWordNativeRule =
+    `- **MINIMIZE 1-WORD NATIVE STRINGS & BAN SINGLE-LETTER SYMBOLS IN TTS**: In **${explainLangName}** fields (\`"explanationSpeech"\`, \`"meaning"\`, \`"translation"\`, \`"title"\`, \`"outro"\`), **AVOID generating isolated 1-word native strings** (e.g. \`"Đi"\`, \`"Tốt"\`, \`"Sai"\`, \`"Đúng"\`, \`"Mệt"\`). Always write natural multi-word phrases (at least 2–4+ native words or full sentences) AND **NEVER** put standalone single letters or shorthand abbreviations (\`"A"\`, \`"B"\`, \`"X"\`, \`"Y"\`, \`"S"\`, \`"V"\`, \`"O"\`, \`"N"\`, \`"Adj"\`, \`"VD"\`, \`"S + V + O"\`) inside \`"speech"\` or \`"explanationSpeech"\` so TTS never misreads isolated tokens character-by-character!`;
+
   const dualTtsRules = splitAudioByRole
     ? [
         `- **CRITICAL ROLE-SEPARATED DUAL-TTS RULE**: Our studio separates audio strictly by card role across **2 TTS VOICES**:`,
         `  + **Target Learning Voice (${langOption.nativeName})** ONLY reads core teaching items (\`type: "vocab"\` — the target word, phrase, grammar pattern, or sample sentence in \`"speech"\`). ${scriptPurityHint}`,
         `  + **Explanation Voice (${explainLangName})** reads ALL framing & explanations: \`type: "title"\` (intro hook), \`"explanationSpeech"\` on every \`"vocab"\` card (meaning, grammar rule, usage tip), and \`type: "outro"\` (closing).`,
-        `  + On \`type: "title"\` and \`type: "outro"\` cards, set \`"speech": ""\` and put the full spoken script in \`"explanationSpeech"\` in pure **${explainLangName}**!`,
-        '  + NEVER mix two languages in the same string so neither TTS voice ever mispronounces another language!',
+        `  + On \`type: "title"\` and \`type: "outro"\` cards, set \`"speech": ""\` and put the full spoken script in \`"explanationSpeech"\` framed in **${explainLangName}**!`,
+        ...(isBilingualTwoLang
+          ? [
+              `  + **NATURAL LEARNING LANGUAGE FOR TARGET TERMS, TOPIC & GRAMMAR**: Even inside \`"explanationSpeech"\` (\`title\`, \`vocab\`, \`outro\`), keep every target word/phrase, lesson topic expression, and grammar structure in natural **${langOption.nativeName}** (actual script, never Romaji/Pinyin or translated away) so bilingual TTS splits and reads them naturally!`,
+            ]
+          : []),
+        antiOneWordNativeRule,
       ]
     : includeExplanationSpeech
       ? [
           `- **CRITICAL DUAL-TTS SEPARATION RULE**: Our studio uses **2 SEPARATE TTS VOICES** (Voice 1: **${langOption.nativeName}** voice, Voice 2: **${explainLangName}** voice).`,
-          `  + \`"speech"\` MUST be **100% pure ${langOption.nativeName}** ONLY (spoken word/phrase + natural example sentence). ${scriptPurityHint} NEVER mix ${explainLangName} inside \`"speech"\`!`,
-          `  + \`"explanationSpeech"\` MUST be **100% pure ${explainLangName}** ONLY (1–2 natural spoken sentences explaining meaning, usage tip, or nuance so learners understand just by listening).`,
-          '  + Keep each part crystal clear and free of mixed foreign words so neither TTS voice ever mispronounces another language!',
+          `  + \`"speech"\` on \`type: "vocab"\` cards MUST be **100% pure ${langOption.nativeName}** ONLY (spoken word/phrase + natural example sentence). ${scriptPurityHint} NEVER mix ${explainLangName} inside \`"speech"\`!`,
+          ...bilingualEmbeddedLearningRule,
+          antiOneWordNativeRule,
         ]
       : [
           `- \`"speech"\` MUST be **100% pure natural ${langOption.nativeName}** ready for TTS. ${scriptPurityHint}`,
+          antiOneWordNativeRule,
         ];
 
-  const exIntroSpeech = splitAudioByRole
+  const exIntroSpeech = introOutroNativeOnly
     ? ''
     : learningLang === 'ja'
       ? '今日は毎日使える大切な日本語を学びましょう。'
@@ -2266,7 +2314,7 @@ export function buildAiCreatorWebAiPrompt(params: {
                   ? `Stop using the same basic words every day. Here are practical upgrades at level ${chosenLevel}.`
                   : `Stop using the same basic words every day. Here are ${numericCount} expressions at level ${chosenLevel}.`);
 
-  const exOutroSpeech = splitAudioByRole
+  const exOutroSpeech = introOutroNativeOnly
     ? ''
     : learningLang === 'ja'
       ? '今日学んだ表現をぜひ使ってみてください。'
@@ -2304,7 +2352,7 @@ export function buildAiCreatorWebAiPrompt(params: {
             ? [
                 `      "explanationSpeech": ${JSON.stringify(
                   explainSample(
-                    `Chào mừng bạn đến với bài học tiếng Trung trình độ ${chosenLevel}, cùng khám phá các mẫu câu giao tiếp dùng ngay hàng ngày.`,
+                    `Chào mừng bạn đến với bài học tiếng Trung trình độ ${chosenLevel}, cùng khám phá các mẫu câu giao tiếp như 不好意思 dùng ngay hàng ngày.`,
                     `Welcome to this ${chosenLevel} Mandarin Chinese lesson with high-frequency expressions.`,
                     `欢迎来到 ${chosenLevel} 中文课程，今天我们一起来掌握最实用的日常表达。`,
                   ),
@@ -2331,8 +2379,8 @@ export function buildAiCreatorWebAiPrompt(params: {
             ? [
                 `      "explanationSpeech": ${JSON.stringify(
                   explainSample(
-                    'Dùng khi muốn mở lời nhờ vả hoặc xin lỗi nhẹ nhàng rất lịch sự. Câu ví dụ nghĩa là: Xin lỗi, cho hỏi nhà vệ sinh ở đâu ạ?',
-                    'Use this polite phrase before asking a stranger a question or apologizing lightly.',
+                    'Khi muốn mở lời nhờ vả hoặc xin lỗi nhẹ nhàng thật lịch sự, bạn hãy dùng cụm 不好意思. Câu ví dụ 不好意思，请问洗手间在哪里？ nghĩa là xin lỗi cho hỏi nhà vệ sinh ở đâu ạ.',
+                    'Use 不好意思 before asking a stranger a question or apologizing lightly.',
                     '当你礼貌地向陌生人问路或请求帮忙时，用“不好意思”开头比直接提问自然得多。',
                   ),
                 )},`,
@@ -2343,7 +2391,7 @@ export function buildAiCreatorWebAiPrompt(params: {
           '        "variant": "css-magnifying-word",',
           '        "title": "不好意思",',
           `        "subtitle": ${JSON.stringify(explainSample('Mở lời lịch sự trong giao tiếp', 'Polite opener in daily Mandarin', '日常礼貌开场白'))},`,
-          `        "labels": ${JSON.stringify(explainSample(['bù hǎo yì si', 'Mở lời lịch sự'], ['bù hǎo yì si', 'Polite opener'], ['礼貌开场', '日常高频']))},`,
+          `        "labels": ${JSON.stringify([explainSample('bù hǎo yì si', 'bù hǎo yì si', '礼貌开场'), explainSample('Mở lời lịch sự', 'Polite opener', '日常高频')])},`,
           '        "highlightWord": "不好意思",',
           '        "sceneIcon": "chat"',
           '      }',
@@ -2360,7 +2408,7 @@ export function buildAiCreatorWebAiPrompt(params: {
               ? [
                   `      "explanationSpeech": ${JSON.stringify(
                     explainSample(
-                      `Chào mừng bạn đến với bài học tiếng Nhật trình độ ${chosenLevel}, gồm các mẫu câu thực tế dễ nhớ.`,
+                      `Chào mừng bạn đến với bài học tiếng Nhật trình độ ${chosenLevel}, cùng luyện các mẫu câu lịch sự như お願いします dễ nhớ nhất.`,
                       `Welcome to this ${chosenLevel} Japanese lesson with practical expressions.`,
                       `JLPT ${chosenLevel} の日常会話でそのまま使える自然な日本語表現を一緒に学びましょう。`,
                     ),
@@ -2387,8 +2435,8 @@ export function buildAiCreatorWebAiPrompt(params: {
               ? [
                   `      "explanationSpeech": ${JSON.stringify(
                     explainSample(
-                      'Dùng để nhờ vả hoặc gọi món một cách lịch sự. Ví dụ: Cho tôi một cốc nước ạ.',
-                      'Use this polite phrase whenever ordering food or asking a favor. The example means water, please.',
+                      'Hãy dùng cụm お願いします để nhờ vả hoặc gọi món một cách lịch sự. Ví dụ câu お水をお願いします có nghĩa là cho tôi một cốc nước ạ.',
+                      'Use お願いします whenever ordering food or asking a favor. The example お水をお願いします means water, please.',
                       'お店で注文するときや誰かにお願いするときに使う便利な丁寧表現です。直接命令するよりずっと自然に聞こえます。',
                     ),
                   )},`,
@@ -2399,7 +2447,7 @@ export function buildAiCreatorWebAiPrompt(params: {
             '        "variant": "css-magnifying-word",',
             '        "title": "お願いします",',
             `        "subtitle": ${JSON.stringify(explainSample('Gọi món & nhờ vả lịch sự', 'Polite orders & requests', '注文・依頼の定番'))},`,
-            `        "labels": ${JSON.stringify(explainSample(['onegaishimasu', 'Lịch sự hàng ngày'], ['onegaishimasu', 'Daily politeness'], ['丁寧表現', '日常会話']))},`,
+            `        "labels": ${JSON.stringify([explainSample('onegaishimasu', 'onegaishimasu', '丁寧表現'), explainSample('Lịch sự hàng ngày', 'Daily politeness', '日常会話')])},`,
             '        "highlightWord": "お願いします",',
             '        "sceneIcon": "cup"',
             '      }',
@@ -2416,7 +2464,7 @@ export function buildAiCreatorWebAiPrompt(params: {
                 ? [
                     `      "explanationSpeech": ${JSON.stringify(
                       explainSample(
-                        `Chào mừng bạn đến với bài học tiếng Hàn trình độ ${chosenLevel} gồm các mẫu câu giao tiếp thực tế.`,
+                        `Chào mừng bạn đến với bài học tiếng Hàn trình độ ${chosenLevel} gồm các mẫu câu thực tế như 잠시만요.`,
                         `Welcome to this ${chosenLevel} Korean lesson with essential phrases.`,
                         `${chosenLevel} 수준에서 바로 써먹을 수 있는 자연스러운 한국어 회화 표현을 배워볼게요.`,
                       ),
@@ -2443,8 +2491,8 @@ export function buildAiCreatorWebAiPrompt(params: {
                 ? [
                     `      "explanationSpeech": ${JSON.stringify(
                       explainSample(
-                        'Dùng để gọi nhân viên quán hoặc xin nhường đường rất tự nhiên. Ví dụ: Xin lỗi một chút, cho tôi xem thực đơn được không ạ?',
-                        'Use this when calling a server or asking someone to wait a moment.',
+                        'Khi gọi nhân viên quán hoặc xin nhường đường, hãy nói 잠시만요 cho thật tự nhiên. Câu ví dụ 잠시만요, 메뉴판 좀 주시겠어요 nghĩa là xin lỗi cho tôi xem thực đơn được không ạ.',
+                        'Use 잠시만요 when calling a server or asking someone to wait a moment.',
                         '식당에서 직원을 부르거나 지나갈 때 가볍게 양해를 구할 때 아주 자연스럽게 쓰는 표현입니다.',
                       ),
                     )},`,
@@ -2455,7 +2503,7 @@ export function buildAiCreatorWebAiPrompt(params: {
               '        "variant": "css-magnifying-word",',
               '        "title": "잠시만요",',
               `        "subtitle": ${JSON.stringify(explainSample('Gọi phục vụ & xin nhường đường', 'Polite opener at cafes', '식당 · 카페 필수 표현'))},`,
-              `        "labels": ${JSON.stringify(explainSample(['jam-si-man-yo', 'Lịch sự tự nhiên'], ['jam-si-man-yo', 'Polite & natural'], ['공손한 호칭', '실전 회화']))},`,
+              `        "labels": ${JSON.stringify([explainSample('jam-si-man-yo', 'jam-si-man-yo', '공손한 호칭'), explainSample('Lịch sự tự nhiên', 'Polite & natural', '실전 회화')])},`,
               '        "highlightWord": "잠시만요",',
               '        "sceneIcon": "chat"',
               '      }',
@@ -2471,7 +2519,7 @@ export function buildAiCreatorWebAiPrompt(params: {
                 ? [
                     `      "explanationSpeech": ${JSON.stringify(
                       explainSample(
-                        `Hôm nay chúng ta cùng học các từ và mẫu câu chuẩn trình độ ${chosenLevel}, dùng được ngay trong giao tiếp.`,
+                        `Hôm nay chúng ta cùng học các từ vựng và mẫu câu chủ đề Smart Upgrades chuẩn trình độ ${chosenLevel}, dùng được ngay trong giao tiếp.`,
                         `Today we will master natural expressions calibrated for level ${chosenLevel}.`,
                         `Today we will master natural ${langOption.nativeName} expressions calibrated for level ${chosenLevel}.`,
                       ),
@@ -2497,7 +2545,7 @@ export function buildAiCreatorWebAiPrompt(params: {
                 ? [
                     `      "explanationSpeech": ${JSON.stringify(
                       explainSample(
-                        'Nghĩa là diễn đạt mạch lạc, rõ ràng và thuyết phục. Ví dụ: Cô ấy trình bày rất mạch lạc trong các buổi họp nhóm.',
+                        'Từ vựng articulate dùng để khen ai đó diễn đạt mạch lạc, rõ ràng và thuyết phục thay cho từ clear thông thường. Ví dụ câu she is remarkably articulate during team meetings nghĩa là cô ấy trình bày rất mạch lạc trong các buổi họp nhóm.',
                         'Articulate describes someone who explains complex thoughts clearly and persuasively, much sharper than simply saying clear.',
                         'Articulate describes someone who explains thoughts clearly and persuasively, sounding much sharper than simply saying clear.',
                       ),
@@ -2558,21 +2606,21 @@ export function buildAiCreatorWebAiPrompt(params: {
     '- Formats to draw from: **A. Vocabulary Lists** · **B. Natural Phrases** · **C. Phrasal Verbs** · **D. Common Mistakes** · **E. Grammar in Context** · **F. Vocabulary Comparisons** · **G. Real-life Conversations**.',
     '',
     '## 3. VIDEO PACING & STRUCTURE',
-    `1. **Hook Card (\`type: "title"\`)**: Scroll-stopping \`kicker\`, **EXACT concrete \`title\` matching the lesson content & topic**, ${splitAudioByRole ? 'empty `speech: ""` with natural welcoming hook + transition into item 01 in `explanationSpeech` in ' + explainLangName : 'spoken `speech`' + (includeExplanationSpeech ? ' + `explanationSpeech`' : '')}, and \`visual\`.`,
+    `1. **Hook Card (\`type: "title"\`)**: Scroll-stopping \`kicker\`, **CATCHY root \`title\` formatted as \`"<Tiêu đề hook gợi tò mò cuốn hút> | ${formatAudienceLevelLabel(chosenLevel, learningLang)}"\`** (TITLE FIRST, target-language audience LEVEL AFTER separated by \`|\` — used directly as the saved filename!), ${introOutroNativeOnly ? 'empty `speech: ""` with natural welcoming hook (mentioning the exact topic/target expression naturally in ' + langOption.nativeName + ') + transition into item 01 in `explanationSpeech` in ' + explainLangName : 'spoken `speech`' + (includeExplanationSpeech ? ' + `explanationSpeech`' : '')}, and \`visual\`.`,
     coreCardsHeaderLine,
     coreCardsIndexLine,
     '   - Include natural **spoken transition phrases** inside `explanationSpeech` (or `speech` if single-voice) when advancing to the next section/nuance (e.g. "Next expression...", "Moving on to...") so transitions are NEVER silent!',
-    '   - **EXPLANATION QUALITY & KNOWLEDGE DEPTH ARE MANDATORY (CẤM CÂU CỤT VÔ NGHĨA)**: NEVER sprint through shallow 1-word + 1-truncated-example stubs or meaningless half-sentences! Every card MUST deliver complete, self-contained pedagogical value in `explanationSpeech` + `translation` + `visual.labels`: explain **WHY** native speakers find it natural, explicitly contrast **what learners mistakenly say or stiff textbook equivalents** ("Don\'t say X → Say Y because..."), clarify situational register/nuance, and use full, natural sentences. Let the **number of knowledge items** drive final video length (longer is always welcome; NEVER shorter/truncated!).',
+    '   - **EXPLANATION QUALITY & KNOWLEDGE DEPTH ARE MANDATORY (CẤM CÂU CỤT VÔ NGHĨA)**: NEVER sprint through shallow 1-word + 1-truncated-example stubs or meaningless half-sentences! Every card MUST deliver complete, self-contained pedagogical value in `explanationSpeech` + `translation` + `visual.labels`: explain **WHY** native speakers find it natural, explicitly contrast **what learners mistakenly say or stiff textbook equivalents** (instead of stiff textbook phrasing, explain why natives say the natural form), clarify situational register/nuance, keep target words/topics/grammar written directly in natural ' + langOption.nativeName + ', and use full, natural sentences (never 1-word native outputs or single-letter symbols). Let the **number of knowledge items** drive final video length (longer is always welcome; NEVER shorter/truncated!).',
     '   - If level is a progression (`N5→N1`, `A1→C2`, `HSK 1→6`, `TOPIK 1→6`), progress clearly from elementary (`01`) to advanced (`' + countPadded + '`).',
     params.includeQuiz
       ? `3. **Optional Quick Interactive Check (\`type: "quiz"\`, 1–2 concise cards)**: Place a quick 5-second check right after the items it tests (ONLY on key contrasts, NOT an unrelated quiz dumped out of nowhere).`
       : `3. **NO Surprise Quiz Cards**: Do NOT append \`type: "quiz"\` cards at the end — stay focused on teaching items and practical examples.`,
-    `4. **Recap Outro Card (\`type: "outro"\`)**: ${splitAudioByRole ? 'Empty `speech: ""` with encouraging spoken closing summarizing the exact lesson in `explanationSpeech`' : 'Encouraging closing in `speech`' + (includeExplanationSpeech ? ' + `explanationSpeech`' : '')} + summary visual.`,
+    `4. **Recap Outro Card (\`type: "outro"\`)**: ${introOutroNativeOnly ? 'Empty `speech: ""` with encouraging spoken closing summarizing the exact lesson topic/patterns (keeping key terms in natural ' + langOption.nativeName + ') in `explanationSpeech` in ' + explainLangName : 'Encouraging closing in `speech`' + (includeExplanationSpeech ? ' + `explanationSpeech`' : '')} + summary visual.`,
     '',
     '## 4. LESSON TITLE & VOICEOVER / TTS QUALITY RULES (`title`, `speech`, `explanationSpeech`)',
     topicHint
-      ? `- **EXACT & CATCHY SHORT TITLE RULE**: Root \`"title"\` and \`type: "title"\` card \`"title"\` MUST accurately reflect "${topicHint}" (${chosenLevel}) in a crisp, curiosity/emotion-driven hook (~6–12 words, e.g. \`【このペースで言える？】英会話のための瞬間英作文\` style matched to ${langOption.nativeName} + ${chosenLevel}).`
-      : `- **EXACT & CATCHY SHORT TITLE RULE**: Root \`"title"\` and \`type: "title"\` card \`"title"\` MUST be a concise, curiosity/emotion-driven hook (~6–12 words, e.g. \`【Đừng nói sai nữa!】...\` or \`【このペースで言える？】...\`) summarizing the exact expressions you generated (NEVER leave placeholder text).`,
+      ? `- **CATCHY HOOK TITLE + MATCHING-LANGUAGE AUDIENCE LEVEL RULE**: Root \`"title"\` (used as saved filename!) MUST follow \`"<Hook Title> | ${formatAudienceLevelLabel(chosenLevel, learningLang)}"\`. Make the first part super intriguing, emotional or curiosity-driven around "${topicHint}" (NEVER a flat story/textbook name like "La bicicleta roja que esperaba a Mateo" or "Lesson 1" — benchmark vibe: \`"Todo empezó con un pequeño favor… y terminó en un reencuentro inesperado"\`, \`"その誘い方、英語で自然に言える？"\`, \`"Stop saying 'I'm fine' — natives actually say this"\`), followed by \` | ${formatAudienceLevelLabel(chosenLevel, learningLang)}\` matching ${langOption.nativeName}.`
+      : `- **CATCHY HOOK TITLE + MATCHING-LANGUAGE AUDIENCE LEVEL RULE**: Root \`"title"\` (used as saved filename!) MUST follow \`"<Hook Title> | ${formatAudienceLevelLabel(chosenLevel, learningLang)}"\`. Make the first part super intriguing, curiosity-driven and natural (NEVER a flat story/textbook title — benchmark vibe: \`"Todo empezó con un pequeño favor… y terminó en un reencuentro inesperado"\`, \`"その誘い方、英語で自然に言える？"\`, \`"One tiny phrase that instantly makes you sound native"\`) summarizing the exact expressions you generated.`,
     ...dualTtsRules,
     '- NEVER put `/IPA/` symbols, `&`, markdown (`**`, `#`), URLs, or emojis inside `speech` or `explanationSpeech`.',
     `- ${translationRule}`,
@@ -2602,8 +2650,8 @@ export function buildAiCreatorWebAiPrompt(params: {
     `  "level": "${chosenLevel}",`,
     `  "title": ${JSON.stringify(
       topicHint
-        ? `${topicHint} (${chosenLevel})`
-        : `<Concrete Lesson Title Matching Generated ${langOption.nativeName} Content (${chosenLevel})>`,
+        ? `<Tiêu đề hook thật hay, gợi tò mò về "${topicHint}"> | ${formatAudienceLevelLabel(chosenLevel, learningLang)}`
+        : `<Tiêu đề hook thật hay, gợi tò mò (VD: 'Todo empezó con un pequeño favor… y terminó en un reencuentro inesperado' / 'その誘い方、英語で自然に言える？')> | ${formatAudienceLevelLabel(chosenLevel, learningLang)}`,
     )},`,
     '  "cards": [',
     ...(params.compositionId === 'cartoon-host'
@@ -2622,7 +2670,7 @@ export function buildAiCreatorWebAiPrompt(params: {
       ? [
           `      "explanationSpeech": ${JSON.stringify(
             explainSample(
-              'Hãy lưu lại bài học này và luyện đọc to mỗi ngày nhé!',
+              'Hãy lưu lại bài học hôm nay và luyện đọc to các mẫu câu vừa học mỗi ngày nhé!',
               'Save this video and review these expressions again tomorrow!',
               exOutroSpeech || 'Save this video and review these expressions again tomorrow!',
             ),
@@ -2916,15 +2964,15 @@ const CURATED_TRANSLATION_DECKS: Record<
         sourcePrompt: 'Cẩn thận với cô ấy đấy!',
         targetAnswer: '小心她一点！',
         vocabNotes: '小心 (cẩn thận) · 一点 (một chút)',
-        grammarNote: '小心 + A + 一点 = cẩn thận / coi chừng A một chút',
-        explanationSpeech: 'Thêm yì diǎn ở cuối giúp câu nhắc nhở nghe tự nhiên đúng khẩu ngữ bản xứ.',
+        grammarNote: '小心 + 一点 = cẩn thận / coi chừng một chút',
+        explanationSpeech: 'Thêm 一点 ở cuối giúp câu nhắc nhở nghe tự nhiên đúng khẩu ngữ bản xứ.',
       },
       {
         sourcePrompt: 'Tùy bạn thôi, sao cũng được.',
         targetAnswer: '随便你吧。',
         vocabNotes: '随便 (tùy ý) · 吧 (trợ từ ngữ khí nhẹ)',
         grammarNote: '随便你 = tùy bạn đấy',
-        explanationSpeech: 'Dùng suí biàn nǐ ba với bạn bè khi nhường quyền chọn cho đối phương.',
+        explanationSpeech: 'Dùng 随便你吧 với bạn bè khi nhường quyền chọn cho đối phương.',
       },
       {
         sourcePrompt: 'Tôi đang trên đường tới rồi.',
@@ -2937,7 +2985,7 @@ const CURATED_TRANSLATION_DECKS: Record<
         sourcePrompt: 'Làm phiền bạn giúp tôi một chút nhé.',
         targetAnswer: '麻烦你帮我一下。',
         vocabNotes: '麻烦 (làm phiền) · 帮 (giúp) · 一下 (một chút)',
-        grammarNote: '麻烦你 + V + 一下 = làm phiền bạn giúp chút',
+        grammarNote: '麻烦你 + 一下 = làm phiền bạn giúp chút',
         explanationSpeech: 'Cách mở lời nhờ vả vừa lịch sự vừa thân thiện.',
       },
       {
@@ -2951,21 +2999,21 @@ const CURATED_TRANSLATION_DECKS: Record<
         sourcePrompt: 'Để tôi suy nghĩ lại một chút đã.',
         targetAnswer: '让我想一想。',
         vocabNotes: '让 (để, cho) · 想一想 (nghĩ một chút)',
-        grammarNote: 'V + 一 + V = làm gì đó một chút (lịch sự, nhẹ nhàng)',
-        explanationSpeech: 'Lặp động từ xiǎng yì xiǎng làm giọng điệu mềm mại hơn.',
+        grammarNote: 'Động từ lặp + 一 = làm gì đó một chút (lịch sự, nhẹ nhàng)',
+        explanationSpeech: 'Lặp động từ 想一想 làm giọng điệu mềm mại hơn.',
       },
       {
         sourcePrompt: 'Không sao đâu, đừng khách sáo.',
         targetAnswer: '没关系，别客气。',
         vocabNotes: '没关系 (không sao) · 别客气 (đừng khách sáo)',
-        grammarNote: '别 + V/Adj = đừng…',
+        grammarNote: '别 + động từ = đừng…',
         explanationSpeech: 'Phản hồi tự nhiên khi người khác cảm ơn hoặc xin lỗi bạn.',
       },
       {
         sourcePrompt: 'Lâu rồi không gặp, dạo này bạn ổn chứ?',
         targetAnswer: '好久不见，最近怎么样？',
         vocabNotes: '好久不见 (lâu không gặp) · 最近 (dạo này) · 怎么样 (thế nào)',
-        grammarNote: 'A + 怎么样？ = A dạo này ra sao?',
+        grammarNote: '最近怎么样 = dạo này ra sao?',
         explanationSpeech: 'Câu mở đầu kinh điển khi gặp lại bạn cũ.',
       },
     ],
@@ -2979,8 +3027,8 @@ const CURATED_TRANSLATION_DECKS: Record<
         sourcePrompt: 'Coi chừng cô ấy đấy!',
         targetAnswer: '彼女には気をつけて！',
         vocabNotes: '彼女 (cô ấy) · 気をつけて (hãy cẩn thận)',
-        grammarNote: 'A + には気をつけて = cẩn thận với A nhé',
-        explanationSpeech: 'Trợ từ niha nhấn mạnh đối tượng cần chú ý hoặc đề phòng.',
+        grammarNote: 'には気をつけて = cẩn thận với ai đó nhé',
+        explanationSpeech: 'Trợ từ には nhấn mạnh đối tượng cần chú ý hoặc đề phòng.',
       },
       {
         sourcePrompt: 'Tôi xin giao lại cho bạn quyết định.',
@@ -2993,14 +3041,14 @@ const CURATED_TRANSLATION_DECKS: Record<
         sourcePrompt: 'Bây giờ tôi đang trên đường tới.',
         targetAnswer: '今向かっています。',
         vocabNotes: '今 (bây giờ) · 向かう (hướng tới)',
-        grammarNote: 'Vている = đang thực hiện hành động',
+        grammarNote: 'ている = đang thực hiện hành động',
         explanationSpeech: 'Câu báo đang tới rất tự nhiên trong giao tiếp hàng ngày.',
       },
       {
         sourcePrompt: 'Xin lỗi, cho tôi suy nghĩ một chút nhé.',
         targetAnswer: 'ちょっと考えさせてください。',
         vocabNotes: 'ちょっと (một chút) · 考える (suy nghĩ)',
-        grammarNote: 'Vさせてください = xin hãy cho phép tôi làm gì',
+        grammarNote: 'させてください = xin hãy cho phép tôi làm gì',
         explanationSpeech: 'Cách xin thêm thời gian suy nghĩ cực kỳ lịch sự ở Nhật.',
       },
       {
@@ -3014,7 +3062,7 @@ const CURATED_TRANSLATION_DECKS: Record<
         sourcePrompt: 'Không vấn đề gì đâu, cứ yên tâm nhé.',
         targetAnswer: '大丈夫ですよ、安心してください。',
         vocabNotes: '大丈夫 (ổn, không sao) · 安心 (yên tâm)',
-        grammarNote: 'Vてください = xin hãy… (lịch sự)',
+        grammarNote: 'てください = xin hãy… (lịch sự)',
         explanationSpeech: 'Giúp trấn an người đối diện rất nhẹ nhàng.',
       },
     ],
@@ -3028,8 +3076,8 @@ const CURATED_TRANSLATION_DECKS: Record<
         sourcePrompt: 'Cẩn thận với cô ấy đấy!',
         targetAnswer: '그 여자 조심하세요!',
         phonetic: 'geu yeo-ja jo-sim-ha-se-yo',
-        grammarNote: 'N + 조심하세요 = hãy cẩn thận với N',
-        explanationSpeech: 'Jo-sim-ha-se-yo dùng rất phổ biến để nhắc nhở ai đó cẩn thận.',
+        grammarNote: '조심하세요 = hãy cẩn thận với ai đó',
+        explanationSpeech: 'Cụm từ 조심하세요 dùng rất phổ biến để nhắc nhở ai đó cẩn thận.',
       },
       {
         sourcePrompt: 'Tôi đang trên đường tới rồi.',
@@ -3296,8 +3344,8 @@ export function buildTranslationChallengePrompt(params: {
           ? '실제 원어민 대화에서 가장 자연스럽게 쓰이는 표현입니다.'
           : 'This is the most concise and natural way native speakers say it in real conversations.'
     : locale.code === 'en'
-      ? 'The shortest and most natural phrasing used in real conversations.'
-      : 'Cách nói ngắn gọn và tự nhiên nhất khi giao tiếp ngoài đời.';
+      ? `Using ${exampleTarget} is the shortest and most natural phrasing in real conversations.`
+      : `Cụm ${exampleTarget} là cách nói ngắn gọn và tự nhiên nhất khi giao tiếp ngoài đời.`;
 
   const exampleOutroExplSpeech = isSameLangExplain
     ? locale.promptExampleOutroTranslation
@@ -3322,28 +3370,32 @@ export function buildTranslationChallengePrompt(params: {
     inputModeLine,
     '',
     '## 2. CATCHY YOUTUBE-STYLE HOOK TITLE RULE (CRITICAL!)',
-    '- Study these proven ultra-concise viral hook formulas: `【このペースで言える？】英会話のための瞬間英作文` or `【Phản xạ dịch】"Coi chừng cô ấy!" nói sao cho chuẩn?` (short, curiosity + emotion hook quoting 1 striking line from item #01 or #02!).',
-    '- Root `"title"` AND the `"title"` card MUST stay concise (max ~6–12 words) with strong curiosity/emotion — match language & level `' + chosenLevel + '`.',
-    '- NEVER output boring textbook titles like "Lesson 1" or "Translation Practice".',
+    `- Format root \`"title"\` (used directly as the exported file name!) with **CATCHY HOOK TITLE FIRST, MATCHING-LANGUAGE AUDIENCE LEVEL AFTER**: **\`"<Tiêu đề hook thật hay, gợi tò mò> | ${formatAudienceLevelLabel(chosenLevel, learningLang)}"\`** (benchmark style: \`"その誘い方、英語で自然に言える？ | ${formatAudienceLevelLabel(chosenLevel, learningLang)}"\` or \`"Todo empezó con un pequeño favor… y terminó en un reencuentro inesperado | ${formatAudienceLevelLabel(chosenLevel, learningLang)}"\`).`,
+    '- Keep the hook intriguing & conversational with strong curiosity/emotion — NEVER output flat story names or boring textbook titles like "Lesson 1" or "Translation Practice", and keep the audience level label in **' + langOption.nativeName + '**.',
     '',
     '## 3. CARD STRUCTURE, VOCAB GLOSS & TARGET-LANGUAGE CHROME',
-    `1. **Hook Intro Card (\`type: "title"\`)**: Catchy hook title, \`"kicker"\` & \`"visual"\` labels written in **${langOption.nativeName}** (matching target learning language), \`"speech": ""\`, and energetic 1-sentence hook in \`"explanationSpeech"\` in **${explainLangName}** inviting viewers to say each sentence aloud before the ${thinkSec}-second timer runs out!`,
+    `1. **Hook Intro Card (\`type: "title"\`) — CHẾ ĐỘ NGÔN NGỮ GỐC**: Catchy hook title, \`"kicker"\` & \`"visual"\` labels written in **${langOption.nativeName}** (matching target learning language), \`"speech": ""\` (bắt buộc để trống, không cần đọc ngôn ngữ học ở intro), and energetic 1-sentence hook in \`"explanationSpeech"\` framed in **${explainLangName}** (if mentioning the lesson topic, key term, or grammar pattern, keep those terms written directly in natural **${langOption.nativeName}**!) inviting viewers to say each sentence aloud before the ${thinkSec}-second timer runs out!`,
     isAutoItemCount
       ? `2. **Translation Challenge Cards (\`type: "translation"\` — AI tự chọn tổng số câu \`N\` tối ưu theo chủ đề & thời lượng sàn):**`
       : `2. **${numericCount} Translation Challenge Cards (\`type: "translation"\`)**:`,
     `   - \`"indexLabel": "01 / ${countPadded}"\` through \`"${countPadded} / ${countPadded}"\``,
-    `   - \`"sourcePrompt"\`: ${isSameLangExplain ? `Clear paraphrase / everyday situation cue in **${langOption.nativeName}** prompting the learner to produce the natural expression.` : `Natural, idiomatic sentence in **${explainLangName}** (NOT stiff word-by-word textbook translation!).`}`,
+    `   - \`"sourcePrompt"\`: ${isSameLangExplain ? `Clear paraphrase / everyday situation cue in **${langOption.nativeName}** prompting the learner to produce the natural expression.` : `Natural, idiomatic, complete sentence (NEVER a 1-word stub!) in **${explainLangName}** (NOT stiff word-by-word textbook translation!).`}`,
     `   - \`"answer"\`: Natural spoken target sentence in **${langOption.nativeName}**.`,
     `   - \`"speech"\`: ${scriptPurityHint}`,
     `   - **NO FULL-SENTENCE PHONETIC / HIRAGANA**: Leave \`"phonetic": ""\` empty! Do NOT write full-sentence Hiragana, Furigana, Romaji, or IPA beneath the target sentence.`,
     `   - \`"vocabNotes"\`: **CRITICAL** — Chọn **CHỈ 1** cụm từ vựng/idiom quan trọng nhất câu để chú thích ngắn gọn bằng **${explainLangName}** (VD \`${exampleVocabNotes}\`). Không lặp lại ở \`grammarNote\`.`,
     `   - \`"grammarNote"\`: Nếu \`"vocabNotes"\` đã có thì để rỗng \`""\` — chỉ điền tối đa 1 ghi chú ngắn gọn nhất trên thẻ.`,
     includeNuanceTip
-      ? `   - \`"explanationSpeech"\`: **MANDATORY QUALITY & DEPTH** — Rich, complete spoken nuance tip in **${explainLangName}** (played after the ${repeatCount} repeats) explaining **WHY** native speakers say it this way, situational context, and what stiff literal mistake learners should avoid ("Don't translate word-by-word as X; natives say Y because..."). NEVER write truncated or meaningless filler fragments.`
+      ? `   - \`"explanationSpeech"\`: **MANDATORY QUALITY & DEPTH** — Rich, complete spoken nuance tip in **${explainLangName}** (played after the ${repeatCount} repeats) explaining **WHY** native speakers say it this way, situational context, and what stiff literal mistake learners should avoid (explain the natural phrasing vs stiff literal mistake without using bare placeholder letters). Keep target words, topic phrases, and grammar patterns in natural **${langOption.nativeName}**. NEVER write truncated or meaningless filler fragments.`
       : `   - \`"explanationSpeech"\`: "" (keep empty so audio focuses 100% on Prompt -> Countdown -> ${repeatCount}x Repeats; ensure every \`sourcePrompt\` and \`answer\` is a complete, meaningful sentence).`,
     `   - \`"thinkSec": ${thinkSec}\`, \`"repeatCount": ${repeatCount}\``,
-    `   - **100% THUẦN NGÔN NGỮ CHO TTS**: \`"speech"\` chỉ chứa đúng **${langOption.nativeName}** (không trộn tiếng Việt hay ký hiệu lạ); \`"explanationSpeech"\` chỉ chứa đúng **${explainLangName}** (không chêm cụm từ dài bằng ngoại ngữ khiến TTS đọc lệch giọng).`,
-    `3. **Recap Outro Card (\`type: "outro"\`)**: \`"speech": ""\`, encouraging closing in \`"explanationSpeech"\` in **${explainLangName}**, and \`visual\` labels written in **${langOption.nativeName}**.`,
+    `   - **QUY TẮC TTS SONG NGỮ & CHỐNG ĐỌC NHẦM KÝ TỰ**:`,
+    `     + \`"speech"\` chỉ chứa đúng **${langOption.nativeName}** (không trộn tiếng Việt, Romaji/Pinyin hay ký hiệu lạ).`,
+    isSameLangExplain
+      ? `     + \`"explanationSpeech"\` chỉ chứa đúng **${langOption.nativeName}** tự nhiên.`
+      : `     + \`"explanationSpeech"\` (cả ở \`title\` intro, thẻ \`translation\`, và \`outro\`) và \`"sourcePrompt"\` dùng khung câu **${explainLangName}** (ngôn ngữ gốc), **NHƯNG mọi từ vựng mục tiêu, chủ đề bài học và cấu trúc ngữ pháp được nhắc tới PHẢI viết trực tiếp bằng ${langOption.nativeName} tự nhiên** (tuyệt đối KHÔNG viết Romaji/Pinyin/phiên âm bồi và không dịch mất chữ gốc) để TTS song ngữ tách giọng đọc tự nhiên kể cả khi chỉ bật đọc ngôn ngữ gốc.`,
+    `     + **HẠN CHẾ TỐI ĐA CHUỖI NGÔN NGỮ GỐC CHỈ 1 TỪ & CẤM KÝ TỰ ĐƠN LẺ**: Tuyệt đối hạn chế sinh \`"sourcePrompt"\`, \`"explanationSpeech"\` hoặc \`"vocabNotes"\` bằng ngôn ngữ gốc chỉ có **1 từ đơn lẻ** (luôn viết thành cụm tự nhiên ≥ 2–4 từ hoặc câu hoàn chỉnh), và **KHÔNG** dùng chữ cái đơn lẻ hay ký hiệu viết tắt rời rạc (\`"A"\`, \`"B"\`, \`"S"\`, \`"V"\`, \`"O"\`, \`"X"\`, \`"Y"\`, \`"VD"\`) trong lời đọc TTS vì rất dễ bị đọc nhầm từng ký tự.`,
+    `3. **Recap Outro Card (\`type: "outro"\`) — CHẾ ĐỘ NGÔN NGỮ GỐC**: \`"speech": ""\` (không cần đọc ngôn ngữ học ở outro), encouraging closing in \`"explanationSpeech"\` in **${explainLangName}** (keep any mentioned topic/grammar terms in natural **${langOption.nativeName}**!), and \`visual\` labels written in **${langOption.nativeName}**.`,
     '',
     TYPOGRAPHY_MOBILE_READABILITY_PROMPT_BLOCK,
     '',
@@ -3375,8 +3427,8 @@ export function buildTranslationChallengePrompt(params: {
     `  "repeatCount": ${repeatCount},`,
     `  "title": ${JSON.stringify(
       isSameLangExplain
-        ? `【Quick Speak ${chosenLevel}】"${exampleSource}"`
-        : `【Phản xạ ${chosenLevel}】"${exampleSource}" nói ${viLangName} sao cho tự nhiên?`,
+        ? `その言い方、${langOption.nativeName}で自然に言える？ | ${formatAudienceLevelLabel(chosenLevel, learningLang)}`
+        : `${topicHint ? `<Tiêu đề hook thật hay & gợi tò mò về "${topicHint}">` : `<Tiêu đề hook thật hay & gợi tò mò (VD: "${exampleSource}" nói sao cho tự nhiên?)>`} | ${formatAudienceLevelLabel(chosenLevel, learningLang)}`,
     )},`,
     '  "cards": [',
     '    {',
@@ -3655,8 +3707,8 @@ export function buildStarterLessonForLanguage(
         ttsText: '不好意思。不好意思，请问洗手间在哪里？',
         explanationSpeech:
           locale.code === 'none'
-            ? 'Use Bu Hao Yi Si to politely get attention before asking a question.'
-            : 'Dùng Bù hǎo yì si khi muốn mở lời nhờ vả hoặc hỏi đường một cách lịch sự. Câu ví dụ nghĩa là: Xin lỗi, cho hỏi nhà vệ sinh ở đâu ạ?',
+            ? 'Use 不好意思 to politely get attention before asking a question.'
+            : 'Dùng cụm 不好意思 khi muốn mở lời nhờ vả hoặc hỏi đường một cách lịch sự. Câu ví dụ nghĩa là: Xin lỗi, cho hỏi nhà vệ sinh ở đâu ạ?',
         learningLang: 'zh',
         durationSec: 5.5,
         visual: {
@@ -3683,8 +3735,8 @@ export function buildStarterLessonForLanguage(
         ttsText: '麻烦您了。麻烦您帮我拿一杯水。',
         explanationSpeech:
           locale.code === 'none'
-            ? 'Ma fan nin le expresses warm politeness when asking someone for a favor.'
-            : 'Má fan nín le có nghĩa là làm phiền bạn rồi, rất hay dùng khi nhờ người khác giúp đỡ lịch sự.',
+            ? '麻烦您了 expresses warm politeness when asking someone for a favor.'
+            : 'Cụm 麻烦您了 có nghĩa là làm phiền bạn rồi, rất hay dùng khi nhờ người khác giúp đỡ lịch sự.',
         learningLang: 'zh',
         durationSec: 5.2,
         visual: {
@@ -3710,8 +3762,8 @@ export function buildStarterLessonForLanguage(
         ttsText: '没关系。没关系，我们慢慢来。',
         explanationSpeech:
           locale.code === 'none'
-            ? 'Mei guan xi means it does not matter or no worries.'
-            : 'Méi guān xi nghĩa là không sao đâu, dùng để trấn an người đối diện khi họ xin lỗi hoặc vội vàng.',
+            ? '没关系 means it does not matter or no worries.'
+            : 'Cụm 没关系 nghĩa là không sao đâu, dùng để trấn an người đối diện khi họ xin lỗi hoặc vội vàng.',
         learningLang: 'zh',
         durationSec: 4.8,
         visual: {
@@ -3785,8 +3837,8 @@ export function buildStarterLessonForLanguage(
         ttsText: 'お願いします。お水をお願いします。',
         explanationSpeech:
           locale.code === 'none'
-            ? 'Use onegaishimasu whenever ordering or making a polite request.'
-            : 'Onegaishimasu dùng để gọi món hoặc nhờ vả lịch sự trong mọi tình huống.',
+            ? 'Use お願いします whenever ordering or making a polite request.'
+            : 'Cụm từ お願いします dùng để gọi món hoặc nhờ vả lịch sự trong mọi tình huống.',
         learningLang: 'ja',
         durationSec: 5.0,
         visual: {
@@ -3810,8 +3862,8 @@ export function buildStarterLessonForLanguage(
         ttsText: 'すみません。すみません、駅はどこですか。',
         explanationSpeech:
           locale.code === 'none'
-            ? 'Sumimasen politely opens a conversation or apologizes lightly.'
-            : 'Sumimasen vừa mang nghĩa xin lỗi nhẹ nhàng, vừa dùng để gọi nhân viên hoặc hỏi đường.',
+            ? 'すみません politely opens a conversation or apologizes lightly.'
+            : 'Từ すみません vừa mang nghĩa xin lỗi nhẹ nhàng, vừa dùng để gọi nhân viên hoặc hỏi đường.',
         learningLang: 'ja',
         durationSec: 5.0,
         visual: {
@@ -3884,8 +3936,8 @@ export function buildStarterLessonForLanguage(
         ttsText: '잠시만요. 잠시만요, 메뉴판 좀 주시겠어요?',
         explanationSpeech:
           locale.code === 'none'
-            ? 'Use jamsimanyo to call a server politely.'
-            : 'Jamsimanyo dùng để gọi phục vụ hoặc xin chờ một lát cực kỳ tự nhiên.',
+            ? 'Use 잠시만요 to call a server politely.'
+            : 'Cụm từ 잠시만요 dùng để gọi phục vụ hoặc xin chờ một lát cực kỳ tự nhiên.',
         learningLang: 'ko',
         durationSec: 4.8,
         visual: {
@@ -4037,7 +4089,7 @@ export function buildStarterLessonForLanguage(
       explanationSpeech:
         locale.code === 'none'
           ? 'Articulate means speaking clearly and persuasively.'
-          : 'Nghĩa là diễn đạt mạch lạc và thuyết phục. Ví dụ: Cô ấy trình bày rất mạch lạc trong các buổi họp.',
+          : 'Từ vựng articulate nghĩa là diễn đạt mạch lạc và thuyết phục. Ví dụ: Cô ấy trình bày rất mạch lạc trong các buổi họp.',
       learningLang: 'en',
       durationSec: 5.2,
       visual: {
@@ -4293,6 +4345,15 @@ export function parseEnglishReelsAiJson(
           ? c.contextExcerpt.trim()
           : undefined;
 
+      const explanationSpeechRaw =
+        typeof c.explanationSpeech === 'string' && c.explanationSpeech.trim()
+          ? sanitizeTtsSpeech(c.explanationSpeech)
+          : typeof c.explainSpeech === 'string' && c.explainSpeech.trim()
+            ? sanitizeTtsSpeech(c.explainSpeech)
+            : undefined;
+      const hasExplicitEmptySpeech =
+        (typeof c.ttsText === 'string' && c.ttsText.trim() === '') ||
+        (typeof c.speech === 'string' && c.speech.trim() === '');
       const defaultSpokenFromCreator =
         wordVal && exampleVal
           ? `${wordVal}. ${exampleVal}`
@@ -4303,8 +4364,12 @@ export function parseEnglishReelsAiJson(
         type === 'translation'
           ? sanitizeTtsSpeech(String(c.ttsText || speechVal || answerVal || content)) ||
             sanitizeTtsSpeech(content || title)
-          : sanitizeTtsSpeech(String(c.ttsText || speechVal || defaultSpokenFromCreator)) ||
-            sanitizeTtsSpeech(content || title);
+          : (type === 'intro' || type === 'transition' || type === 'outro') &&
+              hasExplicitEmptySpeech &&
+              explanationSpeechRaw
+            ? ''
+            : sanitizeTtsSpeech(String(c.ttsText || speechVal || defaultSpokenFromCreator)) ||
+              sanitizeTtsSpeech(content || title);
 
       // Build clean translation/subtext line avoiding duplication
       const translationParts: string[] = [];
@@ -4389,12 +4454,6 @@ export function parseEnglishReelsAiJson(
                   : type.toUpperCase()),
         ).trim();
 
-      const explanationSpeechRaw =
-        typeof c.explanationSpeech === 'string' && c.explanationSpeech.trim()
-          ? sanitizeTtsSpeech(c.explanationSpeech)
-          : typeof c.explainSpeech === 'string' && c.explainSpeech.trim()
-            ? sanitizeTtsSpeech(c.explainSpeech)
-            : undefined;
       const topLearningLang =
         typeof parsed.learningLang === 'string' && parsed.learningLang.trim()
           ? (parsed.learningLang.trim().toLowerCase() as LearningLanguageId)
@@ -4463,7 +4522,7 @@ export function parseEnglishReelsAiJson(
         const nDur = cardObj.explanationSpeech ? estimateCardSpeechDuration(cardObj.explanationSpeech) : 0;
         cardObj.durationSec = Number((pDur + tThink + tRepeats * (aDur + 0.55) + nDur).toFixed(2));
       } else {
-        cardObj.durationSec = estimateCardSpeechDuration(ttsText);
+        cardObj.durationSec = estimateCardSpeechDuration(ttsText || explanationSpeechRaw || content);
       }
 
       const prevVariant = cards.length > 0 ? cards[cards.length - 1].visual?.variant : null;
@@ -4495,9 +4554,13 @@ export function parseEnglishReelsAiJson(
       ? (parsed.cartoonAnimations as Partial<CartoonAnimationDefinition>[])
       : sceneJson?.cartoonAnimations;
 
+    const parsedLevel =
+      typeof parsed.level === 'string' && parsed.level.trim() ? parsed.level.trim() : undefined;
+
     return {
       title: String(parsed.title || cards[0]?.title || 'English Reels Project').trim(),
       mode,
+      level: parsedLevel,
       creatorSubMode,
       compositionId: parsedCompId,
       learningLang: inferLearningLangFromCards(
@@ -4940,7 +5003,16 @@ export function reelCardsToLessonProject(
       });
       cursor = end + 0.08;
     } else {
-      const speech = (card.ttsText || card.content || card.title || 'Next').trim();
+      const isNativeOnlyIntroOutro =
+        (card.type === 'intro' || card.type === 'transition' || card.type === 'outro') &&
+        allowExplanationAudio &&
+        !card.ttsText &&
+        Boolean(card.explanationSpeech);
+      const speech = (
+        (isNativeOnlyIntroOutro
+          ? card.explanationSpeech || card.ttsText || card.content || card.title
+          : card.ttsText || card.content || card.title) || 'Next'
+      ).trim();
       const dur =
         timingOverride?.totalSec ??
         (typeof durOverride === 'number' && Number.isFinite(durOverride) && durOverride > 0.25

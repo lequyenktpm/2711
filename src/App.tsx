@@ -58,7 +58,7 @@ import {
   ExportVideoResult,
   exportProjectToVideo,
 } from './engine/mp4Exporter';
-import { cleanOutputTitleStem, TAB_OUTPUT_SUBFOLDERS } from './engine/outputNaming';
+import { buildLeveledOutputStem, TAB_OUTPUT_SUBFOLDERS } from './engine/outputNaming';
 import {
   PRESET_3D_SHAPES_KARAOKE,
   PRESET_ED_PRONUNCIATION,
@@ -1129,10 +1129,10 @@ export default function App() {
       setExportError(null);
 
       try {
-        const cleanFileBase = cleanOutputTitleStem(
-          targetProject.title || targetProject.id,
-          'Studio Video',
-        );
+        const cleanFileBase = buildLeveledOutputStem({
+          title: targetProject.title || targetProject.id,
+          fallback: 'Studio Video',
+        });
         const targetDescription = projectOverride
           ? buildVideoDescription({
               title: targetProject.title,

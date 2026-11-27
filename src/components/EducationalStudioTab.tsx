@@ -63,8 +63,8 @@ import {
 } from '../engine/mp4Config';
 import { ExportAbortedError, exportProjectToServerDisk } from '../engine/mp4Exporter';
 import {
+  buildLeveledOutputStem,
   cleanDownloadFileName,
-  cleanOutputTitleStem,
   TAB_OUTPUT_SUBFOLDERS,
 } from '../engine/outputNaming';
 import {
@@ -821,7 +821,10 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
     }, 450);
 
     try {
-      const mergeCleanStem = cleanOutputTitleStem(outStem, 'Edu Merged Video');
+      const mergeCleanStem = buildLeveledOutputStem({
+        title: outStem,
+        fallback: 'Edu Merged Video',
+      });
       const mergeDescription = buildVideoDescription({
         title: mergeCleanStem,
         nativeLang: 'vi',
@@ -885,10 +888,10 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
 
     try {
       if (mergeMode === 'single' && mergeVideoFile && mergeAudioFile) {
-        const resolvedName = cleanOutputTitleStem(
-          mergeOutputName.trim() || mergeVideoFile.name.replace(/\.[^.]+$/, ''),
-          'Edu Merged Video',
-        );
+        const resolvedName = buildLeveledOutputStem({
+          title: mergeOutputName.trim() || mergeVideoFile.name.replace(/\.[^.]+$/, ''),
+          fallback: 'Edu Merged Video',
+        });
         const data = await runSingleMergeJob(mergeVideoFile, mergeAudioFile, resolvedName, controller);
         setMergeStatus(
           `Hoàn tất! Đã lưu ${data.fileName} (${data.savedPath})${data.copiedLocal ? ` · Đã lưu thêm vào "${localDirName}"` : ''}`,
@@ -1242,10 +1245,10 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
             })
           : '');
 
-      const resolvedKmName = cleanOutputTitleStem(
-        kmOutputName.trim() || kmVideoFile.name.replace(/\.[^.]+$/, ''),
-        'Edu Karaoke Video',
-      );
+      const resolvedKmName = buildLeveledOutputStem({
+        title: kmOutputName.trim() || kmVideoFile.name.replace(/\.[^.]+$/, ''),
+        fallback: 'Edu Karaoke Video',
+      });
       const outroText = [watermarkOutro.outroLine1.trim(), watermarkOutro.outroLine2.trim()]
         .filter(Boolean)
         .join('\n');
@@ -2256,7 +2259,12 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
         setReadingTitle(cleanTitle);
       }
 
-      const cleanReadingTitle = cleanOutputTitleStem(cleanTitle, 'Reading Along');
+      const cleanReadingTitle = buildLeveledOutputStem({
+        title: cleanTitle || readingTopic,
+        level: readingAiLevel,
+        learningLanguage: readingLearningLang,
+        fallback: 'Reading Along',
+      });
       const voiceObj = allReadingVoices.find((v) => v.id === readingVoice);
       const langFallback =
         LEARNING_LANGUAGE_OPTIONS.find((l) => l.id === readingLearningLang)?.voiceLang || 'en-US';
@@ -2652,7 +2660,12 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
         throw new ExportAbortedError();
       }
 
-      const baseStem = cleanOutputTitleStem(targetTitle, 'Reading Along');
+      const baseStem = buildLeveledOutputStem({
+        title: targetTitle || readingTopic,
+        level: readingAiLevel,
+        learningLanguage: readingLearningLang,
+        fallback: 'Reading Along',
+      });
 
       const dummyProject: LessonProject = {
         id: 'reading-along-preview',
@@ -2963,7 +2976,12 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
       text: cleanText,
     };
     const fileName = cleanDownloadFileName(
-      readingTitle.trim() || 'reading-lesson',
+      buildLeveledOutputStem({
+        title: readingTitle.trim() || readingTopic || 'reading-lesson',
+        level: readingAiLevel,
+        learningLanguage: readingLearningLang,
+        fallback: 'reading-lesson',
+      }),
       'json',
       'reading-lesson',
     );

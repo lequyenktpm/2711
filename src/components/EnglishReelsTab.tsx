@@ -105,8 +105,8 @@ import {
 } from '../engine/mp4Config';
 import { ExportAbortedError, exportProjectToVideo } from '../engine/mp4Exporter';
 import {
+  buildLeveledOutputStem,
   cleanDownloadFileName,
-  cleanOutputTitleStem,
   TAB_OUTPUT_SUBFOLDERS,
 } from '../engine/outputNaming';
 import { FlexibleSceneDocument } from '../engine/scenePlanAdapter';
@@ -467,6 +467,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       initialStarter?.title ||
       'Hotel Check-in & Polite Requests',
   );
+  const [parsedLessonLevel, setParsedLessonLevel] = useState<string>('');
   const [rawText, setRawText] = useState(() => initialReelsSaved?.rawText || SAMPLE_ARTICLE_TEXT);
   const [mode, setMode] = useState<ReelMode>(
     () => initialStarter?.mode || initialModeSaved.mode || 'auto',
@@ -1609,6 +1610,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       setScrapeResult(result);
       if (result.title) {
         setLessonTitle(result.title);
+        setParsedLessonLevel('');
         manualTitleEditedRef.current = false;
       }
       if (result.rawText) {
@@ -1674,6 +1676,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       setSelectedComposition(nextComp);
     }
     setLessonTitle(parsed.title);
+    setParsedLessonLevel(parsed.level || '');
     manualTitleEditedRef.current = false;
     setMode(parsed.mode);
     setCards(parsed.cards);
@@ -1705,6 +1708,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     });
     if (built.title && !useManualTitle) {
       setLessonTitle(built.title);
+      setParsedLessonLevel('');
     }
     setCards(built.cards);
     hasCustomCardsRef.current = true;
@@ -2340,8 +2344,11 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         }
       } else if (
         allowExplAudio &&
-        (roleSeparated || !allowLearningAudio) &&
-        (activeCard.type === 'intro' || activeCard.type === 'transition' || activeCard.type === 'outro')
+        (activeCard.type === 'intro' || activeCard.type === 'transition' || activeCard.type === 'outro') &&
+        (roleSeparated ||
+          !allowLearningAudio ||
+          (normalizeTtsLangCode(explVoiceLang) !== normalizeTtsLangCode(cardTarget.lang) &&
+            Boolean(sanitizeTtsSpeech(activeCard.explanationSpeech || activeCard.translation || ''))))
       ) {
         const explOnly = sanitizeTtsSpeech(
           activeCard.explanationSpeech || activeCard.translation || activeCard.content || activeCard.title,
@@ -2413,10 +2420,14 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           provider: ttsProvider,
           voice: allowLearningAudio ? cardTarget.voice : explanationTtsVoice,
           lang: allowLearningAudio ? cardTarget.lang : explVoiceLang,
-          secondaryVoice: allowExplAudio ? explanationTtsVoice : undefined,
-          secondaryLang: allowExplAudio ? explVoiceLang : undefined,
+          secondaryVoice: allowLearningAudio
+            ? (allowExplAudio ? explanationTtsVoice : undefined)
+            : cardTarget.voice,
+          secondaryLang: allowLearningAudio
+            ? (allowExplAudio ? explVoiceLang : undefined)
+            : cardTarget.lang,
           autoSplitLanguages:
-            allowExplAudio && segments.some((s) => s.autoSplit === true),
+            (allowExplAudio || allowLearningAudio) && segments.some((s) => s.autoSplit === true),
           singleVoiceMultilingual: isMultilingualVoiceId(
             allowLearningAudio ? cardTarget.voice : explanationTtsVoice,
           ),
@@ -2640,8 +2651,11 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         });
       } else if (
         allowExplAudio &&
-        (roleSeparated || !allowLearningAudio) &&
-        (c.type === 'intro' || c.type === 'transition' || c.type === 'outro')
+        (c.type === 'intro' || c.type === 'transition' || c.type === 'outro') &&
+        (roleSeparated ||
+          !allowLearningAudio ||
+          (normalizeTtsLangCode(explVoiceLang) !== normalizeTtsLangCode(cardTarget.lang) &&
+            Boolean(sanitizeTtsSpeech(c.explanationSpeech || c.translation || ''))))
       ) {
         const explOnly =
           sanitizeTtsSpeech(c.explanationSpeech || c.translation || c.content || c.title) ||
@@ -2713,7 +2727,11 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         : '';
     const extraOutroIdx = extraOutroSpeech ? segments.length : -1;
     if (extraOutroSpeech) {
-      const useExplForOutro = !allowLearningAudio || (roleSeparated && allowExplAudio);
+      const useExplForOutro =
+        !allowLearningAudio ||
+        (allowExplAudio &&
+          (roleSeparated ||
+            normalizeTtsLangCode(explVoiceLang) !== normalizeTtsLangCode(lessonVoiceLang)));
       const oVoice = useExplForOutro ? explanationTtsVoice : lessonVoice;
       const oLang = useExplForOutro ? explVoiceLang : lessonVoiceLang;
       segments.push({
@@ -2748,10 +2766,14 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         strictProvider: ttsOverride?.strictProvider === true,
         voice: allowLearningAudio ? lessonVoice : explanationTtsVoice,
         lang: allowLearningAudio ? lessonVoiceLang : explVoiceLang,
-        secondaryVoice: allowExplAudio ? explanationTtsVoice : undefined,
-        secondaryLang: allowExplAudio ? explVoiceLang : undefined,
+        secondaryVoice: allowLearningAudio
+          ? (allowExplAudio ? explanationTtsVoice : undefined)
+          : lessonVoice,
+        secondaryLang: allowLearningAudio
+          ? (allowExplAudio ? explVoiceLang : undefined)
+          : lessonVoiceLang,
         autoSplitLanguages:
-          allowExplAudio && segments.some((s) => s.autoSplit === true),
+          (allowExplAudio || allowLearningAudio) && segments.some((s) => s.autoSplit === true),
         singleVoiceMultilingual: isMultilingualVoiceId(
           allowLearningAudio ? lessonVoice : explanationTtsVoice,
         ),
@@ -2780,7 +2802,19 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       });
     }
 
-    const rawFileName = cleanDownloadFileName(lessonTitle, 'mp3', 'English Reels');
+    const activeFileLevel =
+      reelCreationMode === 'creator'
+        ? creatorLevel
+        : reelCreationMode === 'translation'
+          ? translationLevel
+          : parsedLessonLevel;
+    const leveledTitleStem = buildLeveledOutputStem({
+      title: lessonTitle,
+      level: activeFileLevel,
+      learningLanguage: detectedLearningLangForDesc,
+      fallback: 'English Reels',
+    });
+    const rawFileName = cleanDownloadFileName(leveledTitleStem, 'mp3', 'English Reels');
     const rawAudioFile = base64ToMp3File(data.audioBase64, rawFileName);
 
     const segDurs: number[] = Array.isArray(data.segmentDurations) ? data.segmentDurations : [];
@@ -2973,7 +3007,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         enableCountdownSfx,
         outroStartSec,
         minTotalDurationSec: syncedProj.duration,
-        outputFileName: cleanDownloadFileName(lessonTitle, 'wav', 'English Reels'),
+        outputFileName: cleanDownloadFileName(leveledTitleStem, 'wav', 'English Reels'),
       });
       if (mixed.file) {
         finalAudioFile = mixed.file;
@@ -3083,7 +3117,18 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         throw new ExportAbortedError();
       }
 
-      const cleanExportBase = cleanOutputTitleStem(lessonTitle, 'English Reels');
+      const activeFileLevel =
+        reelCreationMode === 'creator'
+          ? creatorLevel
+          : reelCreationMode === 'translation'
+            ? translationLevel
+            : parsedLessonLevel;
+      const cleanExportBase = buildLeveledOutputStem({
+        title: lessonTitle,
+        level: activeFileLevel,
+        learningLanguage: detectedLearningLangForDesc,
+        fallback: 'English Reels',
+      });
 
       const result = await exportProjectToVideo(
         targetProject,
@@ -3163,6 +3208,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         setSelectedComposition(nextComp);
       }
       setLessonTitle(parsed.title);
+      setParsedLessonLevel(parsed.level || '');
       manualTitleEditedRef.current = false;
       setMode(parsed.mode);
       setCards(parsed.cards);
@@ -6749,7 +6795,18 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                   <button
                     type="button"
                     onClick={() => {
-                      const stem = cleanOutputTitleStem(lessonTitle, 'English Reels');
+                      const activeFileLevel =
+                        reelCreationMode === 'creator'
+                          ? creatorLevel
+                          : reelCreationMode === 'translation'
+                            ? translationLevel
+                            : parsedLessonLevel;
+                      const stem = buildLeveledOutputStem({
+                        title: lessonTitle,
+                        level: activeFileLevel,
+                        learningLanguage: detectedLearningLangForDesc,
+                        fallback: 'English Reels',
+                      });
                       downloadTextAsPlainFile(videoDescription.txtContent, `${stem}.txt`);
                     }}
                     className="inline-flex items-center gap-1 px-2.5 py-1 font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-md hover:bg-indigo-100"

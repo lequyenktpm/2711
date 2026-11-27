@@ -1,3 +1,5 @@
+import { formatAudienceLevelLabel } from './outputNaming';
+
 export type ReadingCefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1';
 export type ReadingLearningLang = 'en' | 'ja' | 'zh' | 'ko' | 'fr' | 'es';
 export type ReadingFormatCategory =
@@ -90,7 +92,7 @@ const READING_LANG_META: Record<ReadingLearningLang, ReadingLangMeta> = {
     ratePerMin: 125,
     badgeSystem: 'CEFR',
     noPronunciationNote: 'Chỉ viết tiếng Anh tự nhiên, không chèn phiên âm IPA vào đoạn đọc.',
-    exampleTitle: 'Why 5 AM Changes Everything!',
+    exampleTitle: 'It started with one tiny favor… and ended with an unexpected reunion',
     exampleText: 'Sentence one goes here.\\nSentence two goes here.\\nSentence three continues the story.',
   },
   ja: {
@@ -101,7 +103,7 @@ const READING_LANG_META: Record<ReadingLearningLang, ReadingLangMeta> = {
     badgeSystem: 'JLPT',
     noPronunciationNote:
       'Chỉ viết tiếng Nhật tự nhiên (Kanji + Hiragana/Katakana), TUYỆT ĐỐI KHÔNG chèn phiên âm Romaji hay Furigana trong ngoặc vào câu đọc để audio & bàn tay chỉ chữ khớp 100%.',
-    exampleTitle: '【朝の習慣】10分で人生が変わる理由',
+    exampleTitle: 'たった一言の優しさから始まった、思いがけない再会…',
     exampleText: '朝早く起きると、一日の時間が長く感じられます。\\n静かな部屋で温かいお茶を飲みます。\\nそれから今日やることを三つだけ書きます。',
   },
   zh: {
@@ -112,7 +114,7 @@ const READING_LANG_META: Record<ReadingLearningLang, ReadingLangMeta> = {
     badgeSystem: 'HSK',
     noPronunciationNote:
       'Chỉ viết chữ Hán giản thể (简体中文) tự nhiên, TUYỆT ĐỐI KHÔNG chèn Pinyin vào trong dòng đọc để TTS đọc mượt và con trỏ chỉ đúng từng chữ.',
-    exampleTitle: '【每天10分钟】为什么早起让人更专注？',
+    exampleTitle: '本来只是顺手帮了个小忙，结局却让人完全没想到…',
     exampleText: '每天早上我都会早起十分钟。\\n打开窗户呼吸新鲜空气，感觉非常舒服。\\n喝一杯温水以后，我开始计划今天的安排。',
   },
   ko: {
@@ -123,7 +125,7 @@ const READING_LANG_META: Record<ReadingLearningLang, ReadingLangMeta> = {
     badgeSystem: 'TOPIK',
     noPronunciationNote:
       'Chỉ viết Hangul (한국어) tự nhiên tách từ chuẩn bằng dấu cách, TUYỆT ĐỐI KHÔNG chèn phiên âm Romanization vào câu đọc.',
-    exampleTitle: '【아침 루틴】하루를 바꾸는 10분의 기적',
+    exampleTitle: '사소한 부탁 하나로 시작된 뜻밖의 재회…',
     exampleText: '매일 아침 일찍 일어나면 하루가 훨씬 여유로워집니다.\\n창문을 열고 따뜻한 물 한 잔을 천천히 마십니다.\\n그리고 오늘 꼭 해야 할 일 세 가지를 적어 봅니다.',
   },
   fr: {
@@ -133,7 +135,7 @@ const READING_LANG_META: Record<ReadingLearningLang, ReadingLangMeta> = {
     ratePerMin: 120,
     badgeSystem: 'CEFR',
     noPronunciationNote: 'Chỉ viết tiếng Pháp tự nhiên, không chèn phiên âm vào câu đọc.',
-    exampleTitle: 'Pourquoi 10 minutes le matin changent tout',
+    exampleTitle: 'Tout a commencé par un petit service… et s’est terminé par des retrouvailles inattendues',
     exampleText: 'Chaque matin, je me réveille dix minutes plus tôt.\\nJ’ouvre la fenêtre et je bois un grand verre d’eau.',
   },
   es: {
@@ -143,7 +145,7 @@ const READING_LANG_META: Record<ReadingLearningLang, ReadingLangMeta> = {
     ratePerMin: 125,
     badgeSystem: 'CEFR',
     noPronunciationNote: 'Chỉ viết tiếng Tây Ban Nha tự nhiên, không chèn phiên âm vào câu đọc.',
-    exampleTitle: 'Por qué 10 minutos cada mañana cambian tu día',
+    exampleTitle: 'Todo empezó con un pequeño favor… y terminó en un reencuentro inesperado',
     exampleText: 'Cada mañana me levanto diez minutos antes.\\nAbro la ventana y tomo un vaso de agua fresca.',
   },
 };
@@ -412,10 +414,15 @@ ${sourceBlock}
 - TUYỆT ĐỐI KHÔNG đưa các dòng nhãn bài tập ("Practice Reading...", "Exercise 1", "Part 1") hoặc tiêu đề markdown \`##\` vào trường \`text\`. Chỉ giữ các câu đọc hoàn chỉnh.
 - Mỗi câu viết trên **1 dòng riêng** (ngăn cách bằng \\n), KHÔNG đánh số thứ tự, KHÔNG gắn timestamp, KHÔNG markdown (\`**\`, \`*\`), KHÔNG emoji, để app đọc TTS & chạy con trỏ chỉ chữ chính xác từng từ.
 
+# QUY TẮC ĐẶT TIÊU ĐỀ CUỐN HÚT & ĐÚNG NGÔN NGỮ (CỰC KỲ QUAN TRỌNG)
+- **KHÔNG ĐẶT TÊN TRUYỆN PHẲNG / KHÔ KHAN** kiểu \`"La bicicleta roja que esperaba a Mateo"\`, \`"El café de Mateo"\`, \`"Morning Routine"\` hay \`"Lesson 1"\`.
+- Trường \`"title"\` PHẢI là **1 câu hook khơi gợi tò mò, cảm xúc, nút thắt câu chuyện hoặc câu hỏi đánh trúng tâm lý người đọc**, viết **100% bằng ${meta.nativeName}** (phong cách cuốn hút như: \`"${meta.exampleTitle}"\`).
+- Nhãn trình độ dành cho ai khi xuất file sẽ được hệ thống tự gắn bằng **đúng ${meta.nativeName}** (\`${formatAudienceLevelLabel(level, learningLang)}\`), TUYỆT ĐỐI KHÔNG chèn tiếng Việt vào \`"title"\`.
+
 # ĐỊNH DẠNG ĐẦU RA BẮT BUỘC (XUẤT RA FILE .JSON)
 \`\`\`json
 {
-  "title": "Tiêu đề ngắn gọn, khơi gợi tò mò & cảm xúc 100% bằng ${meta.nativeName} (VD: '${meta.exampleTitle}')",
+  "title": "<Tiêu đề hook thật hay, khơi gợi tò mò 100% bằng ${meta.nativeName} — VD: '${meta.exampleTitle}'>",
   "topicBadge": "${meta.badgeSystem} ${level} · READING",
   "level": "${level}",
   "text": "${meta.exampleText}"

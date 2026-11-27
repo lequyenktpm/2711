@@ -136,7 +136,6 @@ import {
   sanitizeSpanTextForSpeech,
   splitMixedLanguageTtsSpans,
 } from './bilingualTtsHelper';
-import { generateBatchPromptsForTopics } from './multiTabBatchHelper';
 import {
   compileVisualBuilderToPrimitives,
   createDefaultVisualBuilderConfig,

@@ -17,6 +17,10 @@ if not exist "node_modules" (
   echo [INFO] Installing dependencies first...
   call npm install
   if errorlevel 1 (
+    echo [WARN] npm install encountered a dependency conflict. Retrying with --legacy-peer-deps...
+    call npm install --legacy-peer-deps
+  )
+  if errorlevel 1 (
     echo [ERROR] npm install failed.
     pause
     exit /b 1

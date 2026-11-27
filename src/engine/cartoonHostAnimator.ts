@@ -1546,7 +1546,7 @@ export function computeSpeechLipSyncState(
     mouthStyle: activeMouthStyle,
     fxOverlay: currentState.params.fxOverlay,
     accessory: currentState.params.accessory,
-    blushIntensity: blushIntensity > 0.02 ? blushIntensity : undefined,
+    blushIntensity: blushIntensity > 0.02 ? blushIntensity : 0,
     bodySquashX,
     bodySquashY,
   };

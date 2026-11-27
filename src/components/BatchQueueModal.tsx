@@ -95,8 +95,8 @@ import {
   splitMultiJsonInputs,
 } from '../engine/multiTabBatchHelper';
 import {
+  buildLeveledOutputStem,
   cleanDownloadFileName,
-  cleanOutputTitleStem,
   resolveTabOutputSubfolder,
   TAB_OUTPUT_SUBFOLDERS,
 } from '../engine/outputNaming';
@@ -944,7 +944,10 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
   };
 
   const exportBaseName = (item: BatchJobItem): string =>
-    cleanOutputTitleStem(item.audioFile ? getBaseName(item.audioFile.name) : item.baseName, 'Batch Video');
+    buildLeveledOutputStem({
+      title: item.audioFile ? getBaseName(item.audioFile.name) : item.baseName,
+      fallback: 'Batch Video',
+    });
 
   const buildProjectForItem = async (
     item: BatchJobItem,
@@ -1123,7 +1126,11 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
         });
 
         const promptText = await buildPromptForItem(item);
-        const promptFileName = cleanDownloadFileName(`${item.baseName} Prompt`, 'txt', 'Prompt');
+        const promptStem = buildLeveledOutputStem({
+          title: item.baseName,
+          fallback: 'Prompt',
+        });
+        const promptFileName = cleanDownloadFileName(`${promptStem} | Prompt`, 'txt', 'Prompt');
         promptFiles[promptFileName] = promptText;
         await saveTextOutput(promptText, promptFileName);
 
@@ -1384,7 +1391,12 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
           const cleaned = cleanReadingWorksheetInput(payload.text, payload.title);
           const cleanTitle = cleaned.title || payload.title;
           const cleanBody = cleaned.bodyText || payload.text;
-          const fileBase = cleanOutputTitleStem(cleanTitle, 'Reading Along');
+          const fileBase = buildLeveledOutputStem({
+            title: cleanTitle,
+            level: payload.level,
+            learningLanguage: item.learningLanguage,
+            fallback: 'Reading Along',
+          });
           const voiceMeta =
             LEARNING_LANGUAGE_OPTIONS.find((l) => l.id === item.learningLanguage) ||
             LEARNING_LANGUAGE_OPTIONS[0];
@@ -1699,7 +1711,12 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
         } else {
           // AI Creator or Translation Challenge item
           const payload = item.payload;
-          const fileBase = cleanOutputTitleStem(payload.title, 'Batch Reels');
+          const fileBase = buildLeveledOutputStem({
+            title: payload.title,
+            level: payload.level,
+            learningLanguage: item.learningLanguage,
+            fallback: 'Batch Reels',
+          });
           const {
             segments,
             cardMapping,
