@@ -1,4 +1,5 @@
 import { formatAudienceLevelLabel } from './outputNaming';
+import { DurationReportMeta, parseDurationReportMeta } from './types';
 
 export type ReadingCefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1';
 export type ReadingLearningLang = 'en' | 'ja' | 'zh' | 'ko' | 'fr' | 'es';
@@ -71,6 +72,7 @@ export interface ParsedReadingPassage {
   topicBadge: string;
   level?: string;
   text: string;
+  durationReport?: DurationReportMeta;
 }
 
 interface ReadingLangMeta {
@@ -371,6 +373,22 @@ export function buildReadingWebAiPrompt(opts: ReadingWebPromptOptions): string {
     READING_FORMAT_OPTIONS.find((f) => f.id === (opts.formatPreference || 'auto')) ||
     READING_FORMAT_OPTIONS[0];
 
+  const effectiveMinutes = durationMinutes ?? Math.max(0.5, Number((targetCount / meta.ratePerMin).toFixed(1)));
+  const unitName = meta.unit === 'chars' ? `ký tự ${meta.nativeName}` : `từ ${meta.nativeName}`;
+  const unitShort = meta.unit === 'chars' ? 'ký tự' : 'từ';
+  const chapterCount =
+    effectiveMinutes >= 5 ? Math.max(3, Math.min(12, Math.round(effectiveMinutes / 3))) : 1;
+  const perChapterTarget = Math.max(120, Math.round(targetCount / chapterCount));
+
+  const volumeArchitectureBlock =
+    effectiveMinutes >= 5
+      ? [
+          `- **KẾ HOẠCH CHIA CHƯƠNG ĐỂ ĐẠT ĐỦ ${effectiveMinutes} PHÚT (CẤM DỪNG SỚM Ở 300–500 ${unitShort.toUpperCase()} / ~3 PHÚT)**:`,
+          `  + Khi đặt mục tiêu **${effectiveMinutes} phút**, bài viết PHẢI đạt tối thiểu **${targetCount}+ ${unitShort}** (tương đương tốc độ đọc ~${meta.ratePerMin} ${unitShort}/phút × ${effectiveMinutes} phút).`,
+          `  + Để không bị hụt dung lượng hay tụt xuống còn ~3 phút, hãy **lập dàn ý ${chapterCount} hồi / phần nối tiếp nhau**, mỗi phần triển khai **~${perChapterTarget}+ ${unitShort}** với diễn biến, bối cảnh, đối thoại, góc nhìn hoặc bài học mới hoàn toàn.`,
+        ].join('\n')
+      : '';
+
   const sourceBlock =
     opts.mode === 'adapt-text'
       ? `NỘI DUNG GỐC NGƯỜI DÙNG NHẬP VÀO CẦN BIÊN TẬP LẠI THEO ĐỘ KHÓ "${level}":
@@ -379,7 +397,8 @@ ${cleanSource || '(người dùng sẽ dán đoạn văn gốc vào đây)'}
 """
 YÊU CẦU BIÊN TẬP CHUYÊN SÂU:
 - Giữ trọn ý nghĩa cốt lõi và mạch hấp dẫn từ nội dung gốc (nếu nguồn đang là tiếng Việt hoặc ngôn ngữ khác, hãy chuyển ngữ / biên tập lại hoàn toàn sang **${meta.nameVi}**).
-- Điều chỉnh từ vựng, độ dài câu và cấu trúc ngữ pháp chuẩn xác cho trình độ **${level}**, triển khai đầy đủ các mục kiến thức với chiều sâu giải thích rõ ràng để đạt **tối thiểu ${estimatedMinutesLabel}** (tối thiểu ~${targetCount} ${meta.unit === 'chars' ? 'ký tự' : 'từ'}; được phép dài hơn để câu văn trọn vẹn ý nghĩa, TUYỆT ĐỐI KHÔNG cắt xén xuống thấp hơn hay tạo câu cụt vô nghĩa).`
+- Điều chỉnh từ vựng, độ dài câu và cấu trúc ngữ pháp chuẩn xác cho trình độ **${level}**, triển khai đầy đủ các khía cạnh/bối cảnh thực tế của chủ đề với chiều sâu rõ ràng để cố gắng đạt **tối thiểu ${estimatedMinutesLabel}** (tối thiểu ~${targetCount} ${unitShort}; được phép dài hơn để câu văn trọn vẹn ý nghĩa, TUYỆT ĐỐI KHÔNG cắt xén xuống thấp hơn hay tạo câu cụt vô nghĩa).
+- Nếu nguồn gốc quá ngắn hoặc chỉ có 1 ý hẹp mà việc kéo dài tới ${effectiveMinutes} phút sẽ buộc phải bịa lan man hoặc lặp ý, **KHÔNG ĐƯỢC NHỒI CHỮ RỖNG** — hãy viết sâu sắc hết mức hợp lý rồi ghi rõ lý do trong \`durationReport.shortfallReason\`.`
       : opts.mode === 'web-url'
         ? cleanSource
           ? `NGUỒN BÀI VIẾT TỪ WEB${cleanUrl ? ` (${cleanUrl})` : ''}:
@@ -388,13 +407,13 @@ Nội dung đã trích xuất:
 """
 ${cleanSource}
 """
-Hãy loại bỏ toàn bộ tiêu đề khung bài tập/worksheet (như "Practice Reading...", "Exercise 1", "Part 1", menu web) và biên tập/chuyển thể thành bài đọc ${meta.nameVi} hay nhất từ nội dung chính trên.`
+Hãy loại bỏ toàn bộ tiêu đề khung bài tập/worksheet (như "Practice Reading...", "Exercise 1", "Part 1", menu web) và biên tập/chuyển thể thành bài đọc ${meta.nameVi} sâu sắc, cuốn hút nhất từ nội dung chính trên.`
           : `HÃY TRUY CẬP / ĐỌC NỘI DUNG TỪ ĐƯỜNG LINK SAU VÀ BIÊN TẬP THÀNH BÀI ĐỌC ${meta.nameVi.toUpperCase()}:
 URL: ${cleanUrl || '(người dùng sẽ dán URL)'}
 (Nếu bạn không truy cập trực tiếp được link, hãy dựa theo chủ đề trong URL "${cleanUrl}" hoặc nội dung liên quan để viết bài đọc chuẩn xác).`
         : cleanTopic
           ? `CHỦ ĐỀ BÀI ĐỌC BẰNG ${meta.nameVi.toUpperCase()}: "${cleanTopic}"`
-          : `CHẾ ĐỘ AI TỰ CHỌN Ý TƯỞNG: Hãy TỰ NGHĨ MỘT CHỦ ĐỀ BÀI ĐỌC THẬT CUỐN HÚT, THỰC TẾ VÀ PHÙ HỢP VỚI TRÌNH ĐỘ "${level}" (VD: câu chuyện thói quen buổi sáng, trải nghiệm quán cà phê, bài học tư duy nhẹ nhàng, văn hóa bản xứ...).`;
+          : `CHẾ ĐỘ AI TỰ CHỌN Ý TƯỞNG: Hãy TỰ NGHĨ MỘT CHỦ ĐỀ BÀI ĐỌC THẬT CUỐN HÚT, THỰC TẾ VÀ PHÙ HỢP VỚI TRÌNH ĐỘ "${level}" (VD: câu chuyện thói quen buổi sáng, trải nghiệm quán cà phê, bài học tư duy sâu sắc, văn hóa bản xứ...).`;
 
   return `# VAI TRÒ
 Bạn là Chuyên gia thiết kế giáo trình luyện đọc ${meta.nameVi} (Reading Along Karaoke Video).
@@ -408,8 +427,15 @@ ${sourceBlock}
 # YÊU CẦU NGÔN NGỮ, TRÌNH ĐỘ & ĐỘ DÀI
 - Ngôn ngữ bài đọc: **${meta.nameVi}** (${meta.nativeName}). **BẮT BUỘC 100% THUẦN 1 NGÔN NGỮ DUY NHẤT (${meta.nativeName})** trong cả \`title\` và \`text\` — TUYỆT ĐỐI KHÔNG chèn tiếng Việt, tiếng Anh giải thích, bản dịch trong ngoặc, hay từ ngoại ngữ khác ngôn ngữ bài đọc.
 - Trình độ: ${describeReadingLevel(level, meta)}
-- **Thời lượng TỐI THIỂU (MỨC SÀN — CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN)**: Ngưỡng **${estimatedMinutesLabel}** (tối thiểu **${targetCount} ${meta.unit === 'chars' ? `ký tự ${meta.nativeName}` : `từ ${meta.nativeName}`}**) là mức sàn tối thiểu. Hãy để **số lượng mục kiến thức và chiều sâu nội dung** quyết định độ dài bài đọc (được phép dài hơn nếu cần để diễn giải trọn vẹn, TUYỆT ĐỐI KHÔNG rút ngắn hơn hay cắt câu cụt lủn).
-- **CHẤT LƯỢNG & CHIỀU SÂU KIẾN THỨC LÀ TIÊU CHÍ BẮT BUỘC**: Mỗi câu viết ra phải hoàn chỉnh ngữ pháp, giàu ngữ cảnh và mang giá trị học tập rõ ràng — tuyệt đối không viết câu cụt, câu sáo rỗng hay nhồi chữ vô nghĩa.
+- **Thời lượng TỐI THIỂU (MỨC SÀN — CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN)**: Ngưỡng **${estimatedMinutesLabel}** (tối thiểu **${targetCount} ${unitName}**) là mức sàn tối thiểu. Hãy để **số lượng hồi/mục nội dung và chiều sâu diễn giải** quyết định độ dài bài đọc (cố gắng viết đạt hoặc vượt mốc **${targetCount}+ ${unitShort}**, TUYỆT ĐỐI KHÔNG dừng sớm ở mức 300–500 ${unitShort} / ~3 phút!).
+${volumeArchitectureBlock ? `${volumeArchitectureBlock}\n` : ''}- **KỶ LUẬT CHẤT LƯỢNG TUYỆT ĐỐI (DÀI NHƯNG CẤM LAN MAN, CẤM LẶP LẠI, BẮT BUỘC SÂU SẮC)**:
+  + **CẤM LAN MAN (NO RAMBLING)**: Mọi câu văn đều phải thúc đẩy mạch truyện, lập luận hoặc tình huống thực tế; tuyệt đối không viết câu dạo đầu vô thưởng vô phạt, không kể lể lan man lạc khỏi trọng tâm bài học.
+  + **CẤM LẶP LẠI (ZERO REPETITION)**: Tuyệt đối không lặp lại cùng 1 ý tưởng, cùng 1 ví dụ, hay lặp đi lặp lại 1 khuôn mẫu câu nhàm chán giữa các đoạn. Mỗi hồi/đoạn mới PHẢI mang tình tiết, bước ngoặt, góc nhìn tâm lý/văn hóa hoặc chi tiết thực tiễn mới.
+  + **BẮT BUỘC SÂU SẮC (INSIGHTFUL DEPTH)**: Có chi tiết cụ thể, đối thoại tự nhiên, phân tích nguyên nhân – hệ quả hoặc bài học sắc bén đáng suy ngẫm, giúp người học vừa luyện đọc vừa thu nạp giá trị thật.
+- **TỰ KIỂM ĐẾM & GIẢI TRÌNH NẾU KHÔNG ĐẠT TỐI THIỂU (${effectiveMinutes} PHÚT)**:
+  + Trước khi trả JSON, hãy tự đếm tổng số ${unitShort} trong \`"text"\` và tính \`estimatedMinutes = round(estimatedCount / ${meta.ratePerMin}, 1)\`.
+  + Nếu \`estimatedMinutes < ${effectiveMinutes}\`, hãy viết thêm các hồi/tình tiết mới giàu giá trị trước khi xuất.
+  + Nếu do giới hạn độ dài output của AI trong 1 lượt trả lời hoặc nguồn đầu vào quá ít không thể mở rộng mà không bị lan man/lặp lại khiến kết quả vẫn **chưa đạt tối thiểu ${effectiveMinutes} phút**, BẮT BUỘC đặt \`"metMinimum": false\` trong \`"durationReport"\` và giải thích rõ lý do cụ thể vào \`"shortfallReason"\` (tuyệt đối không âm thầm xuất bài 3 phút mà không báo lý do!).
 - ${meta.noPronunciationNote}
 - TUYỆT ĐỐI KHÔNG đưa các dòng nhãn bài tập ("Practice Reading...", "Exercise 1", "Part 1") hoặc tiêu đề markdown \`##\` vào trường \`text\`. Chỉ giữ các câu đọc hoàn chỉnh.
 - Mỗi câu viết trên **1 dòng riêng** (ngăn cách bằng \\n), KHÔNG đánh số thứ tự, KHÔNG gắn timestamp, KHÔNG markdown (\`**\`, \`*\`), KHÔNG emoji, để app đọc TTS & chạy con trỏ chỉ chữ chính xác từng từ.
@@ -425,10 +451,17 @@ ${sourceBlock}
   "title": "<Tiêu đề hook thật hay, khơi gợi tò mò 100% bằng ${meta.nativeName} — VD: '${meta.exampleTitle}'>",
   "topicBadge": "${meta.badgeSystem} ${level} · READING",
   "level": "${level}",
-  "text": "${meta.exampleText}"
+  "text": "${meta.exampleText}",
+  "durationReport": {
+    "targetMinutes": ${effectiveMinutes},
+    "estimatedMinutes": ${effectiveMinutes},
+    "estimatedCount": ${targetCount},
+    "metMinimum": true,
+    "shortfallReason": ""
+  }
 }
 \`\`\`
-Hãy xuất toàn bộ kết quả dưới dạng **1 file \`.json\` hợp lệ hoàn chỉnh** (chỉ trả về JSON, không kèm lời giải thích bên ngoài).`;
+Hãy xuất toàn bộ kết quả dưới dạng **1 file \`.json\` hợp lệ hoàn chỉnh** (chỉ trả về JSON, không kèm lời giải thích bên ngoài; mọi giải trình nếu không đạt tối thiểu ${effectiveMinutes} phút hãy ghi rõ trong \`durationReport.shortfallReason\`).`;
 }
 
 export function parseReadingWebAiResponse(
@@ -454,6 +487,7 @@ export function parseReadingWebAiResponse(
         text?: string;
         content?: string;
         passage?: string;
+        durationReport?: unknown;
       };
       const rawPassage = String(obj.text || obj.content || obj.passage || '').trim();
       if (rawPassage) {
@@ -479,6 +513,7 @@ export function parseReadingWebAiResponse(
             .slice(0, 48),
           level: obj.level ? String(obj.level) : fallbackLevel,
           text: cleanLines.join('\n'),
+          durationReport: parseDurationReportMeta(obj.durationReport),
         };
       }
     } catch {

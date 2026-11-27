@@ -24,6 +24,7 @@ export function buildSceneGenerationPrompt(
     customConfig?: CustomComponentPresetConfig;
     audioDurationSec?: number | null;
     targetDurationMinutes?: number;
+    autonomousScript?: boolean;
     level?: string;
     learningLanguage?: string;
   },
@@ -167,6 +168,19 @@ Quy tắc an toàn (KHÔNG invent type hay icon ngoài danh mục):
       ? Math.max(0.5, Math.min(30, Number(options.targetDurationMinutes.toFixed(1))))
       : null;
 
+  const isAutonomousScript = Boolean(options?.autonomousScript && audioDur === null);
+  const learningLangNorm = (options?.learningLanguage || 'en').toLowerCase();
+  const isCjkUnit = learningLangNorm === 'ja' || learningLangNorm === 'zh';
+  const ratePerMin = isCjkUnit ? 185 : 130;
+  const unitShort = isCjkUnit ? 'ký tự' : 'từ';
+  const targetWordFloor = targetMinutes ? Math.round(targetMinutes * ratePerMin) : null;
+  const chapterCount =
+    targetMinutes && targetMinutes >= 5
+      ? Math.max(3, Math.min(12, Math.round(targetMinutes / 3)))
+      : targetMinutes
+        ? 2
+        : 2;
+
   const audioDiagLine =
     audioDur !== null
       ? `- Tổng thời lượng Audio đo được: **${audioDur.toFixed(2)}s** · Segment cuối kết thúc lúc: **${cuesLastEnd.toFixed(2)}s**${
@@ -176,11 +190,30 @@ Quy tắc an toàn (KHÔNG invent type hay icon ngoài danh mục):
               ? ` (dư khoảng lặng/outro **+${tailGap.toFixed(2)}s** ở cuối — giữ nguyên timestamp thật của segment, KHÔNG kéo dài sai hoặc trộn bộ timestamp khác)`
               : ''
         }.`
-      : `- Tổng phạm vi Transcript: \`${totalStart}\` → \`${totalEnd}\` (${effectiveCues.length} segments).`;
+      : isAutonomousScript
+        ? `- Chế độ **TỰ VIẾT KỊCH BẢN & PHÂN CẢNH ĐỘC LẬP** (chưa có audio cố định; thay thế toàn bộ placeholder trong \`source_segments[]\` bằng kịch bản đầy đủ khớp thời lượng mục tiêu).`
+        : `- Tổng phạm vi Transcript: \`${totalStart}\` → \`${totalEnd}\` (${effectiveCues.length} segments).`;
 
   const durationBudgetLine = targetMinutes
-    ? `- **Thời lượng TỐI THIỂU (MỨC SÀN — CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN)**: Mức **${targetMinutes} phút (~${Math.round(targetMinutes * 60)} giây)** là ngưỡng sàn tối thiểu. Hãy để **số lượng mục kiến thức và chiều sâu phân tích** quyết định thời lượng thực tế (được phép dài hơn ${targetMinutes} phút để diễn giải trọn vẹn, TUYỆT ĐỐI KHÔNG cắt xén hay nén xuống thấp hơn). Không bao giờ sinh câu cụt lủn, nửa vời hay vô nghĩa để ép thời gian; chất lượng giải thích sư phạm (vì sao tự nhiên, lỗi dễ sai, sắc thái & ngữ cảnh thực tế, ví dụ đầy đủ ý nghĩa) là **tiêu chí bắt buộc**.`
-    : `- **Chiều sâu kiến thức & chất lượng giải thích là tiêu chí bắt buộc**: Hãy để số lượng mục kiến thức và độ sâu phân tích quyết định độ dài từng scene — TUYỆT ĐỐI KHÔNG viết câu cụt, ví dụ nửa vời hay nội dung sơ sài vô nghĩa.`;
+    ? [
+        `- **Thời lượng TỐI THIỂU (MỨC SÀN — CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN)**: Mức **${targetMinutes} phút (~${Math.round(targetMinutes * 60)} giây${targetWordFloor ? `, tối thiểu ~${targetWordFloor}+ ${unitShort} lời đọc` : ''})** là ngưỡng sàn tối thiểu. Hãy để **số lượng mục kiến thức và chiều sâu phân tích** quyết định thời lượng thực tế (được phép dài hơn ${targetMinutes} phút để diễn giải trọn vẹn, TUYỆT ĐỐI KHÔNG cắt xén, KHÔNG dừng sớm ở 8–15 câu / ~3 phút!).`,
+        ...(targetMinutes >= 5 && audioDur === null
+          ? [
+              `  + **KẾ HOẠCH CHIA ${chapterCount} CHƯƠNG / PHẦN CHUYÊN SÂU ĐỂ ĐẠT >= ${targetMinutes} PHÚT**: Chia nội dung thành **${chapterCount} phần/chương nối tiếp nhau** (mỗi phần ~${Math.round((targetWordFloor || 650) / chapterCount)}+ ${unitShort} lời đọc và nhiều \`scenes[]\` liên tiếp), đi từ tình huống thực tế → bản chất ngữ dụng/tâm lý giao tiếp → đối chiếu lỗi sai thường gặp → sắc thái nâng cao → hội thoại/thực hành.`,
+            ]
+          : []),
+        ...(audioDur !== null && audioDur < targetMinutes * 60 - 15
+          ? [
+              `  + **LƯU Ý AUDIO ĐẦU VÀO NGẮN HƠN MỤC TIÊU**: Audio hiện tại chỉ dài **${(audioDur / 60).toFixed(1)} phút (${audioDur.toFixed(1)}s)**, thấp hơn sàn ${targetMinutes} phút — hãy giữ 100% timestamp khớp Audio thật và ghi rõ lý do trong \`"durationReport"\` (\`"metMinimum": false\`, \`"shortfallReason": "Audio/Transcript đầu vào chỉ dài ..."\`).`,
+            ]
+          : []),
+        `- **KỶ LUẬT CHẤT LƯỢNG (DÀI NHƯNG CẤM LAN MAN, CẤM LẶP LẠI, BẮT BUỘC SÂU SẮC)**:`,
+        `  + **CẤM LAN MAN**: Không viết câu mở đầu sáo rỗng hay dông dài ngoài lề; mọi lời thoại/giải thích phải đi thẳng vào giá trị thực chiến.`,
+        `  + **CẤM LẶP LẠI**: Không lặp lại cùng từ vựng, cùng ví dụ hay cùng khuôn mẫu giải thích nhàm chán giữa các scene/segment.`,
+        `  + **BẮT BUỘC SÂU SẮC**: Phân tích rõ TẠI SAO người bản xứ nói vậy, sắc thái lịch sự/thân mật, bẫy dịch sai dễ mắc và ví dụ đời thực sống động.`,
+        `- **TỰ KIỂM ĐẾM & GIẢI TRÌNH NẾU CHƯA ĐẠT ${targetMinutes} PHÚT**: Trước khi xuất JSON, tự kiểm tra tổng số ${unitShort} lời đọc và tổng thời lượng \`source_segments[]\`. Nếu chưa đạt tối thiểu ${targetMinutes} phút mà có thể mở rộng sâu hơn một cách giá trị, hãy viết thêm chương/scene trước khi xuất; nếu vẫn không đạt được (do giới hạn độ dài output của AI trong 1 lượt, hoặc nguồn đầu vào/audio quá ngắn), BẮT BUỘC ghi trung thực vào \`"durationReport"\` (\`"metMinimum": false\`, \`"shortfallReason": "..."\`).`,
+      ].join('\n')
+    : `- **Chiều sâu kiến thức & chất lượng giải thích là tiêu chí bắt buộc**: Hãy để số lượng mục kiến thức và độ sâu phân tích quyết định độ dài từng scene — TUYỆT ĐỐI KHÔNG viết câu cụt, ví dụ nửa vời, lan man hay lặp lại.`;
 
   const pickCleanSampleQuote = (raw: string | undefined, fallback: string, maxChars = 64): string => {
     const clean = (raw || '').trim();
@@ -197,13 +230,17 @@ Quy tắc an toàn (KHÔNG invent type hay icon ngoài danh mục):
   const exampleSegId2 = secondSeg?.segment_id ?? exampleSegId;
   const exampleQuote2 = pickCleanSampleQuote(secondSeg?.text, exampleQuote);
 
+  const stage1RuleLine = isAutonomousScript
+    ? `- **LUẬT DỰNG KỊCH BẢN & TIMESTAMP CHUẨN**: Hãy THAY THẾ toàn bộ các dòng placeholder trong \`source_segments[]\` mẫu bằng **đầy đủ kịch bản lời đọc thực tế** (\`seg_001\`, \`seg_002\`, ... liên tục tăng dần \`start\` / \`end\`, mỗi segment ~6–12 giây ứng với ~15–28 từ hoặc 1 câu hoàn chỉnh) sao cho tổng thời lượng chạm hoặc vượt mốc **${targetMinutes ?? 2} phút (~${Math.round((targetMinutes ?? 2) * 60)} giây, >= ~${targetWordFloor ?? 260} ${unitShort})**. Tuyệt đối KHÔNG giữ lại chữ \`[Segment ... placeholder]\`!`
+    : `- **LUẬT BẢO TOÀN TRANSCRIPT**: Sao chép CHÍNH XÁC từng ký tự trong \`source_segments[]\` bên dưới (giữ nguyên dấu phẩy, dấu ngoặc kép \`"..."\`, chấm hỏi, xuống dòng, \`segment_id\`, \`start\`, \`end\`). Tuyệt đối KHÔNG sửa chính tả, không bỏ dấu ngoặc kép (VD: \`"I'm looking," he says,\` phải giữ nguyên từng dấu câu). Không bao giờ trộn hai bộ timestamp khác nhau.`;
+
   return `# KIẾN TRÚC PIPELINE 5 GIAI ĐOẠN — STORYBOARD SCHEMA v1.9
 Bạn đóng vai **Instructional Designer + Motion Graphics Director** cho video dọc 9:16 (1080×1920).
 Trả về **DUY NHẤT 1 KHỐI JSON HỢP LỆ** chuẩn \`schema_version: "1.9"\` (không giải thích ngoài JSON).
 
-## STAGE 1 — AUDIO + TRANSCRIPT (BẢO TOÀN NGUYÊN VĂN 100%)
+## STAGE 1 — AUDIO + TRANSCRIPT (${isAutonomousScript ? 'TỰ SOẠN KỊCH BẢN ĐỦ THỜI LƯỢNG' : 'BẢO TOÀN NGUYÊN VĂN 100%'})
 ${audioDiagLine}${durationBudgetLine ? `\n${durationBudgetLine}` : ''}
-- **LUẬT BẢO TOÀN TRANSCRIPT**: Sao chép CHÍNH XÁC từng ký tự trong \`source_segments[]\` bên dưới (giữ nguyên dấu phẩy, dấu ngoặc kép \`"..."\`, chấm hỏi, xuống dòng, \`segment_id\`, \`start\`, \`end\`). Tuyệt đối KHÔNG sửa chính tả, không bỏ dấu ngoặc kép (VD: \`"I'm looking," he says,\` phải giữ nguyên từng dấu câu). Không bao giờ trộn hai bộ timestamp khác nhau.
+${stage1RuleLine}
 
 ## STAGE 2 — INSTRUCTIONAL DESIGNER (CHIA ĐA SCENE SƯ PHẠM)
 - **CẤM DỒN 1 SCENE & CẤM CÂU CỤT VÔ NGHĨA**: Tuyệt đối KHÔNG nhét toàn bộ bài vào 1 scene \`sc1\` duy nhất và KHÔNG cắt xén thành các câu cụt thiếu nghĩa! Hãy chia bài học thành **nhiều \`scenes[]\` liên tiếp** (\`sc_01\`, \`sc_02\`, \`sc_03\`... mỗi scene giải quyết trọn vẹn 1 mục kiến thức có chiều sâu: Intro Hook → Tình huống/Quy tắc 1 → Đối chiếu lỗi sai & giải thích bản chất → Takeaway/Practice).
@@ -299,7 +336,7 @@ ${
     "cardStyle": "elevated-rounded",
     "typography": "Outfit + Plus Jakarta Sans"
   },
-  "source_segments": ${sourceSegmentsJson},
+  ${targetMinutes ? `"durationReport": { "targetMinutes": ${targetMinutes}, "estimatedMinutes": ${targetMinutes}, "estimatedCount": ${targetWordFloor ?? 260}, "metMinimum": true, "shortfallReason": "" },\n  ` : ''}"source_segments": ${sourceSegmentsJson},
   "scenes": [
     {
       "scene_id": "sc_01",
@@ -393,7 +430,7 @@ ${
     "cardStyle": "elevated-rounded",
     "typography": "Outfit + Plus Jakarta Sans"
   },
-  "source_segments": ${sourceSegmentsJson},
+  ${targetMinutes ? `"durationReport": { "targetMinutes": ${targetMinutes}, "estimatedMinutes": ${targetMinutes}, "estimatedCount": ${targetWordFloor ?? 260}, "metMinimum": true, "shortfallReason": "" },\n  ` : ''}"source_segments": ${sourceSegmentsJson},
   "scenes": [
     {
       "scene_id": "sc_01",

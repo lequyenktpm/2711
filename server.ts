@@ -13,6 +13,7 @@ import { buildFfmpegArgs } from './src/engine/ffmpegArgs.ts';
 import { alignKnownTextToPcmFloat, detectWavSpeechBounds, parseWavBufferToMonoFloat32 } from './src/engine/forcedAligner.ts';
 import { detectReelMode, splitMultipleExercisesFromText } from './src/engine/englishReelsEngine.ts';
 import { cleanOutputTitleStem, resolveTabOutputSubfolder, toPlatformSafeDiskFileName } from './src/engine/outputNaming.ts';
+import { parseDurationReportMeta } from './src/engine/types.ts';
 import {
   detectVoiceLangCode,
   getLocaleForTtsLang,
@@ -3313,6 +3314,25 @@ async function startServer(): Promise<void> {
         ? `about: "${topic}"`
         : `on an engaging, high-retention daily life, mindset, or storytelling topic chosen autonomously by you that fits level ${level}`;
 
+      const chapterCount =
+        hasDuration && durationRaw >= 5
+          ? Math.max(3, Math.min(12, Math.round(durationRaw / 3)))
+          : undefined;
+      const perChapterCount = chapterCount ? Math.max(120, Math.round(wordCount / chapterCount)) : undefined;
+      const effectiveTargetMin = hasDuration
+        ? Number(durationRaw.toFixed(1))
+        : Number((wordCount / langMeta.ratePerMin).toFixed(1));
+      const volumeAndQualityDirective = [
+        `- STRICT MINIMUM VOLUME TARGET (DO NOT STOP AT ~3 MINUTES / ~300–450 WORDS): Must reach **${lengthDesc}** (~${effectiveTargetMin} minutes spoken audio) — only equal or longer is acceptable, NEVER shorter!`,
+        ...(chapterCount && perChapterCount
+          ? [
+              `- MULTI-CHAPTER ARCHITECTURE TO HIT >= ${effectiveTargetMin} MINUTES CLEANLY: Internally structure the passage across **${chapterCount} progressive chapters/scenes** (~${perChapterCount} ${langMeta.unit} each = ~${wordCount}+ ${langMeta.unit} total; one crisp, complete sentence per \\n line — NEVER write chapter headers inside "text"!).`,
+            ]
+          : []),
+        '- STRICT ANTI-RAMBLING, ZERO REPETITION & DEEP-INSIGHT RULES: Even at 20–30 minutes, NEVER pad with filler, cliché moralizing, repetitive sentence frames, or shallow summaries. Every paragraph/scene MUST bring fresh narrative turns, concrete sensory detail, real-world dialogue, or deep insight calibrated strictly to level "' + level + '".',
+        `- SELF-AUDIT & SHORTFALL REASON ("durationReport"): Before returning JSON, count actual total ${langMeta.unit} in "text" and compute estimatedMinutes = total / ${langMeta.ratePerMin}. If estimatedMinutes < ${effectiveTargetMin}, expand upcoming chapters with substantive plot/perspective depth BEFORE returning. If you genuinely cannot reach ${effectiveTargetMin} minutes (e.g., output token ceiling or source text lacks substance to expand cleanly without fluff), set "metMinimum": false and explain the concrete reason in "durationReport.shortfallReason".`,
+      ].join('\n');
+
       const prompt =
         mode === 'adapt-text'
           ? `You are an expert ${langMeta.name} curriculum designer for Read-Along karaoke videos.
@@ -3320,7 +3340,7 @@ Adapt and rewrite the user's raw source text below into a clean, natural, deeply
 Genre / Style guidance: ${formatInstruction}
 ${furiganaWarning}
 CRITICAL: Preserve all key ideas, practical nuance, and storytelling value from the raw text while adjusting vocabulary, sentence length, and grammar strictly to level "${level}" — do NOT summarize superficially if a longer passage is requested, expand thoughtfully with vivid natural examples or transitions! Strip away any exercise numbering, headers, or UI noise.
-Target total length: ${lengthDesc}${hasDuration ? ` (for a ~${durationRaw} minute video)` : ''}.
+${volumeAndQualityDirective}
 User topic / title hint: ${topic || sourceTitle || 'Adapted Reading Lesson'}
 Raw source content:
 """
@@ -3331,6 +3351,7 @@ Return ONLY valid JSON with keys:
   "title": "Short catchy ${langMeta.name} title (5–10 words/phrases, curiosity-driven)",
   "topicBadge": "SHORT UPPERCASE BADGE (e.g. ${level} · READING)",
   "level": "${level}",
+  "durationReport": { "targetMinutes": ${effectiveTargetMin}, "estimatedMinutes": ${effectiveTargetMin}, "estimatedCount": ${wordCount}, "metMinimum": true, "shortfallReason": "" },
   "text": "Clean ${langMeta.name} sentences separated by \\n (1 sentence per line, no bullet symbols, no markdown, no HTML, no timestamps)."
 }`
           : mode === 'adapt-url'
@@ -3339,7 +3360,7 @@ Convert and adapt the scraped webpage content below into a clean, engaging ${lan
 Genre / Style guidance: ${formatInstruction}
 ${furiganaWarning}
 CRITICAL: Strip out any worksheet scaffolding or exercise labels (such as "Practice Reading English Exercises", "## Exercise 1", "Part 1", "Task 1", navigation menus, or instructions). Keep ONLY the clean story title and body sentences.
-Target total length: ${lengthDesc}${hasDuration ? ` (for a ~${durationRaw} minute video)` : ''}.
+${volumeAndQualityDirective}
 Source title: ${sourceTitle || 'Web Article'}
 Source content:
 """
@@ -3350,6 +3371,7 @@ Return ONLY valid JSON with keys:
   "title": "Short catchy ${langMeta.name} title (5–10 words/phrases, curiosity-driven)",
   "topicBadge": "SHORT UPPERCASE BADGE (e.g. ${level} · READING)",
   "level": "${level}",
+  "durationReport": { "targetMinutes": ${effectiveTargetMin}, "estimatedMinutes": ${effectiveTargetMin}, "estimatedCount": ${wordCount}, "metMinimum": true, "shortfallReason": "" },
   "text": "Clean ${langMeta.name} sentences separated by \\n (1 sentence per line, no bullet symbols, no markdown, no HTML, no timestamps)."
 }`
             : `You are an expert ${langMeta.name} curriculum designer for Read-Along karaoke videos.
@@ -3358,12 +3380,13 @@ Genre / Style guidance: ${formatInstruction}
 ${furiganaWarning}
 CRITICAL: Do NOT include worksheet labels like "Practice Reading Exercises", "Exercise 1", "Part 1", or markdown headings inside the title or body text.
 Target proficiency level: ${level}.
-Target total length: ${lengthDesc}${hasDuration ? ` (for a ~${durationRaw} minute video)` : ''}.
+${volumeAndQualityDirective}
 Return ONLY valid JSON with keys:
 {
   "title": "Short catchy ${langMeta.name} title (curiosity-driven, e.g. '【...】...' or engaging hook)",
   "topicBadge": "SHORT UPPERCASE BADGE (e.g. ${level} · READING)",
   "level": "${level}",
+  "durationReport": { "targetMinutes": ${effectiveTargetMin}, "estimatedMinutes": ${effectiveTargetMin}, "estimatedCount": ${wordCount}, "metMinimum": true, "shortfallReason": "" },
   "text": "Clean ${langMeta.name} sentences separated by \\n (1 sentence per line, no bullet symbols, no markdown, no timestamps)."
 }`;
 
@@ -3389,6 +3412,7 @@ Return ONLY valid JSON with keys:
         topicBadge?: string;
         level?: string;
         text?: string;
+        durationReport?: unknown;
       };
       const isScaffolding = (line: string) =>
         /^(?:#{1,6}\s*)?(?:(?:practice\s+reading|english\s+reading)\b.*|(?:exercise|part|task|section|unit|lesson|reading)\s*(?:#|no\.?)?\s*\d+\b[:.\-\s]*)$/i.test(
@@ -3405,6 +3429,7 @@ Return ONLY valid JSON with keys:
       const cleanTitle = (parsed.title || sourceTitle || topic || 'Reading Along')
         .replace(/^#+\s*/, '')
         .trim();
+      const durationReport = parseDurationReportMeta(parsed.durationReport);
       res.json({
         ok: true,
         title: isScaffolding(cleanTitle) ? 'Reading Along' : cleanTitle,
@@ -3412,6 +3437,7 @@ Return ONLY valid JSON with keys:
         level,
         learningLanguage: langMeta.code,
         text: cleanLines.join('\n'),
+        ...(durationReport ? { durationReport } : {}),
       });
     } catch (err) {
       res.status(500).json({

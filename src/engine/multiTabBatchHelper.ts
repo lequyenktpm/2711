@@ -745,9 +745,13 @@ function buildStudioBatchPrompt(params: {
   const langMeta =
     LEARNING_LANGUAGE_OPTIONS.find((item) => item.id === params.learningLanguage) ||
     LEARNING_LANGUAGE_OPTIONS[0];
-  const approxCuesCount = Math.max(4, Math.min(24, Math.round(params.durationMinutes * 3)));
+  const isCjkUnit = params.learningLanguage === 'ja' || params.learningLanguage === 'zh';
+  const ratePerMin = isCjkUnit ? 185 : 130;
+  const unitShort = isCjkUnit ? 'ký tự' : 'từ';
+  const targetWordFloor = Math.round(params.durationMinutes * ratePerMin);
+  const approxCuesCount = Math.max(6, Math.round(params.durationMinutes * 5));
   const segStepSec = Number(((params.durationMinutes * 60) / approxCuesCount).toFixed(2));
-  const syntheticCues: TranscriptCue[] = Array.from({ length: Math.min(6, approxCuesCount) }, (_, idx) => {
+  const syntheticCues: TranscriptCue[] = Array.from({ length: Math.min(8, approxCuesCount) }, (_, idx) => {
     const start = Number((idx * segStepSec).toFixed(2));
     const end = Number(((idx + 1) * segStepSec).toFixed(2));
     return {
@@ -766,6 +770,7 @@ function buildStudioBatchPrompt(params: {
     style: params.style ?? 'tiktok-cards',
     compositionId: params.compositionId ?? 'ai-decide',
     targetDurationMinutes: params.durationMinutes,
+    autonomousScript: true,
   });
 
   const isBilingualStudio =
@@ -785,8 +790,9 @@ function buildStudioBatchPrompt(params: {
 - Chủ đề trọng tâm: **${params.topic}**
 - Ngôn ngữ học: **${langMeta.label}** · Trình độ: **${params.level}**
 - Ngôn ngữ giải thích phụ đề/thẻ: **${params.targetLang === 'none' ? 'Pure target language' : params.targetLang === 'learning' ? `${langMeta.nativeName} (giải thích bằng ngôn ngữ muốn học)` : params.targetLang}**
-- Thời lượng mục tiêu: **${params.durationMinutes} phút (~${Math.round(params.durationMinutes * 60)} giây)**
-- Lưu ý: Nếu chưa có audio sẵn, hãy tự viết toàn bộ kịch bản \`source_segments[]\` (${approxCuesCount} segments phân bổ đều trong **~${Math.round(params.durationMinutes * 60)} giây**) với nội dung sư phạm sâu (giải thích lý do tự nhiên, đối chiếu lỗi thường gặp, sắc thái & ví dụ thực tế) thay thế các segment placeholder bên dưới rồi dựng trọn vẹn JSON \`schema_version: "1.9"\`.
+- Thời lượng mục tiêu tối thiểu: **${params.durationMinutes} phút (~${Math.round(params.durationMinutes * 60)} giây, tối thiểu ~${targetWordFloor}+ ${unitShort} lời đọc)**
+- Lưu ý: Vì chưa có audio sẵn, hãy tự viết toàn bộ kịch bản \`source_segments[]\` (~${approxCuesCount} segments phân bổ đều để chạm hoặc vượt **${Math.round(params.durationMinutes * 60)} giây** với tối thiểu **~${targetWordFloor}+ ${unitShort}**) thay thế hoàn toàn các placeholder bên dưới rồi dựng trọn vẹn JSON \`schema_version: "1.9"\`.
+- Kỷ luật nội dung: Tuyệt đối KHÔNG dừng sớm ở 3 phút, KHÔNG lan man, KHÔNG lặp lại cùng ví dụ/cấu trúc giải thích; mỗi chương/scene phải thật sâu sắc (lý do tự nhiên, sắc thái, bẫy lỗi sai & ứng dụng thực tế). Nếu không thể đạt tối thiểu ${params.durationMinutes} phút (VD do giới hạn độ dài output của phiên AI), BẮT BUỘC ghi rõ lý do vào \`"durationReport.shortfallReason"\`.
 ${bilingualTtsGuidance}
 
 ${baseStoryboardPrompt}`;

@@ -4766,6 +4766,142 @@ test('reelCardsToLessonProject honors enableLearningAudio/enableExplanationAudio
   );
 });
 
+test('30-minute prompts enforce multi-chapter volume, anti-rambling/anti-repetition/depth rules, remove studio batch cap, and request durationReport.shortfallReason', () => {
+  const reading30 = buildReadingWebAiPrompt({
+    mode: 'topic',
+    topic: 'Deep Habits',
+    level: 'B2',
+    durationMinutes: 30,
+  });
+  assert.ok(reading30.includes('3750'), '30m English reading prompt should specify 3750+ words');
+  assert.ok(/chương|chapter/i.test(reading30), '30m reading prompt should break volume into chapters');
+  assert.ok(reading30.includes('durationReport') && reading30.includes('shortfallReason'));
+  assert.ok(/CẤM LAN MAN|NO RAMBLING/i.test(reading30));
+
+  const creator30 = buildAiCreatorWebAiPrompt({
+    learningLanguage: 'en',
+    level: 'B2',
+    durationMinutes: 30,
+    itemCount: 'auto',
+    targetLang: 'Tiếng Việt',
+  });
+  assert.ok(creator30.includes('durationReport') && creator30.includes('shortfallReason'));
+  assert.ok(creator30.includes('ANTI-RAMBLING') && creator30.includes('ZERO REPETITION'));
+  assert.ok(creator30.includes('chương') || creator30.includes('tình huống'));
+
+  const trans30 = buildTranslationChallengePrompt({
+    learningLanguage: 'en',
+    level: 'B1',
+    durationMinutes: 30,
+    itemCount: 'auto',
+    targetLang: 'Tiếng Việt',
+  });
+  assert.ok(trans30.includes('durationReport') && trans30.includes('shortfallReason'));
+  assert.ok(trans30.includes('ANTI-RAMBLING') && trans30.includes('DEEP INSIGHT'));
+
+  const source30 = buildEnglishReelsWebAiPrompt({
+    sourceText: 'Sample source text for 30 minute expansion.',
+    mode: 'vocab',
+    targetLang: 'vi',
+    durationMinutes: 30,
+  });
+  assert.ok(source30.includes('durationReport') && source30.includes('shortfallReason'));
+  assert.ok(source30.includes('CẤM LAN MAN') && source30.includes('CẤM LẶP LẠI'));
+
+  const studioBatch30 =
+    generateBatchPromptsForTopics({
+      subTab: 'studio',
+      topics: ['Productivity Systems'],
+      promptCount: 1,
+      learningLanguage: 'en',
+      level: 'B2',
+      durationMode: 'fixed',
+      durationMinutes: 30,
+      targetLang: 'vi',
+    })[0]?.promptText || '';
+  assert.ok(studioBatch30.includes('30 phút'));
+  assert.ok(!studioBatch30.includes('source_segments là 24 câu'), 'Should not cap studio 30m cues at 24');
+  assert.ok(studioBatch30.includes('durationReport') && studioBatch30.includes('shortfallReason'));
+
+  const studioAuto = buildSceneGenerationPrompt(PRESET_JP_EN_POLITE.cues, {
+    title: 'Polite Requests',
+    targetDurationMinutes: 30,
+    autonomousScript: true,
+  });
+  assert.ok(studioAuto.includes('30 phút'));
+  assert.ok(studioAuto.includes('durationReport') && studioAuto.includes('shortfallReason'));
+  assert.ok(studioAuto.includes('CẤM LAN MAN'));
+});
+
+test('JSON parsers preserve durationReport shortfallReason when AI reports unmet minimum duration', () => {
+  const readingParsed = parseReadingWebAiResponse(
+    JSON.stringify({
+      title: 'Short Demo',
+      topicBadge: 'B1 · READING',
+      level: 'B1',
+      durationReport: {
+        targetMinutes: 30,
+        estimatedMinutes: 3.2,
+        estimatedCount: 400,
+        metMinimum: false,
+        shortfallReason: 'Model output limit stopped after ~400 words.',
+      },
+      text: 'Sentence one.\nSentence two.',
+    }),
+    'B1',
+  );
+  assert.ok(readingParsed?.durationReport);
+  assert.equal(readingParsed?.durationReport?.metMinimum, false);
+  assert.equal(readingParsed?.durationReport?.targetMinutes, 30);
+  assert.equal(readingParsed?.durationReport?.estimatedMinutes, 3.2);
+  assert.match(readingParsed?.durationReport?.shortfallReason || '', /output limit/i);
+
+  const reelsParsed = parseEnglishReelsAiJson(
+    JSON.stringify({
+      title: 'Quick Hook | B1',
+      mode: 'vocab',
+      learningLang: 'en',
+      durationReport: {
+        targetMinutes: 30,
+        estimatedMinutes: 4,
+        estimatedCount: 520,
+        metMinimum: false,
+        shortfallReason: 'Source snippet had only 3 expressions; cannot reach 30m without fluff.',
+      },
+      cards: [
+        { type: 'vocab', word: 'articulate', content: 'She is articulate.', ttsText: 'She is articulate.' },
+      ],
+    }),
+    { targetLang: 'vi' },
+  );
+  assert.equal(reelsParsed?.durationReport?.metMinimum, false);
+  assert.match(reelsParsed?.durationReport?.shortfallReason || '', /Source snippet/i);
+
+  const sceneParsed = parseScenePlanJson(
+    JSON.stringify({
+      version: '1.9',
+      title: 'Scene Demo',
+      durationReport: {
+        targetMinutes: 30,
+        estimatedMinutes: 2.5,
+        metMinimum: false,
+        shortfallReason: 'Uploaded audio is only 150 seconds.',
+      },
+      scenes: [
+        {
+          id: 's1',
+          startTime: 0,
+          endTime: 3,
+          elements: [{ id: 'e1', kind: 'title-card', text: 'Hello', startTime: 0, endTime: 3 }],
+        },
+      ],
+    }),
+  );
+  assert.equal(sceneParsed?.durationReport?.metMinimum, false);
+  assert.match(sceneParsed?.durationReport?.shortfallReason || '', /150 seconds/i);
+});
+
+
 
 
 

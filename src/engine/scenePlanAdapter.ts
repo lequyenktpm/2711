@@ -23,6 +23,7 @@ import {
   CartoonAnimationParams,
   CartoonExpressionMood,
   ComparisonItem,
+  DurationReportMeta,
   DynamicSceneSpec,
   IllustrationPropData,
   IllustrationSceneIcon,
@@ -30,6 +31,7 @@ import {
   isDarkCanvasTheme,
   LayoutCompositionId,
   LessonProject,
+  parseDurationReportMeta,
   SceneElement,
   ScenePlanDocument,
   ScenePlanShape,
@@ -175,6 +177,7 @@ export interface FlexibleSceneDocument extends ScenePlanDocument {
   source_segments?: StoryboardSourceSegment[];
   style_profile?: StoryboardV19Document['style_profile'];
   cartoonAnimations?: Partial<CartoonAnimationDefinition>[];
+  durationReport?: DurationReportMeta;
   elements?: FlexibleAiElement[];
   scenes: (ScenePlanDocument['scenes'][number] & {
     title?: string;
@@ -208,8 +211,11 @@ export function parseScenePlanJson(input: string): FlexibleSceneDocument | null 
     const cleaned = extractCleanJsonText(input);
     const parsed = JSON.parse(cleaned);
     if (!parsed || typeof parsed !== 'object') return null;
+    const parsedReport = parseDurationReportMeta(parsed.durationReport);
     if (Array.isArray(parsed.scenes)) {
-      return parsed as FlexibleSceneDocument;
+      const doc = parsed as FlexibleSceneDocument;
+      if (parsedReport) doc.durationReport = parsedReport;
+      return doc;
     }
     // Also support top-level elements array without scenes wrapper
     if (Array.isArray(parsed.elements)) {
@@ -220,6 +226,7 @@ export function parseScenePlanJson(input: string): FlexibleSceneDocument | null 
         compositionId: parsed.compositionId,
         compositionReason: parsed.compositionReason,
         cartoonAnimations: Array.isArray(parsed.cartoonAnimations) ? parsed.cartoonAnimations : undefined,
+        durationReport: parsedReport,
         source_segments: Array.isArray(parsed.source_segments) ? parsed.source_segments : undefined,
         scenes: [{ id: 'sc1', elements: parsed.elements }],
       };

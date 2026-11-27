@@ -1688,8 +1688,12 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     setSceneJsonOverride(parsed.sceneJson ?? null);
     setActiveCardIdx(0);
     invalidateSynthesizedAudio();
+    const shortfallWarn =
+      parsed.durationReport && !parsed.durationReport.metMinimum && parsed.durationReport.shortfallReason
+        ? ` ⚠️ Chưa đạt tối thiểu ${parsed.durationReport.targetMinutes ?? '?'}p (ước tính ~${parsed.durationReport.estimatedMinutes ?? '?'}p) — Lý do AI báo: ${parsed.durationReport.shortfallReason}`
+        : '';
     setAiJsonNotice(
-      `Đã nạp ${parsed.cards.length} thẻ (${parsed.isTranslationMode ? 'PHẢN XẠ DỊCH' : parsed.mode.toUpperCase()} · ${detectedLang.toUpperCase()})${parsed.sceneJson ? ' kèm Scene JSON KineticSub' : ''}${parsed.cartoonAnimations?.length ? ` · +${parsed.cartoonAnimations.length} animation @Gimmys` : ''}!`,
+      `Đã nạp ${parsed.cards.length} thẻ (${parsed.isTranslationMode ? 'PHẢN XẠ DỊCH' : parsed.mode.toUpperCase()} · ${detectedLang.toUpperCase()})${parsed.sceneJson ? ' kèm Scene JSON KineticSub' : ''}${parsed.cartoonAnimations?.length ? ` · +${parsed.cartoonAnimations.length} animation @Gimmys` : ''}!${shortfallWarn}`,
     );
   };
 
@@ -3220,7 +3224,11 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       setSceneJsonOverride(parsed.sceneJson ?? null);
       setActiveCardIdx(0);
       invalidateSynthesizedAudio();
-      setAiJsonNotice(`AI Server đã tạo ${parsed.cards.length} thẻ bài học (${detectedLang.toUpperCase()}) kèm lời đọc tự nhiên!`);
+      const shortfallWarn =
+        parsed.durationReport && !parsed.durationReport.metMinimum && parsed.durationReport.shortfallReason
+          ? ` ⚠️ Chưa đạt tối thiểu ${parsed.durationReport.targetMinutes ?? '?'}p (ước tính ~${parsed.durationReport.estimatedMinutes ?? '?'}p) — Lý do AI báo: ${parsed.durationReport.shortfallReason}`
+          : '';
+      setAiJsonNotice(`AI Server đã tạo ${parsed.cards.length} thẻ bài học (${detectedLang.toUpperCase()}) kèm lời đọc tự nhiên!${shortfallWarn}`);
     } catch (err) {
       setAiJsonError(err instanceof Error ? err.message : 'Lỗi gọi Gemini AI trên server.');
     } finally {

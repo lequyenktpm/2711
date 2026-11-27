@@ -115,7 +115,9 @@ import {
   BackgroundFitMode,
   BackgroundImageConfig,
   BackgroundPresetId,
+  DurationReportMeta,
   LessonProject,
+  parseDurationReportMeta,
   SubtitlePosition,
   SubtitleSize,
   TranscriptCue,
@@ -1047,11 +1049,13 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
     return [
       `# VAI TRÒ: BIÊN TẬP VIÊN NỘI DUNG VIDEO GIÁO DỤC (${modeLabel})`,
       'Hãy biên tập, sửa lỗi chính tả, tối ưu ngắt câu phụ đề/script bên dưới và đặt tiêu đề ngắn gọn cuốn hút đúng ngôn ngữ bài học.',
+      '- **YÊU CẦU CHẤT LƯỢNG (CẤM LAN MAN, CẤM LẶP LẠI, SÂU SẮC)**: Giữ câu thoại súc tích, giàu giá trị học tập, tuyệt đối không chêm lời thừa sáo rỗng hay lặp lại ý cũ.',
+      '- Nếu người dùng có yêu cầu thời lượng (VD 10–30 phút) trong script mà nguồn không đủ dữ liệu để mở rộng sâu sắc không lan man, hãy báo lý do cụ thể trong `"durationReport.shortfallReason"`.',
       '',
       '# NỘI DUNG SUBTITLE / SCRIPT ĐẦU VÀO',
       cleanScript
         ? `"""\n${cleanScript.slice(0, 12000)}\n"""`
-        : `(Chưa nhập script — hãy sáng tạo 1 đoạn hội thoại/bài giảng ngắn gọn chủ đề "${fallbackTitle || 'Daily Speaking Practice'}")`,
+        : `(Chưa nhập script — hãy sáng tạo 1 đoạn hội thoại/bài giảng giàu giá trị thực tế chủ đề "${fallbackTitle || 'Daily Speaking Practice'}")`,
       '',
       '# ĐỊNH DẠNG JSON CỐ ĐỊNH CẦN TRẢ VỀ (XUẤT RA FILE .JSON)',
       '```json',
@@ -1060,6 +1064,7 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
       '  "watermarkText": "@MyLearningChannel",',
       '  "outroLine1": "<Lời chào kết thúc bằng đúng ngôn ngữ học>",',
       '  "outroLine2": "<Lời kêu gọi luyện tập/follow ngắn gọn>",',
+      '  "durationReport": { "targetMinutes": 0, "estimatedMinutes": 0, "metMinimum": true, "shortfallReason": "" },',
       '  "srt": "1\\n00:00:00,200 --> 00:00:03,400\\n<Câu phụ đề 1 đã biên tập>\\n\\n2\\n00:00:03,600 --> 00:00:07,000\\n<Câu phụ đề 2 đã biên tập>",',
       '  "lines": ["<Câu 1>", "<Câu 2>"]',
       '}',
@@ -1171,8 +1176,14 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
         );
       }
 
+      const durationReport = parseDurationReportMeta((obj as { durationReport?: unknown }).durationReport);
+      const shortfallSuffix =
+        durationReport && !durationReport.metMinimum && durationReport.shortfallReason
+          ? ` ⚠️ Chưa đạt đủ thời lượng (${durationReport.estimatedMinutes ?? '?'}p / ${durationReport.targetMinutes ?? '?'}p): ${durationReport.shortfallReason}`
+          : '';
+
       setNotice(
-        `Đã nạp JSON AI Web${nextTitle ? ` ("${nextTitle}")` : ''}${resolvedSrt ? ' kèm phụ đề SRT/ASS' : ''}!`,
+        `Đã nạp JSON AI Web${nextTitle ? ` ("${nextTitle}")` : ''}${resolvedSrt ? ' kèm phụ đề SRT/ASS' : ''}!${shortfallSuffix}`,
       );
     } catch {
       setErr('Lỗi phân tích JSON. Vui lòng kiểm tra lại cấu trúc JSON AI trả về.');
@@ -2819,6 +2830,7 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
           title?: string;
           topicBadge?: string;
           text?: string;
+          durationReport?: DurationReportMeta;
           error?: string;
         }>(aiRes, 'AI chuyển thể bài đọc thất bại');
         if (aiRes.ok && aiData.text?.trim()) {
@@ -2829,7 +2841,12 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
           setAlignResult(null);
           setAlignCurrentSec(0);
           setSynthesizedReadingSig('');
-          setReadingAiStageLabel(`Đã lấy bài từ web & chuyển thể trình độ ${readingAiLevel}!`);
+          const report = parseDurationReportMeta(aiData.durationReport);
+          const shortfallWarn =
+            report && !report.metMinimum && report.shortfallReason
+              ? ` ⚠️ Chưa đạt ${report.targetMinutes ?? readingDurationMinutes}p (ước tính ~${report.estimatedMinutes ?? '?'}p): ${report.shortfallReason}`
+              : '';
+          setReadingAiStageLabel(`Đã lấy bài từ web & chuyển thể trình độ ${readingAiLevel}!${shortfallWarn}`);
           return;
         }
       }
@@ -2886,6 +2903,7 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
         title?: string;
         topicBadge?: string;
         text?: string;
+        durationReport?: DurationReportMeta;
         error?: string;
       }>(res, 'AI tạo bài đọc thất bại');
       if (!res.ok || !data.text?.trim()) {
@@ -2898,7 +2916,12 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
       setAlignResult(null);
       setAlignCurrentSec(0);
       setSynthesizedReadingSig('');
-      setReadingAiStageLabel(`AI đã tạo xong bài đọc ${langLabel} trình độ ${readingAiLevel}!`);
+      const report = parseDurationReportMeta(data.durationReport);
+      const shortfallWarn =
+        report && !report.metMinimum && report.shortfallReason
+          ? ` ⚠️ Chưa đạt ${report.targetMinutes ?? readingDurationMinutes}p (ước tính ~${report.estimatedMinutes ?? '?'}p): ${report.shortfallReason}`
+          : '';
+      setReadingAiStageLabel(`AI đã tạo xong bài đọc ${langLabel} trình độ ${readingAiLevel}!${shortfallWarn}`);
     } catch (err) {
       setAlignError(err instanceof Error ? err.message : 'Lỗi AI tạo bài đọc.');
       setReadingAiStageLabel('');
@@ -2941,6 +2964,7 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
         title?: string;
         topicBadge?: string;
         text?: string;
+        durationReport?: DurationReportMeta;
         error?: string;
       }>(res, 'AI biên tập bài đọc thất bại');
       if (!res.ok || !data.text?.trim()) {
@@ -2953,7 +2977,12 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
       setAlignResult(null);
       setAlignCurrentSec(0);
       setSynthesizedReadingSig('');
-      setReadingAiStageLabel(`Đã biên tập xong bài đọc ${langLabel} trình độ ${readingAiLevel}!`);
+      const report = parseDurationReportMeta(data.durationReport);
+      const shortfallWarn =
+        report && !report.metMinimum && report.shortfallReason
+          ? ` ⚠️ Chưa đạt ${report.targetMinutes ?? readingDurationMinutes}p (ước tính ~${report.estimatedMinutes ?? '?'}p): ${report.shortfallReason}`
+          : '';
+      setReadingAiStageLabel(`Đã biên tập xong bài đọc ${langLabel} trình độ ${readingAiLevel}!${shortfallWarn}`);
     } catch (err) {
       setAlignError(err instanceof Error ? err.message : 'Lỗi AI biên tập bài đọc.');
       setReadingAiStageLabel('');
@@ -3012,7 +3041,11 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
     setAlignResult(null);
     setAlignCurrentSec(0);
     setSynthesizedReadingSig('');
-    setReadingAiStageLabel(`Đã nạp nội dung từ Web AI (${parsed.title}) vào trang sách!`);
+    const shortfallWarn =
+      parsed.durationReport && !parsed.durationReport.metMinimum && parsed.durationReport.shortfallReason
+        ? ` ⚠️ Chưa đạt ${parsed.durationReport.targetMinutes ?? readingDurationMinutes}p (ước tính ~${parsed.durationReport.estimatedMinutes ?? '?'}p): ${parsed.durationReport.shortfallReason}`
+        : '';
+    setReadingAiStageLabel(`Đã nạp nội dung từ Web AI (${parsed.title}) vào trang sách!${shortfallWarn}`);
   };
 
   const wmPosClass =

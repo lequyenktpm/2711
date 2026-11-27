@@ -737,3 +737,63 @@ export function isDarkCanvasTheme(themeId: CanvasThemeId | undefined | string): 
   if (!themeId) return false;
   return Boolean((CANVAS_THEMES as Record<string, ThemePalette>)[themeId]?.isDark);
 }
+
+export interface DurationReportMeta {
+  targetMinutes?: number;
+  estimatedMinutes?: number;
+  estimatedCount?: number;
+  metMinimum: boolean;
+  shortfallReason?: string;
+}
+
+export function parseDurationReportMeta(raw: unknown): DurationReportMeta | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const obj = raw as Record<string, unknown>;
+  const targetMinutes =
+    typeof obj.targetMinutes === 'number' && Number.isFinite(obj.targetMinutes)
+      ? obj.targetMinutes
+      : undefined;
+  const estimatedMinutes =
+    typeof obj.estimatedMinutes === 'number' && Number.isFinite(obj.estimatedMinutes)
+      ? obj.estimatedMinutes
+      : undefined;
+  const estimatedCountRaw =
+    typeof obj.estimatedCount === 'number' && Number.isFinite(obj.estimatedCount)
+      ? obj.estimatedCount
+      : typeof obj.estimatedWords === 'number' && Number.isFinite(obj.estimatedWords)
+        ? obj.estimatedWords
+        : undefined;
+  const reason =
+    typeof obj.shortfallReason === 'string' && obj.shortfallReason.trim()
+      ? obj.shortfallReason.trim()
+      : typeof obj.reason === 'string' && obj.reason.trim()
+        ? obj.reason.trim()
+        : undefined;
+  const metMinimum =
+    typeof obj.metMinimum === 'boolean'
+      ? obj.metMinimum
+      : reason
+        ? false
+        : targetMinutes !== undefined && estimatedMinutes !== undefined
+          ? estimatedMinutes >= targetMinutes * 0.9
+          : true;
+
+  if (
+    targetMinutes === undefined &&
+    estimatedMinutes === undefined &&
+    estimatedCountRaw === undefined &&
+    !reason &&
+    typeof obj.metMinimum !== 'boolean'
+  ) {
+    return undefined;
+  }
+
+  return {
+    targetMinutes,
+    estimatedMinutes,
+    estimatedCount: estimatedCountRaw,
+    metMinimum,
+    shortfallReason: reason,
+  };
+}
+

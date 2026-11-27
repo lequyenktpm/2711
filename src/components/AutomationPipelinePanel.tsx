@@ -735,8 +735,13 @@ export const AutomationPipelinePanel: React.FC<AutomationPipelinePanelProps> = (
     const prepared = parseInputsForRender();
     if (!prepared) return;
     onApplyScenePlan(prepared.words, prepared.plan, prepared.title, prepared.cuesOverride);
+    const report = (prepared.plan as { durationReport?: { metMinimum?: boolean; targetMinutes?: number; estimatedMinutes?: number; shortfallReason?: string } }).durationReport;
+    const shortfallWarn =
+      report && !report.metMinimum && report.shortfallReason
+        ? ` ⚠️ AI báo chưa đạt tối thiểu ${report.targetMinutes ?? '?'}p (ước tính ~${report.estimatedMinutes ?? '?'}p): ${report.shortfallReason}`
+        : '';
     setRenderNotice(
-      `Đã cập nhật xem trước 9:16 với ${prepared.summary.elementCount} lớp chữ/minh họa + ${prepared.summary.cueCount} phụ đề karaoke.`,
+      `Đã cập nhật xem trước 9:16 với ${prepared.summary.elementCount} lớp chữ/minh họa + ${prepared.summary.cueCount} phụ đề karaoke.${shortfallWarn}`,
     );
   };
 
@@ -2055,6 +2060,17 @@ export const AutomationPipelinePanel: React.FC<AutomationPipelinePanelProps> = (
                   </div>
                 </div>
               </div>
+
+              {parsedPreviewPlan?.durationReport &&
+                !parsedPreviewPlan.durationReport.metMinimum &&
+                parsedPreviewPlan.durationReport.shortfallReason && (
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                    ⚠️ <strong>AI báo chưa đạt thời lượng tối thiểu</strong> (
+                    {parsedPreviewPlan.durationReport.estimatedMinutes ?? '?'}p /{' '}
+                    {parsedPreviewPlan.durationReport.targetMinutes ?? '?'}p):{' '}
+                    {parsedPreviewPlan.durationReport.shortfallReason}
+                  </p>
+                )}
 
               {(errorMsg || exportError) && (
                 <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg p-2.5">

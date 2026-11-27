@@ -21,12 +21,14 @@ import {
   CartoonAnimationDefinition,
   CartoonAnimationParams,
   CartoonExpressionMood,
+  DurationReportMeta,
   IllustrationPropData,
   IllustrationSceneIcon,
   IllustrationVariant,
   isDarkCanvasTheme,
   LayoutCompositionId,
   LessonProject,
+  parseDurationReportMeta,
   SubtitleDisplayConfig,
   TitleOverlayLayout,
   TranscriptCue,
@@ -305,6 +307,7 @@ export interface ParsedEnglishReelsResponse {
   cards: ReelCard[];
   cartoonAnimations?: Partial<CartoonAnimationDefinition>[];
   sceneJson?: FlexibleSceneDocument | null;
+  durationReport?: DurationReportMeta;
 }
 
 export function inferLearningLangFromCards(
@@ -1875,10 +1878,20 @@ export function buildEnglishReelsWebAiPrompt(params: {
     params.durationMinutes > 0
       ? Math.max(0.5, Math.min(30, Number(params.durationMinutes.toFixed(1))))
       : undefined;
-  const durationWordsEstimate = durationMinutes ? Math.round(durationMinutes * 125) : undefined;
+  const durationWordsEstimate = durationMinutes ? Math.round(durationMinutes * 130) : undefined;
+  const durationCjkEstimate = durationMinutes ? Math.round(durationMinutes * 185) : undefined;
+  const sourceChapters =
+    durationMinutes && durationMinutes >= 5
+      ? Math.max(3, Math.min(10, Math.round(durationMinutes / 3.5)))
+      : undefined;
   const durationDirective = durationMinutes
-    ? `- **THỜI LƯỢNG TỐI THIỂU (MỨC SÀN — CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN): ${durationMinutes} PHÚT (~${Math.round(durationMinutes * 60)} giây, tối thiểu ~${durationWordsEstimate} từ lời đọc)**: Hãy để **số lượng mục kiến thức và chiều sâu phân tích** quyết định thời lượng thực tế của video (được phép dài hơn ${durationMinutes} phút để giảng giải trọn vẹn, TUYỆT ĐỐI KHÔNG cắt bớt xuống thấp hơn). **CHẤT LƯỢNG GIẢI THÍCH LÀ TIÊU CHÍ BẮT BUỘC**: tuyệt đối KHÔNG sinh câu cụt lủn, nửa vời hay kiểu "1 từ + 1 ví dụ sơ sài" vô nghĩa; mỗi mục phải phân tích rõ TẠI SAO nghe tự nhiên (Sound More Natural), đối chiếu lỗi sai / câu cứng nhắc dễ mắc, giải thích sắc thái & ngữ cảnh thực tế cùng câu ví dụ hoàn chỉnh trong \`explanationSpeech\` và \`translation\`.`
-    : `- **ƯU TIÊN CHIỀU SÂU KIẾN THỨC & CHẤT LƯỢNG GIẢI THÍCH (TIÊU CHÍ BẮT BUỘC)**: Hãy để số lượng mục kiến thức quyết định thời lượng video — tuyệt đối KHÔNG cắt ngắn thành các câu cụt lủn, thiếu chủ vị hay giải thích sơ sài vô nghĩa.`;
+    ? [
+        `- **THỜI LƯỢNG TỐI THIỂU (MỨC SÀN — CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN): ${durationMinutes} PHÚT (~${Math.round(durationMinutes * 60)} giây, tối thiểu ~${durationWordsEstimate} từ tiếng Latin / ~${durationCjkEstimate} ký tự CJK tổng cộng trong ttsText + explanationSpeech)**:`,
+        `  + **CẤM RÚT NGẮN XUỐNG ~2–3 PHÚT (8–15 THẺ NGẮN)**: Với yêu cầu ${durationMinutes} phút, bạn BẮT BUỘC khai thác toàn bộ độ sâu của nguồn${sourceChapters ? ` (hoặc tổ chức thành **${sourceChapters} phần/chủ điểm nối tiếp**) với đủ khối lượng câu thoại + phân tích sâu để đạt >= ${durationMinutes} phút` : ''}.`,
+        '  + **CHẤT LƯỢNG SÂU SẮC — CẤM LAN MAN — CẤM LẶP LẠI**: Không bao giờ kéo dài thời lượng bằng cách lặp lại ý cũ, tâng bốc rỗng, hay nói lan man ngoài trọng tâm! Mỗi thẻ `vocab`/`quiz` phải mang lại **giá trị tri thức mới**: giải thích TẠI SAO nghe tự nhiên (Sound More Natural), đối chiếu lỗi sai người học hay mắc, phân tích sắc thái ngữ cảnh/ngữ pháp & ví dụ hoàn chỉnh trong `explanationSpeech` và `translation`.',
+        `  + **TỰ KIỂM TRA & BÁO CÁO LÝ DO NẾU THIẾU (\`durationReport\`)**: Trước khi xuất JSON, tự cộng tổng số từ/ký tự của \`ttsText\` + \`explanationSpeech\` + \`ttsAnswerText\`. Nếu tổng còn thấp hơn mức sàn ${durationMinutes} phút, hãy bổ sung thêm thẻ phân tích/ví dụ đắt giá từ nguồn. Nếu nguồn quá ngắn hoặc do giới hạn độ dài đầu ra nên KHÔNG THỂ đạt đủ ${durationMinutes} phút mà không lan man/bịa thêm ý sáo rỗng, BẮT BUỘC ghi \`"metMinimum": false\` và giải thích rõ lý do vào \`"durationReport.shortfallReason"\`!`,
+      ].join('\n')
+    : `- **ƯU TIÊN CHIỀU SÂU KIẾN THỨC & CHẤT LƯỢNG GIẢI THÍCH (TIÊU CHÍ BẮT BUỘC)**: Hãy để số lượng mục kiến thức quyết định thời lượng video — tuyệt đối KHÔNG cắt ngắn thành các câu cụt lủn, thiếu chủ vị hay giải thích sơ sài vô nghĩa; cấm lan man hay lặp ý.`;
   const cleanedUserTitle = (params.title || '').trim();
   const isStaleDefaultTitle =
     !cleanedUserTitle ||
@@ -2036,6 +2049,11 @@ export function buildEnglishReelsWebAiPrompt(params: {
       : []),
     '  "learningLang": "<en | ja | zh | ko | fr | es — tự động nhận diện từ nội dung nguồn>",',
     '  "mode": "reading | quiz | vocab",',
+    ...(durationMinutes
+      ? [
+          `  "durationReport": { "targetMinutes": ${durationMinutes}, "estimatedMinutes": ${durationMinutes}, "estimatedCount": ${durationWordsEstimate}, "metMinimum": true, "shortfallReason": "" },`,
+        ]
+      : []),
     '  "cards": [',
     '    {',
     '      "type": "intro",',
@@ -2211,8 +2229,11 @@ export function buildAiCreatorWebAiPrompt(params: {
       ? Math.max(4, Math.min(60, Math.round(params.itemCount)))
       : Math.max(4, Math.min(60, Math.round(defaultCount)));
   const countPadded = isAutoItemCount ? 'N' : String(numericCount).padStart(2, '0');
+  const targetWordsFloor = durationMinutes ? Math.round(durationMinutes * 130) : undefined;
+  const targetCjkFloor = durationMinutes ? Math.round(durationMinutes * 185) : undefined;
+  const isCjkLearning = learningLang === 'ja' || learningLang === 'zh';
   const durationLabel = durationMinutes
-    ? `${durationMinutes} phút (~${Math.round(durationMinutes * 60)} giây, tối thiểu ~${Math.round(durationMinutes * 125)} từ lời đọc tổng cộng)`
+    ? `${durationMinutes} phút (~${Math.round(durationMinutes * 60)} giây, tối thiểu ~${isCjkLearning ? `${targetCjkFloor}+ ký tự ${langOption.nativeName} + lời giải thích` : `${targetWordsFloor}+ từ lời đọc tổng cộng`})`
     : params.targetDuration?.trim() || '30–60s';
   const topicHint = params.topicHint?.trim();
   const aspectLabel =
@@ -2564,9 +2585,47 @@ export function buildAiCreatorWebAiPrompt(params: {
               '    },',
             ];
 
+  const creatorChapters =
+    durationMinutes && durationMinutes >= 5
+      ? Math.max(3, Math.min(10, Math.round(durationMinutes / 3.5)))
+      : undefined;
+  const autoMinCards = durationMinutes
+    ? Math.max(12, Math.round(durationMinutes * 2.2))
+    : 8;
+  const autoMaxCards = durationMinutes
+    ? Math.max(autoMinCards + 8, Math.round(durationMinutes * 3.2))
+    : 14;
+  const fixedWordsPerCard =
+    durationMinutes && targetWordsFloor && !isAutoItemCount
+      ? Math.max(35, Math.round(targetWordsFloor / Math.max(4, numericCount)))
+      : 55;
+  const fixedCjkPerCard =
+    durationMinutes && targetCjkFloor && !isAutoItemCount
+      ? Math.max(55, Math.round(targetCjkFloor / Math.max(4, numericCount)))
+      : 85;
+  const fixedSecPerCard =
+    durationMinutes && !isAutoItemCount
+      ? Math.max(12, Math.round((durationMinutes * 60) / Math.max(4, numericCount)))
+      : 22;
+
   const durationFloorLine = isAutoItemCount
-    ? `- **Minimum Video Duration Floor (CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN)**: At least **${durationLabel}** — **AI TỰ QUYẾT ĐỊNH SỐ LƯỢNG MỤC KIẾN THỨC TỐI ƯU** (KHÔNG ép cứng con số cố định như 8 mục): hãy để **số lượng kiến thức phù hợp chủ đề và chiều sâu phân tích** quyết định thời lượng thực tế của video (TUYỆT ĐỐI KHÔNG rút ngắn thấp hơn sàn thời lượng hay hy sinh chất lượng giải thích).`
-    : `- **Minimum Video Duration Floor (CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN)**: At least **${durationLabel}** with at least **${numericCount} core teaching items** — let the number of knowledge points & explanation quality determine the final runtime (NEVER compress below this floor or sacrifice explanation completeness).`;
+    ? [
+        `- **Minimum Video Duration Floor (CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN)**: At least **${durationLabel}** — **AI TỰ QUYẾT ĐỊNH SỐ LƯỢNG MỤC KIẾN THỨC TỐI ƯU** (KHÔNG ép cứng một con số máy móc):`,
+        durationMinutes
+          ? `  + **QUY MÔ BẮT BUỘC ĐỂ ĐẠT >= ${durationMinutes} PHÚT (CẤM DỪNG SỚM Ở ~2–3 PHÚT)**: Hãy thiết kế lộ trình **${autoMinCards}–${autoMaxCards} mục kiến thức**${creatorChapters ? ` chia thành **${creatorChapters} chương/tình huống nối tiếp nhau**` : ''}, mỗi mục khoảng 55–85 từ lời đọc + phân tích sâu (~20–30s/mục) để tổng thời lượng đạt hoặc vượt **${durationMinutes} phút**!`
+          : '  + Hãy để **số lượng kiến thức phù hợp chủ đề và chiều sâu phân tích** quyết định thời lượng thực tế của video (TUYỆT ĐỐI KHÔNG rút ngắn thấp hơn sàn thời lượng hay hy sinh chất lượng giải thích).',
+      ].join('\n')
+    : `- **Minimum Video Duration Floor (CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN)**: At least **${durationLabel}** with at least **${numericCount} core teaching items**${durationMinutes ? ` (tức trung bình **~${isCjkLearning ? `${fixedCjkPerCard}+ ký tự` : `${fixedWordsPerCard}+ từ`}/mục** (~${fixedSecPerCard}s/mục) ở \`speech\` + \`explanationSpeech\`${creatorChapters ? `, chia thành **${creatorChapters} nhóm chủ điểm tiến triển**` : ''} để chạm hoặc vượt **${durationMinutes} phút**, TUYỆT ĐỐI KHÔNG dừng ở ~3 phút!)` : ''} — let the number of knowledge points & explanation quality determine the final runtime (NEVER compress below this floor or sacrifice explanation completeness).`;
+
+  const antiFluffAndAuditBlock = [
+    '- **ANTI-RAMBLING, ZERO REPETITION & DEEP-INSIGHT MANDATE (DÀI NHƯNG PHẢI SÂU SẮC, CẤM LAN MAN / LẶP LẠI)**:',
+    '  + **NO RAMBLING OR FILLER**: Never pad `speech` or `explanationSpeech` with empty intros, vague praise ("this is super useful so let\'s practice"), or off-topic tangents. Every sentence MUST teach a concrete nuance, rule, collocation, or contrast.',
+    '  + **ZERO REPETITION**: Every single card in `cards[]` MUST introduce a **genuinely distinct word, collocation, grammar contrast, or real-life angle** — NEVER reuse the same idea/structure with trivial word swaps.',
+    '  + **DEPTH PER CARD**: In `explanationSpeech` + `translation` + `visual.labels`, explicitly cover: (1) exact situational register (casual vs polite vs professional), (2) WHY natives prefer this phrasing over literal/textbook mistakes, and (3) a vivid complete dialogue/example.',
+    durationMinutes
+      ? `  + **SELF-AUDIT & SHORTFALL REASON (\`durationReport\`)**: Before returning JSON, sum ALL words/characters across \`speech\` + \`explanationSpeech\` across ALL cards and verify estimated audio minutes >= ${durationMinutes}. If under ${durationMinutes} min, expand with additional distinct chapters/angles until >= ${durationMinutes} min. If you genuinely cannot reach ${durationMinutes} min cleanly without rambling, repeating, or hitting output limits, you MUST set \`"metMinimum": false\` and explain the concrete reason inside \`"durationReport.shortfallReason"\`!`
+      : '  + **SELF-AUDIT**: Verify every card adds non-redundant, insightful knowledge before returning JSON.',
+  ].join('\n');
 
   const coreCardsHeaderLine = isAutoItemCount
     ? `2. **Core Teaching Cards (\`type: "vocab"\` — AI tự chọn số lượng mục kiến thức \`N\` phù hợp nhất với chủ đề & thời lượng tối thiểu)** — PEDAGOGICAL DEPTH FIRST:`
@@ -2588,6 +2647,7 @@ export function buildAiCreatorWebAiPrompt(params: {
     `- **Proficiency Level (${langOption.systemName})**: **${chosenLevel}** (${levelDesc})`,
     `- **Explanation Language**: **${explainLangName}**${isMonolingualExplain ? ' (Monolingual immersion: write ALL meanings, explanations & `explanationSpeech` purely in this language!)' : ''}`,
     durationFloorLine,
+    antiFluffAndAuditBlock,
     `- **Video Frame Aspect**: ${aspectLabel}`,
     topicHint
       ? `- User topic / category direction: "${topicHint}". Craft the sharpest, most practical angle around this topic.`
@@ -2648,6 +2708,11 @@ export function buildAiCreatorWebAiPrompt(params: {
       : []),
     `  "learningLang": "${learningLang}",`,
     `  "level": "${chosenLevel}",`,
+    ...(durationMinutes
+      ? [
+          `  "durationReport": { "targetMinutes": ${durationMinutes}, "estimatedMinutes": ${durationMinutes}, "estimatedCount": ${isCjkLearning ? targetCjkFloor : targetWordsFloor}, "metMinimum": true, "shortfallReason": "" },`,
+        ]
+      : []),
     `  "title": ${JSON.stringify(
       topicHint
         ? `<Tiêu đề hook thật hay, gợi tò mò về "${topicHint}"> | ${formatAudienceLevelLabel(chosenLevel, learningLang)}`
@@ -3311,9 +3376,32 @@ export function buildTranslationChallengePrompt(params: {
 
   const trLocale = getTranslationTargetLocale(learningLang);
   const viLangName = langOption.label.split(' (')[0].replace(/^Tiếng\s+/, 'tiếng ');
+  const avgFixedBaseSec = 2.5 + thinkSec + repeatCount * 2.6;
+  const estTotalTargetSec = Math.round(durationMinutes * 60);
+  const estAutoCardCount = Math.max(
+    4,
+    Math.round((estTotalTargetSec - 8) / (avgFixedBaseSec + (includeNuanceTip ? 8 : 0))),
+  );
+  const perCardNeededSec = Math.max(10, Math.round((estTotalTargetSec - 8) / Math.max(3, numericCount)));
+  const perCardNeededExplSec = Math.max(4, Math.round(perCardNeededSec - avgFixedBaseSec));
+  const perCardNeededExplWords = Math.max(12, Math.round(perCardNeededExplSec * 2.2));
+  const transChapters =
+    durationMinutes >= 5 ? Math.max(3, Math.min(10, Math.round(durationMinutes / 3.5))) : undefined;
+
   const durationFloorLine = isAutoItemCount
-    ? `- **Minimum Duration Floor & Knowledge Count (CHỈ ĐƯỢC DÀI HƠN, KHÔNG THẤP HƠN)**: At least **${durationMinutes} phút** (~${Math.round(durationMinutes * 60)} giây+) — **AI TỰ QUYẾT ĐỊNH SỐ LƯỢNG CÂU PHẢN XẠ TỐI ƯU** (không gò bó số lượng cố định): hãy để chất lượng giải thích & lượng kiến thức thực tế quyết định tổng số câu và thời lượng cuối cùng (TUYỆT ĐỐI KHÔNG thấp hơn ${durationMinutes} phút hoặc cắt câu cụt lủn!).`
-    : `- **Minimum Duration Floor & Knowledge Count (CHỈ ĐƯỢC DÀI HƠN, KHÔNG THẤP HƠN)**: At least **${durationMinutes} phút** (~${Math.round(durationMinutes * 60)} giây+) with at least **${numericCount} challenge sentences** — let the quantity of knowledge points & explanation depth determine the final video duration (NEVER shorten below ${durationMinutes} phút or cut sentences into meaningless stubs!).`;
+    ? [
+        `- **Minimum Duration Floor & Knowledge Count (CHỈ ĐƯỢC DÀI HƠN, KHÔNG THẤP HƠN)**: At least **${durationMinutes} phút** (~${estTotalTargetSec} giây+) — **AI TỰ QUYẾT ĐỊNH SỐ LƯỢNG CÂU PHẢN XẠ TỐI ƯU** (không gò bó số lượng cố định):`,
+        `  + **KẾ HOẠCH KHỐI LƯỢNG ĐỂ ĐẠT >= ${durationMinutes} PHÚT**: Với cấu hình hiện tại (nghĩ ${thinkSec}s + lặp ${repeatCount} lần${includeNuanceTip ? ' + mẹo sắc thái' : ''}), mỗi thẻ phản xạ kéo dài ~${Math.round(avgFixedBaseSec + (includeNuanceTip ? 8 : 0))} giây → cần khoảng **${estAutoCardCount}+ câu phản xạ**${transChapters ? ` chia làm **${transChapters} tình huống/chủ điểm giao tiếp khác nhau**` : ''} để chạm hoặc vượt **${durationMinutes} phút**! **CẤM** dừng sớm ở 8–15 câu (~3 phút)!`,
+      ].join('\n')
+    : `- **Minimum Duration Floor & Knowledge Count (CHỈ ĐƯỢC DÀI HƠN, KHÔNG THẤP HƠN)**: At least **${durationMinutes} phút** (~${estTotalTargetSec} giây+) with at least **${numericCount} challenge sentences**${includeNuanceTip ? ` (mỗi thẻ cần đạt ~${perCardNeededSec}s: ngoài ${thinkSec}s nghĩ + ${repeatCount}× lặp, phần \`explanationSpeech\` cần phân tích sắc thái sâu ~${perCardNeededExplWords}–${perCardNeededExplWords + 15} từ / ~${perCardNeededExplSec}s để ${numericCount} câu đạt đủ ${durationMinutes} phút!)` : ''} — let the quantity of knowledge points & explanation depth determine the final video duration (NEVER shorten below ${durationMinutes} phút or cut sentences into meaningless stubs!).`;
+
+  const translationAntiFluffBlock = [
+    '- **ANTI-RAMBLING, ANTI-REPETITION & DEEP-INSIGHT RULES (DÀI NHƯNG KHÔNG LAN MAN / LẶP LẠI)**:',
+    '  + **NO RAMBLING**: Keep prompts crisp and lifelike; never pad `explanationSpeech` with vague empty praise.',
+    '  + **ZERO REPETITION**: Every challenge sentence MUST test a **distinct grammar structure, idiom, pragmatic nuance, or real-life scenario** — NEVER repeat the same sentence frame with trivial noun swaps.',
+    '  + **DEEP INSIGHT**: Highlight subtle register differences (casual vs polite vs native idiom), why literal word-by-word translation fails, and real conversational triggers.',
+    `- **SELF-AUDIT & SHORTFALL REASON (\`durationReport\`)**: Before returning JSON, compute total estimated runtime \`sum(sourcePrompt + thinkSec + repeatCount * answer + explanationSpeech) / 60\`. If \`< ${durationMinutes} phút\`, add more distinct scenarios/cards first. If still \`< ${durationMinutes} phút\` (e.g., model output-token limit or insufficient source lines provided by user without padding fluff), MUST set \`"metMinimum": false\` and write the exact reason in \`"durationReport.shortfallReason"\`!`,
+  ].join('\n');
 
   const inputModeLine = customLines
     ? isAutoItemCount
@@ -3362,6 +3450,7 @@ export function buildTranslationChallengePrompt(params: {
     `- **Source / Cue & Explanation Language**: **${explainLangName}**${isSameLangExplain ? ` — Write \`"sourcePrompt"\` as a clear everyday situation / paraphrase clue in **${langOption.nativeName}**, and write \`"vocabNotes"\` & \`"explanationSpeech"\` 100% in **${langOption.nativeName}** (monolingual immersion, NO Vietnamese!).` : ''}`,
     `- **Difficulty Level (${langOption.systemName})**: **${chosenLevel}** (${levelDesc})`,
     durationFloorLine,
+    translationAntiFluffBlock,
     `- **Think Countdown Per Sentence**: **${thinkSec} giây** (` + `"thinkSec": ${thinkSec}` + `)`,
     `- **Repeat Spoken Translations**: **${repeatCount} lần** (` + `"repeatCount": ${repeatCount}` + `)`,
     topicHint
@@ -3425,6 +3514,7 @@ export function buildTranslationChallengePrompt(params: {
     `  "level": "${chosenLevel}",`,
     `  "thinkSec": ${thinkSec},`,
     `  "repeatCount": ${repeatCount},`,
+    `  "durationReport": { "targetMinutes": ${durationMinutes}, "estimatedMinutes": ${durationMinutes}, "estimatedCount": ${isAutoItemCount ? estAutoCardCount : numericCount}, "metMinimum": true, "shortfallReason": "" },`,
     `  "title": ${JSON.stringify(
       isSameLangExplain
         ? `その言い方、${langOption.nativeName}で自然に言える？ | ${formatAudienceLevelLabel(chosenLevel, learningLang)}`
@@ -4573,6 +4663,7 @@ export function parseEnglishReelsAiJson(
       cards,
       cartoonAnimations: parsedCartoonAnimations,
       sceneJson,
+      durationReport: parseDurationReportMeta(parsed.durationReport),
     };
   }
 
@@ -4618,6 +4709,7 @@ export function parseEnglishReelsAiJson(
         cards,
         cartoonAnimations: scenePlan.cartoonAnimations,
         sceneJson: scenePlan,
+        durationReport: scenePlan.durationReport,
       };
     }
   }
