@@ -120,7 +120,7 @@ export function computeElementFrameState(
     const easedCubic = easeOutCubic(p);
     const easedQuint = easeOutQuint(p);
     const easedBack = easeOutBack(p);
-    opacity = easeOutCubic(clamp01(p * 1.25));
+    opacity = 0.28 + 0.72 * easeOutCubic(clamp01(p * 1.25));
 
     switch (element.enterAnimation) {
       case 'pop-up':

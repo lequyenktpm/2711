@@ -268,7 +268,9 @@ export function parseCreatorOrTranslationBatchInput(
     // Let parseEnglishReelsAiJson handle fences / plain text
   }
 
-  const parsed = parseEnglishReelsAiJson(normalizedText);
+  const parsed = parseEnglishReelsAiJson(normalizedText, {
+    targetLang: (options as { targetLang?: string }).targetLang,
+  });
   if (!parsed || parsed.cards.length === 0) return null;
 
   const detectedLang =
@@ -589,7 +591,9 @@ export function mapBatchSynthesisDurations(
       let repWinCursor = winCursor + qSpoken + pDur;
       m.repeatIndices.forEach((rIdx, posIdx) => {
         const spoken = repeatDurationsSec[posIdx];
-        const pause = pauseDurs[rIdx] ?? (posIdx < m.repeatIndices!.length - 1 ? 0.55 : 0.25);
+        const pause =
+          pauseDurs[rIdx] ??
+          (posIdx < m.repeatIndices!.length - 1 ? 0.55 : m.explIdx !== null ? 0.25 : 0.35);
         if (spoken > 0.05) {
           speechWindows.push({ start: repWinCursor, end: repWinCursor + spoken });
         }
@@ -597,12 +601,15 @@ export function mapBatchSynthesisDurations(
         ansSpan += spoken + pause;
       });
       const nuanceSec = m.explIdx !== null ? segDurs[m.explIdx] ?? 0 : 0;
+      const nuanceSpoken = m.explIdx !== null ? spokenDurs[m.explIdx] ?? nuanceSec : 0;
+      if (nuanceSpoken > 0.05) {
+        speechWindows.push({ start: repWinCursor, end: repWinCursor + nuanceSpoken });
+      }
       if (nuanceSec > 0.05) {
-        speechWindows.push({ start: repWinCursor, end: repWinCursor + nuanceSec });
         ansSpan += nuanceSec;
       }
       const totalSec = Number(Math.max(1.5, qSpoken + pDur + ansSpan).toFixed(3));
-      winCursor += totalSec + 0.08;
+      winCursor += totalSec;
       return {
         totalSec,
         questionSec: qSpoken,
@@ -618,6 +625,7 @@ export function mapBatchSynthesisDurations(
     const pDur = m.qIdx !== null ? pauseDurs[m.qIdx] ?? 0 : 0;
     const aSpoken = m.aIdx !== null ? segDurs[m.aIdx] ?? 2.6 : undefined;
     const explDur = m.explIdx !== null ? segDurs[m.explIdx] ?? 0 : 0;
+    const explSpoken = m.explIdx !== null ? spokenDurs[m.explIdx] ?? explDur : 0;
     const isQuiz = m.aIdx !== null;
     const totalSec = Number(
       Math.max(1.2, qSpoken + pDur + (aSpoken ?? 0) + explDur).toFixed(3),
@@ -628,14 +636,18 @@ export function mapBatchSynthesisDurations(
     }
     if (isQuiz && aSpoken && aSpoken > 0.05) {
       const ansStart = winCursor + qSpoken + pDur;
-      speechWindows.push({ start: ansStart, end: ansStart + aSpoken });
-      if (explDur > 0.05) {
-        speechWindows.push({ start: ansStart + aSpoken, end: ansStart + aSpoken + explDur });
+      const aOnlySpoken = m.aIdx !== null ? spokenDurs[m.aIdx] ?? aSpoken : aSpoken;
+      speechWindows.push({ start: ansStart, end: ansStart + aOnlySpoken });
+      if (explSpoken > 0.05) {
+        speechWindows.push({ start: ansStart + aSpoken, end: ansStart + aSpoken + explSpoken });
       }
-    } else if (!isQuiz && explDur > 0.05) {
-      speechWindows.push({ start: winCursor + qSpoken, end: winCursor + qSpoken + explDur });
+    } else if (!isQuiz && explSpoken > 0.05) {
+      speechWindows.push({
+        start: winCursor + qSpoken + pDur,
+        end: winCursor + qSpoken + pDur + explSpoken,
+      });
     }
-    winCursor += totalSec + 0.08;
+    winCursor += totalSec;
     return {
       totalSec,
       questionSec: isQuiz ? qSpoken : undefined,
@@ -691,7 +703,12 @@ export function mapBatchWordBoundariesToProjectCues(
   return projCues.map((orig, idx) => {
     const mapped = mappedWordsByProjCue[idx];
     if (mapped && mapped.length > 0) {
-      return { ...orig, words: mapped };
+      return {
+        ...orig,
+        start: Number(Math.min(orig.start, mapped[0].start).toFixed(3)),
+        end: Number(Math.max(orig.end, mapped[mapped.length - 1].end).toFixed(3)),
+        words: mapped,
+      };
     }
     return orig;
   });

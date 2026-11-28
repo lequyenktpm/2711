@@ -26,6 +26,7 @@ import {
   formatTimeToken,
   interpolateWordTimings,
   parseTranscriptAuto,
+  projectWordBoundariesToTokens,
   stripTimestampsFromScript,
   tokenizeTextForKaraoke,
 } from './src/engine/transcriptParser.ts';
@@ -2143,13 +2144,18 @@ async function startServer(): Promise<void> {
 
           // Track exact per-span word timings so multi-TTS segments keep accurate word highlight positions
           const spanTokens = tokenizeTextForKaraoke(span.text);
-          if (shiftedBoundaries.length > 0 && spanTokens.length > 0 && shiftedBoundaries.length === spanTokens.length) {
-            for (let wIdx = 0; wIdx < spanTokens.length; wIdx++) {
-              const wb = shiftedBoundaries[wIdx];
-              const ws = Number(Math.max(spanAbsStart, Math.min(spanAbsEnd - 0.04, spanAbsStart + wb.start)).toFixed(3));
-              const we = Number(Math.max(ws + 0.04, Math.min(spanAbsEnd, spanAbsStart + wb.end)).toFixed(3));
-              spanWordTimings.push({ word: spanTokens[wIdx], start: ws, end: we });
-            }
+          const projectedSpan =
+            shiftedBoundaries.length > 0 && spanTokens.length > 0
+              ? projectWordBoundariesToTokens(
+                  spanTokens,
+                  shiftedBoundaries,
+                  spanAbsStart,
+                  spanAbsStart,
+                  spanAbsEnd,
+                )
+              : null;
+          if (projectedSpan && projectedSpan.length > 0) {
+            spanWordTimings.push(...projectedSpan);
             anyWordBoundaries = true;
           } else if (shiftedBoundaries.length >= 2) {
             const firstStart = Math.max(spanAbsStart, spanAbsStart + shiftedBoundaries[0].start);
@@ -2235,13 +2241,12 @@ async function startServer(): Promise<void> {
             : interpolateWordTimings(segText, start, spokenEnd);
 
         if (spans.length === 1 && segWordBoundaries.length > 0) {
-          if (segTokens.length > 0 && segWordBoundaries.length === segTokens.length) {
-            cueWords = segTokens.map((tok, wIdx) => {
-              const wb = segWordBoundaries[wIdx];
-              const ws = Number(Math.max(start, Math.min(spokenEnd - 0.04, cursor + wb.start)).toFixed(3));
-              const we = Number(Math.max(ws + 0.04, Math.min(spokenEnd, cursor + wb.end)).toFixed(3));
-              return { word: tok, start: ws, end: we };
-            });
+          const projectedSeg =
+            segTokens.length > 0
+              ? projectWordBoundariesToTokens(segTokens, segWordBoundaries, cursor, start, spokenEnd)
+              : null;
+          if (projectedSeg && projectedSeg.length > 0) {
+            cueWords = projectedSeg;
             anyWordBoundaries = true;
           } else if (segWordBoundaries.length >= 2) {
             const firstStart = Math.max(start, cursor + segWordBoundaries[0].start);

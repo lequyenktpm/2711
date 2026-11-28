@@ -355,15 +355,27 @@ export function resyncProjectTimingToCues(
     };
   });
 
+  const wm = project.watermark;
+  const hasIntro =
+    wm &&
+    Number(wm.introSeconds) > 0 &&
+    Boolean(wm.introTitle?.trim() || wm.introSubtitle?.trim() || wm.introBadge?.trim() || project.title?.trim());
+  const introSec = hasIntro ? Math.max(0, Math.min(6, Number(wm?.introSeconds) || 0)) : 0;
   const outroSec =
-    project.watermark &&
-    project.watermark.outroSeconds > 0 &&
-    (project.watermark.outroLine1.trim() || project.watermark.outroLine2.trim())
-      ? Number(project.watermark.outroSeconds || 0)
+    wm &&
+    wm.outroSeconds > 0 &&
+    (wm.outroLine1.trim() || wm.outroLine2.trim())
+      ? Number(wm.outroSeconds || 0)
       : 0;
   const maxElEnd = nextElements.reduce((mx, el) => Math.max(mx, el.endTime), 0);
+  const resyncPad = options?.resyncVisuals === false ? 0 : 0.35;
   const nextDuration = Number(
-    Math.max(3, options?.audioDurationSec ?? 0, newSpanEnd + 0.35 + outroSec, maxElEnd + outroSec).toFixed(2),
+    Math.max(
+      3,
+      options?.audioDurationSec ?? 0,
+      introSec + newSpanEnd + resyncPad + outroSec,
+      introSec + maxElEnd + outroSec,
+    ).toFixed(2),
   );
 
   return {

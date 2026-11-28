@@ -39,6 +39,7 @@ import { downloadTextAsPlainFile } from '../utils/safeFileDownload';
 import { BACKGROUND_PRESETS } from '../engine/backgroundPresets';
 import {
   ensureProjectAssetsLoaded,
+  getEffectiveIntroSeconds,
   getStageDimensionsForAspect,
   hitTestCanvasOverlayZone,
   hitTestElementLayout,
@@ -1486,34 +1487,51 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
 
   useEffect(() => {
     if (previewViewMode !== 'video') return;
+    let cancelled = false;
+    void ensureProjectAssetsLoaded(previewProject).then(() => {
+      if (!cancelled) {
+        setBgAssetVersion((v) => v + 1);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [previewProject, previewViewMode]);
+
+  useEffect(() => {
+    if (previewViewMode !== 'video' || isVideoPlaying || isExportingVideo) return;
+    if (previewProject.backgroundImage?.kind !== 'video' || !previewProject.backgroundImage.videoUrl) return;
+    let cancelled = false;
+    void seekBackgroundVideoTo(previewProject.backgroundImage.videoUrl, videoTime).then(() => {
+      if (!cancelled) {
+        setBgAssetVersion((v) => v + 1);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    previewViewMode,
+    previewProject.backgroundImage?.kind,
+    previewProject.backgroundImage?.videoUrl,
+    videoTime,
+    isVideoPlaying,
+    isExportingVideo,
+  ]);
+
+  useEffect(() => {
+    if (previewViewMode !== 'video') return;
     const canvas = videoCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    let cancelled = false;
-    void (async () => {
-      await ensureProjectAssetsLoaded(previewProject);
-      if (
-        previewProject.backgroundImage?.kind === 'video' &&
-        previewProject.backgroundImage.videoUrl &&
-        !isVideoPlaying &&
-        !isExportingVideo
-      ) {
-        await seekBackgroundVideoTo(previewProject.backgroundImage.videoUrl, videoTime);
-      }
-      if (!cancelled) {
-        const activeSelectToken =
-          isVideoPlaying || isExportingVideo
-            ? null
-            : selectedPreviewOverlayZone === 'title'
-              ? '__title__'
-              : selectedPreviewElementId;
-        renderProjectFrame(ctx, previewProject, videoTime, activeSelectToken);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    const activeSelectToken =
+      isVideoPlaying || isExportingVideo
+        ? null
+        : selectedPreviewOverlayZone === 'title'
+          ? '__title__'
+          : selectedPreviewElementId;
+    renderProjectFrame(ctx, previewProject, videoTime, activeSelectToken);
   }, [
     previewProject,
     videoTime,
@@ -1629,10 +1647,13 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       }
       return;
     }
+    const introOffset = getEffectiveIntroSeconds(previewProject);
+    const adjTime = videoTime - introOffset;
+    if (adjTime < 0) return;
     for (const win of countdownWindows) {
       for (let i = 0; i < win.tickTimesSec.length; i++) {
         const tickSec = win.tickTimesSec[i];
-        if (videoTime >= tickSec && videoTime < tickSec + 0.16) {
+        if (adjTime >= tickSec && adjTime < tickSec + 0.16) {
           const key = `tick-${win.startSec}-${i}`;
           if (lastCountdownSfxKeyRef.current !== key) {
             lastCountdownSfxKeyRef.current = key;
@@ -1643,8 +1664,8 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       }
       if (
         typeof win.revealChimeSec === 'number' &&
-        videoTime >= win.revealChimeSec &&
-        videoTime < win.revealChimeSec + 0.18
+        adjTime >= win.revealChimeSec &&
+        adjTime < win.revealChimeSec + 0.18
       ) {
         const key = `reveal-${win.startSec}`;
         if (lastCountdownSfxKeyRef.current !== key) {
@@ -1654,7 +1675,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         return;
       }
     }
-  }, [isVideoPlaying, videoTime, generatedAudioUrl, enableCountdownSfx, countdownWindows]);
+  }, [isVideoPlaying, videoTime, generatedAudioUrl, enableCountdownSfx, countdownWindows, previewProject]);
 
   const creatorLevelOptions = useMemo(
     () => getLevelsForLearningLanguage(creatorLearningLang),
@@ -3067,7 +3088,9 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           let repWinCursor = winCursor + qSpoken + pDur;
           repList.forEach((rIdx, posIdx) => {
             const spoken = repeatDurationsSec[posIdx];
-            const pause = pauseDurs[rIdx] ?? (posIdx < repList.length - 1 ? 0.55 : 0.25);
+            const pause =
+              pauseDurs[rIdx] ??
+              (posIdx < repList.length - 1 ? 0.55 : m.explIdx !== null ? 0.25 : 0.35);
             if (spoken > 0.05) {
               speechWindows.push({ start: repWinCursor, end: repWinCursor + spoken });
             }
@@ -3075,12 +3098,15 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
             ansSpan += spoken + pause;
           });
           const nuanceSec = m.explIdx !== null ? segDurs[m.explIdx] ?? 0 : 0;
+          const nuanceSpoken = m.explIdx !== null ? spokenDurs[m.explIdx] ?? nuanceSec : 0;
+          if (nuanceSpoken > 0.05) {
+            speechWindows.push({ start: repWinCursor, end: repWinCursor + nuanceSpoken });
+          }
           if (nuanceSec > 0.05) {
-            speechWindows.push({ start: repWinCursor, end: repWinCursor + nuanceSec });
             ansSpan += nuanceSec;
           }
           const totalSec = Number(Math.max(1.5, qSpoken + pDur + ansSpan).toFixed(3));
-          winCursor += totalSec + 0.08;
+          winCursor += totalSec;
           return {
             totalSec,
             questionSec: qSpoken,
@@ -3095,7 +3121,9 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         const qSpoken = m.qIdx !== null ? spokenDurs[m.qIdx] ?? segDurs[m.qIdx] ?? 2.8 : 0;
         const pDur = m.qIdx !== null ? pauseDurs[m.qIdx] ?? 0 : 0;
         const aSpoken = m.aIdx !== null ? segDurs[m.aIdx] ?? 2.6 : undefined;
+        const aOnlySpoken = m.aIdx !== null ? spokenDurs[m.aIdx] ?? aSpoken : undefined;
         const explDur = m.explIdx !== null ? segDurs[m.explIdx] ?? 0 : 0;
+        const explSpoken = m.explIdx !== null ? spokenDurs[m.explIdx] ?? explDur : 0;
         const isQuiz = Boolean(m.isQuiz);
         const totalSec = Number(
           Math.max(1.2, qSpoken + pDur + (aSpoken ?? 0) + explDur).toFixed(3),
@@ -3106,17 +3134,18 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         }
         if (isQuiz) {
           const ansStart = winCursor + qSpoken + pDur;
-          if (aSpoken && aSpoken > 0.05) {
-            speechWindows.push({ start: ansStart, end: ansStart + aSpoken });
+          if (aOnlySpoken && aOnlySpoken > 0.05) {
+            speechWindows.push({ start: ansStart, end: ansStart + aOnlySpoken });
           }
-          if (explDur > 0.05) {
+          if (explSpoken > 0.05) {
             const explStart = ansStart + (aSpoken ?? 0);
-            speechWindows.push({ start: explStart, end: explStart + explDur });
+            speechWindows.push({ start: explStart, end: explStart + explSpoken });
           }
-        } else if (explDur > 0.05) {
-          speechWindows.push({ start: winCursor + qSpoken, end: winCursor + qSpoken + explDur });
+        } else if (explSpoken > 0.05) {
+          const explStart = winCursor + qSpoken + pDur;
+          speechWindows.push({ start: explStart, end: explStart + explSpoken });
         }
-        winCursor += totalSec + 0.08;
+        winCursor += totalSec;
         return {
           totalSec,
           questionSec: isQuiz ? qSpoken : undefined,
@@ -3127,7 +3156,8 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       durations = timings.map((t) => t.totalSec);
       if (extraOutroIdx >= 0 && segDurs[extraOutroIdx]) {
         outroStartSec = winCursor;
-        speechWindows.push({ start: winCursor, end: winCursor + segDurs[extraOutroIdx] });
+        const extraOutroSpoken = spokenDurs[extraOutroIdx] ?? segDurs[extraOutroIdx];
+        speechWindows.push({ start: winCursor, end: winCursor + extraOutroSpoken });
       }
     }
 
@@ -3136,6 +3166,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       theme: selectedTheme,
       aspectRatio: reelsAspectRatio,
       targetLang,
+      learningLanguage: langAtStart,
       backgroundImage,
       subtitleConfig: {
         position: subtitlePosition,
@@ -3192,6 +3223,8 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         if (mapped && mapped.length > 0) {
           return {
             ...orig,
+            start: Number(Math.min(orig.start, mapped[0].start).toFixed(3)),
+            end: Number(Math.max(orig.end, mapped[mapped.length - 1].end).toFixed(3)),
             words: mapped,
           };
         }
@@ -3205,29 +3238,49 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         : null;
 
     let finalAudioFile: File = rawAudioFile;
-    const countdownCues = extractCountdownWindowsFromElements(syncedProj.elements);
+    const introSec = getEffectiveIntroSeconds(syncedProj);
+    const countdownCues = extractCountdownWindowsFromElements(syncedProj.elements).map((cw) => ({
+      ...cw,
+      startSec: Number((cw.startSec + introSec).toFixed(3)),
+      endSec: Number((cw.endSec + introSec).toFixed(3)),
+      tickTimesSec: cw.tickTimesSec.map((t) => Number((t + introSec).toFixed(3))),
+      revealChimeSec:
+        typeof cw.revealChimeSec === 'number'
+          ? Number((cw.revealChimeSec + introSec).toFixed(3))
+          : undefined,
+    }));
+    const shiftedSpeechWindows = speechWindows.map((sw) => ({
+      start: Number((sw.start + introSec).toFixed(3)),
+      end: Number((sw.end + introSec).toFixed(3)),
+    }));
+    const shiftedOutroStartSec =
+      typeof outroStartSec === 'number' ? Number((outroStartSec + introSec).toFixed(3)) : undefined;
     const shouldMixBgm = (bgmPreset !== 'none' || Boolean(customBgmFile)) && bgmVolume > 0;
     const shouldMixCountdown = enableCountdownSfx && countdownCues.length > 0;
-    if (shouldMixBgm || shouldMixCountdown) {
+    if (shouldMixBgm || shouldMixCountdown || introSec > 0) {
       const mixLbl =
         shouldMixCountdown && shouldMixBgm
           ? 'Đang hòa âm nhạc nền + hiệu ứng đếm ngược...'
           : shouldMixCountdown
             ? 'Đang ghép hiệu ứng âm thanh đếm ngược...'
-            : 'Đang hòa âm nhạc nền + giọng đọc...';
+            : shouldMixBgm
+              ? 'Đang hòa âm nhạc nền + giọng đọc...'
+              : 'Đang đồng bộ khoảng chờ Intro vào Audio...';
       updateRenderTaskSlot(originSlotId, { stageLabel: mixLbl });
       if (activeModeRef.current === originMode) {
         setTtsStageLabel(mixLbl);
       }
       const mixed = await mixVoiceWithBgmPreset({
         voiceFile: rawAudioFile,
-        bgmPreset,
+        bgmPreset: shouldMixBgm ? bgmPreset : 'none',
         bgmVolume,
         customBgmFile,
-        speechWindows,
+        speechWindows: shiftedSpeechWindows,
         countdownWindows: countdownCues,
         enableCountdownSfx,
-        outroStartSec,
+        voiceDelaySec: introSec,
+        introEndSec: introSec,
+        outroStartSec: shiftedOutroStartSec,
         minTotalDurationSec: syncedProj.duration,
         outputFileName: cleanDownloadFileName(leveledTitleStem, 'wav', 'English Reels'),
       });
@@ -5923,15 +5976,15 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                           const parsedIdx = Number(tailMatch[1]);
                           if (parsedIdx >= 0 && parsedIdx < cards.length) return parsedIdx;
                         }
-                        let cursor = 0;
+                        let cursor = getEffectiveIntroSeconds(previewProject);
                         for (let ci = 0; ci < cards.length; ci++) {
                           const d =
                             generatedDurations?.[ci] ??
                             Math.max(1.2, cards[ci].durationSec || 2.8);
-                          if (videoTime >= cursor && videoTime <= cursor + d + 0.1) {
+                          if (videoTime >= cursor && videoTime <= cursor + d + 0.05) {
                             return ci;
                           }
-                          cursor += d + 0.08;
+                          cursor += d;
                         }
                         return safeActiveIdx;
                       };

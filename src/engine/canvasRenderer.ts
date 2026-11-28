@@ -99,6 +99,24 @@ export function getEffectiveOutroSeconds(
   return hasContent ? Math.max(0, Math.min(10, Number(wm.outroSeconds) || 0)) : 0;
 }
 
+function isActiveElementInSlice(
+  el: SceneElement,
+  allElements: SceneElement[],
+  t: number,
+): boolean {
+  if (t < el.startTime - 0.0005 || t > el.endTime + 0.0005) return false;
+  if (t >= el.endTime - 0.0005) {
+    const hasSuccessorAtCut = allElements.some(
+      (other) =>
+        other.id !== el.id &&
+        other.endTime > other.startTime &&
+        Math.abs(other.startTime - el.endTime) <= 0.002,
+    );
+    if (hasSuccessorAtCut) return false;
+  }
+  return true;
+}
+
 function enforceNonOverlappingResolvedLayouts(
   elements: SceneElement[],
   layoutMap: Map<string, ElementLayout>,
@@ -108,7 +126,7 @@ function enforceNonOverlappingResolvedLayouts(
   titleBox?: TitleBoundsBox | null,
 ): Map<string, ElementLayout> {
   const stage = getStageDimensionsForAspect(aspectRatio);
-  const visible = elements.filter((el) => time >= el.startTime - 0.01 && time <= el.endTime + 0.01);
+  const visible = elements.filter((el) => isActiveElementInSlice(el, elements, time));
   if (visible.length === 0) return layoutMap;
 
   const getBounds = (el: SceneElement, l: ElementLayout) => {
@@ -543,7 +561,7 @@ function computeStableProjectCartoonStackBottom(
   const sampleTimes = collectSampleTimesForCartoonSlices(elements);
   let maxBottom = aspectRatio === '9:16' ? (isTopSub ? 375 : 212) : isTopSub ? 320 : 178;
   for (const st of sampleTimes) {
-    const slice = elements.filter((el) => st >= el.startTime - 0.01 && st <= el.endTime + 0.01);
+    const slice = elements.filter((el) => isActiveElementInSlice(el, elements, st));
     const sb =
       aspectRatio === '9:16'
         ? computeStackBottom916ForSlice(slice, isTopSub)
@@ -573,7 +591,7 @@ export function resolveElementLayoutForAspect(
 
   if (aspectRatio === '9:16') {
     const visible916 = isCartoonHostProject
-      ? elements.filter((el) => time >= el.startTime - 0.01 && time <= el.endTime + 0.01)
+      ? elements.filter((el) => isActiveElementInSlice(el, elements, time))
       : [];
     const hasTopStrip916 = visible916.some(
       (el) => el.type === 'comparison-strip' && el.layout.y < 900 && !el.id.includes('-quiz-opts-'),
@@ -696,7 +714,7 @@ export function resolveElementLayoutForAspect(
     );
   }
 
-  const visible = elements.filter((el) => time >= el.startTime - 0.01 && time <= el.endTime + 0.01);
+  const visible = elements.filter((el) => isActiveElementInSlice(el, elements, time));
   const topStrip = visible.filter(
     (el) => el.type === 'comparison-strip' && el.layout.y < 900 && !el.id.includes('-quiz-opts-'),
   );
@@ -1791,8 +1809,7 @@ export function resolveLessonTitleBox(
     (aspectRatio === '16:9' || aspectRatio === '1:1') &&
     project.elements.some(
       (el) =>
-        lessonTime >= el.startTime - 0.01 &&
-        lessonTime <= el.endTime + 0.01 &&
+        isActiveElementInSlice(el, project.elements, lessonTime) &&
         !(el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host') &&
         el.type !== 'karaoke-card',
     );
@@ -9123,13 +9140,12 @@ export function renderProjectFrame(
   const outroSec = getEffectiveOutroSeconds(project);
   const lessonTime = Math.max(0, time - introSec);
 
-  // Determine whether learning content is currently on screen so background dims softly for readability
+  // Determine whether learning content is active (with 0.45s gap tolerance so backdrop scrim never flickers between cuts)
   const isLearningMomentActive =
     time >= introSec &&
     project.elements.some((el) => {
-      if (lessonTime < el.startTime || lessonTime > el.endTime) return false;
-      if (el.type === 'karaoke-card' || el.type === 'sentence-card') return true;
-      return false;
+      if (el.type !== 'karaoke-card' && el.type !== 'sentence-card') return false;
+      return lessonTime >= el.startTime - 0.05 && lessonTime <= el.endTime + 0.45;
     });
 
   const bg = project.backgroundImage;
@@ -9463,21 +9479,19 @@ export function renderProjectFrame(
   for (const el of sorted) {
     const frame = computeElementFrameState(el, lessonTime);
     if (!frame.visible) continue;
-    const activeLayout = layoutMap.get(el.id) || el.layout;
-    // Prevent 1-frame double-draw at exact handoff millisecond when successor replaces the same slot
+    // Prevent 1-frame double-draw at exact handoff millisecond when any successor slice begins
     if (
-      Math.abs(lessonTime - el.endTime) < 0.002 &&
-      sorted.some((other) => {
-        if (other.id === el.id || other.type !== el.type) return false;
-        if (Math.abs(other.startTime - el.endTime) >= 0.002 || other.endTime <= other.startTime) {
-          return false;
-        }
-        const oLay = layoutMap.get(other.id) || other.layout;
-        return Math.abs(oLay.x - activeLayout.x) < 160;
-      })
+      Math.abs(lessonTime - el.endTime) <= 0.002 &&
+      sorted.some(
+        (other) =>
+          other.id !== el.id &&
+          other.endTime > other.startTime &&
+          Math.abs(other.startTime - el.endTime) <= 0.002,
+      )
     ) {
       continue;
     }
+    const activeLayout = layoutMap.get(el.id) || el.layout;
 
     const activeScale = frame.scale * ((activeLayout.scale || 1) / Math.max(0.1, el.layout.scale || 1));
 

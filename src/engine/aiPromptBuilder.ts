@@ -34,6 +34,7 @@ export function buildSceneGenerationPrompt(
   const isWordReveal = style === 'word-reveal-dark';
   const aiDecideComposition = options?.compositionId === 'ai-decide';
   const isCartoonHost = !aiDecideComposition && options?.compositionId === 'cartoon-host';
+  const learningLangNorm = (options?.learningLanguage || 'en').toLowerCase();
 
   const audioDur =
     typeof options?.audioDurationSec === 'number' && options.audioDurationSec > 0
@@ -97,7 +98,7 @@ export function buildSceneGenerationPrompt(
     styleGuide = `PHONG CÁCH NHÂN VẬT HOẠT HÌNH LIP-SYNC (@Gimmys — Nền trời xanh & Thẻ tương tác):
 - BẮT BUỘC đặt \`"compositionId": "cartoon-host"\` ở JSON gốc và \`"composition": "cartoon-host"\` trên từng scene.
 - Đặt \`"theme": "${options?.theme ?? 'pastel-sunrise'}"\`.
-- **TIÊU ĐỀ BÀI HỌC (\`"title"\`) NGẮN GỌN, RÕ LEVEL & CHỦ ĐỀ TÁCH BẰNG \`|\`**: Đặt theo mẫu \`"<Level> | <Chủ đề ngắn gọn súc tích>"\` (VD: \`"B1 | Cách gọi nước lịch sự"\` hoặc \`"N4 | CanとCouldの使い分け"\`). Tuyệt đối KHÔNG ghi chú thích kỹ thuật kiểu \`(Transcript ... 1:42)\`.
+- **TIÊU ĐỀ BÀI HỌC (\`"title"\`) NGẮN GỌN, RÕ LEVEL & CHỦ ĐỀ TÁCH BẰNG \`|\`**: Đặt theo mẫu \`"<Level> | <Chủ đề ngắn gọn súc tích>"\` (VD: \`"B1 | Cách gọi nước lịch sự"\` hoặc \`"${options?.level || 'N4'} | ${learningLangNorm === 'ja' ? 'CanとCouldの使い分け' : 'Natural Everyday Phrases'}"\`). Tuyệt đối KHÔNG ghi chú thích kỹ thuật kiểu \`(Transcript ... 1:42)\`.
 - **KHÔNG TẠO BONG BÓNG THOẠI LẶP LẠI CÂU NÓI**: App đã có phụ đề vàng nổi bật bên dưới và nhân vật Gimmy tự nhép miệng từng âm tiết.
 - **ĐIỀU KHIỂN HÀNH ĐỘNG & BIỂU CẢM NHÂN VẬT @GIMMYS TRÊN TỪNG SCENE**:
   + Mỗi scene có thể gắn \`"cartoonAction": "<actionId>"\` và/hoặc \`"cartoonMood": "excited|happy|curious|warning|neutral|proud|thinking|surprised|celebrate|shy"\` hoặc sáng tạo thông số riêng qua \`"cartoonAnimationSpec"\`!
@@ -169,7 +170,6 @@ Quy tắc an toàn (KHÔNG invent type hay icon ngoài danh mục):
       : null;
 
   const isAutonomousScript = Boolean(options?.autonomousScript && audioDur === null);
-  const learningLangNorm = (options?.learningLanguage || 'en').toLowerCase();
   const isCjkUnit = learningLangNorm === 'ja' || learningLangNorm === 'zh';
   const ratePerMin = isCjkUnit ? 185 : 130;
   const unitShort = isCjkUnit ? 'ký tự' : 'từ';
@@ -321,7 +321,7 @@ ${TYPOGRAPHY_MOBILE_READABILITY_PROMPT_BLOCK}
 - Mọi \`sceneIcon\` đều nằm trong danh sách 42 icon chuẩn; mọi \`variant\` có trong Kho hoặc dùng \`customPrimitives\`.
 - Mọi \`position\` thỏa \`x >= 0\`, \`y >= 0\`, \`x + width <= 1\`, \`y + height <= 0.75\`, và không chồng nhau trong cùng scene.
 
-- Đặt \`"title"\` thật ngắn gọn (tối đa ~8–12 từ), súc tích, khơi gợi tò mò & cảm xúc đúng với nội dung bài (VD kiểu \`"【Bạn có hay nói nhầm?】Đừng dùng 'Want Water' nữa!"\` hoặc \`"【このペースで言える？】英会話のための瞬間英作文"\` phù hợp ngôn ngữ bài học).
+- Đặt \`"title"\` thật ngắn gọn (tối đa ~8–12 từ), súc tích, khơi gợi tò mò & cảm xúc đúng với nội dung bài & đúng ngôn ngữ bài học (VD kiểu \`"【Bạn có hay nói nhầm?】Đừng dùng 'Want Water' nữa!"\`${learningLangNorm === 'ja' ? ' hoặc `"【このペースで言える？】自然な日本語表現"`' : ''}).
 
 # MẪU JSON OUTPUT CHUẨN v1.9
 \`\`\`json
@@ -329,7 +329,7 @@ ${
   isCartoonHost
     ? `{
   "schema_version": "1.9",
-  "title": "${options?.title || '水が欲しい時、CanとCouldどっち？'}",
+  "title": "${options?.title || (learningLangNorm === 'ja' ? 'お水をお願いする時の自然な言い方' : 'Polite Requests in Daily Life')}",
   "theme": "${resolvedTemplateTheme}",
   "compositionId": "cartoon-host",
   "compositionReason": "Nhân vật @Gimmys chỉ tay lên thẻ ví dụ Đúng/Sai và lip-sync theo lời giảng",

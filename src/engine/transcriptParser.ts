@@ -113,6 +113,75 @@ export function interpolateWordTimings(
   });
 }
 
+export function projectWordBoundariesToTokens(
+  tokens: string[],
+  boundaries: Array<{ word: string; start: number; end: number }>,
+  baseOffset = 0,
+  minTime = 0,
+  maxTime = Number.POSITIVE_INFINITY,
+): WordTiming[] | null {
+  if (tokens.length === 0 || boundaries.length === 0) return null;
+
+  const clampStart = (t: number) => Math.max(minTime, Math.min(maxTime - 0.04, t));
+  const clampEnd = (t: number, st: number) => Math.max(st + 0.04, Math.min(maxTime, t));
+
+  if (boundaries.length === tokens.length) {
+    return tokens.map((tok, wIdx) => {
+      const wb = boundaries[wIdx];
+      const ws = Number(clampStart(baseOffset + wb.start).toFixed(3));
+      const we = Number(clampEnd(baseOffset + wb.end, ws).toFixed(3));
+      return { word: tok, start: ws, end: we };
+    });
+  }
+
+  const charLen = (s: string) => {
+    const clean = s.replace(/[\s\u3000]/g, '');
+    return Math.max(1, clean.length);
+  };
+
+  const bWeights = boundaries.map((b) => charLen(b.word));
+  const totalBChars = bWeights.reduce((acc, w) => acc + w, 0);
+  const bCum: number[] = [0];
+  for (let i = 0; i < bWeights.length; i++) {
+    bCum.push(bCum[i] + bWeights[i]);
+  }
+
+  const tWeights = tokens.map((t) => charLen(t));
+  const totalTChars = tWeights.reduce((acc, w) => acc + w, 0);
+  const tCum: number[] = [0];
+  for (let i = 0; i < tWeights.length; i++) {
+    tCum.push(tCum[i] + tWeights[i]);
+  }
+
+  const lookupTime = (frac: number): number => {
+    const targetPos = Math.max(0, Math.min(totalBChars, frac * totalBChars));
+    for (let i = 0; i < boundaries.length; i++) {
+      const c0 = bCum[i];
+      const c1 = bCum[i + 1];
+      if (targetPos <= c1 || i === boundaries.length - 1) {
+        const spanChars = Math.max(1, c1 - c0);
+        const localFrac = Math.max(0, Math.min(1, (targetPos - c0) / spanChars));
+        const b = boundaries[i];
+        return b.start + localFrac * Math.max(0.02, b.end - b.start);
+      }
+    }
+    const last = boundaries[boundaries.length - 1];
+    return last.end;
+  };
+
+  let prevStart = minTime;
+  return tokens.map((tok, idx) => {
+    const f0 = tCum[idx] / Math.max(1, totalTChars);
+    const f1 = tCum[idx + 1] / Math.max(1, totalTChars);
+    const rawS = baseOffset + lookupTime(f0);
+    const rawE = baseOffset + lookupTime(f1);
+    const ws = Number(Math.max(prevStart, clampStart(rawS)).toFixed(3));
+    const we = Number(clampEnd(rawE, ws).toFixed(3));
+    prevStart = ws;
+    return { word: tok, start: ws, end: we };
+  });
+}
+
 export function parseSrtOrVtt(input: string): TranscriptCue[] {
   const normalized = input.replace(/\r\n/g, '\n').replace(/^WEBVTT[^\n]*\n*/i, '').trim();
   if (!normalized) return [];

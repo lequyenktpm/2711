@@ -873,11 +873,31 @@ export function reflowElementsAvoidingOverlap(
     return false;
   };
 
+  const isSliceElementActive = (el: SceneElement, t: number): boolean => {
+    if (t < el.startTime - 0.0005 || t > el.endTime + 0.0005) return false;
+    if (t >= el.endTime - 0.0005) {
+      const hasSuccessorAtCut = ordered.some(
+        (o) =>
+          o.el.id !== el.id &&
+          o.el.endTime > o.el.startTime &&
+          Math.abs(o.el.startTime - el.endTime) <= 0.002,
+      );
+      if (hasSuccessorAtCut) return false;
+    }
+    return true;
+  };
+
   const getSliceSafeBounds = (t: number) => {
     let safeTop = 36;
     let safeBottom = stageH - 44;
     for (const k of karaokeFixed) {
-      if (t < k.startTime - 0.01 || t > k.endTime + 0.01) continue;
+      if (t < k.startTime - 0.0005 || t > k.endTime + 0.0005) continue;
+      if (t >= k.endTime - 0.0005) {
+        const hasNextKaraoke = karaokeFixed.some(
+          (ok) => ok.id !== k.id && Math.abs(ok.startTime - k.endTime) <= 0.002,
+        );
+        if (hasNextKaraoke) continue;
+      }
       const kb = resolveBoxFromLayout(k, working.get(k.id));
       if (kb.bottom < stageH * 0.42) {
         safeTop = Math.max(safeTop, Math.round(kb.bottom + gapPx));
@@ -911,7 +931,7 @@ export function reflowElementsAvoidingOverlap(
     for (const t of sampleTimes) {
       const active = ordered
         .map((o) => o.el)
-        .filter((el) => t >= el.startTime - 0.01 && t <= el.endTime + 0.01);
+        .filter((el) => isSliceElementActive(el, t));
       if (active.length < 2) continue;
       const { safeTop, safeBottom } = getSliceSafeBounds(t);
       const colTop = getColumnTopWithTitle(active, safeTop);
@@ -922,39 +942,55 @@ export function reflowElementsAvoidingOverlap(
       );
       if (nonStrip.length < 2) continue;
 
-      const sumH =
-        nonStrip.reduce((acc, el) => acc + resolveBoxFromLayout(el, working.get(el.id)).height, 0) +
-        gapPx * (nonStrip.length - 1);
-      if (sumH <= availH) continue;
-
       const visuals = nonStrip.filter(isVisualColumnCandidate);
       const cards = nonStrip.filter((el) => !isVisualColumnCandidate(el));
       if (visuals.length === 0 || cards.length === 0) continue;
+
+      // Only redistribute if visuals and cards currently share horizontal column space AND exceed vertical room
+      const sharesColumn = visuals.some((v) => {
+        const vb = resolveBoxFromLayout(v, working.get(v.id));
+        return cards.some((c) => {
+          const cb = resolveBoxFromLayout(c, working.get(c.id));
+          return Math.min(vb.right, cb.right) - Math.max(vb.left, cb.left) > 12;
+        });
+      });
+      if (!sharesColumn) continue;
+
+      const sumH =
+        nonStrip.reduce((acc, el) => acc + resolveBoxFromLayout(el, working.get(el.id)).halfH * 2, 0) +
+        gapPx * (nonStrip.length - 1);
+      if (sumH <= availH) continue;
 
       const leftX = Math.round(stageW * 0.27);
       const rightX = Math.round(stageW * 0.73);
       const maxColW = Math.round(stageW * 0.44);
 
-      const pinnedIsRight =
-        cards.some((c) => c.id === pinnedId) &&
-        (working.get(pinnedId)?.x ?? stageW / 2) >= stageW * 0.48;
-      const pinnedIsLeft =
-        visuals.some((v) => v.id === pinnedId) &&
-        (working.get(pinnedId)?.x ?? stageW / 2) <= stageW * 0.52;
+      const pinnedX = working.get(pinnedId)?.x ?? stageW / 2;
+      const pinnedInVisuals = visuals.some((v) => v.id === pinnedId);
+      const pinnedInCards = cards.some((c) => c.id === pinnedId);
+
+      // Assign distinct non-overlapping columns honoring pinned element's side
+      let visualsTargetX = leftX;
+      let cardsTargetX = rightX;
+      if (pinnedInVisuals) {
+        visualsTargetX = pinnedX >= stageW * 0.52 ? rightX : leftX;
+        cardsTargetX = visualsTargetX === leftX ? rightX : leftX;
+      } else if (pinnedInCards) {
+        cardsTargetX = pinnedX <= stageW * 0.48 ? leftX : rightX;
+        visualsTargetX = cardsTargetX === rightX ? leftX : rightX;
+      }
 
       for (const v of visuals) {
-        if (v.id === pinnedId && (pinStrict || pinnedIsLeft)) continue;
+        if (v.id === pinnedId && (pinStrict || Math.abs(pinnedX - visualsTargetX) < stageW * 0.24)) continue;
         const cur = working.get(v.id)!;
-        const targetX = pinnedIsLeft ? rightX : leftX;
         const nextW = Math.min(cur.width || maxColW, maxColW);
-        working.set(v.id, { ...cur, x: targetX, width: nextW, manualPosition: true });
+        working.set(v.id, { ...cur, x: visualsTargetX, width: nextW, manualPosition: true });
       }
       for (const c of cards) {
-        if (c.id === pinnedId && (pinStrict || pinnedIsRight)) continue;
+        if (c.id === pinnedId && (pinStrict || Math.abs(pinnedX - cardsTargetX) < stageW * 0.24)) continue;
         const cur = working.get(c.id)!;
-        const targetX = pinnedIsLeft ? leftX : rightX;
         const nextW = Math.min(cur.width || maxColW, maxColW);
-        working.set(c.id, { ...cur, x: targetX, width: nextW, manualPosition: true });
+        working.set(c.id, { ...cur, x: cardsTargetX, width: nextW, manualPosition: true });
       }
     }
   }
@@ -1003,27 +1039,29 @@ export function reflowElementsAvoidingOverlap(
       const pLay = working.get(pEl.id)!;
       const pBox = resolveBoxFromLayout(pEl, pLay);
 
+      const rawBelowStart = pBox.bottom + gapPx;
+      const canMoveBelow = clusterBottom - rawBelowStart >= 48;
+
       // Partition unpinned items into those staying above pinned vs pushed below pinned
       const above = cluster.filter((el, i) => i < pinnedIdx);
       const below = cluster.filter((el, i) => i > pinnedIdx);
 
       // Try placing `above` tightly between clusterTop and pBox.top - gapPx
-      const aboveAvail = pBox.top - gapPx - clusterTop;
+      const aboveAvail = Math.max(0, pBox.top - gapPx - clusterTop);
       const aboveNeed =
-        above.reduce((acc, el) => acc + resolveBoxFromLayout(el, working.get(el.id)).height, 0) +
+        above.reduce((acc, el) => acc + resolveBoxFromLayout(el, working.get(el.id)).halfH * 2, 0) +
         gapPx * Math.max(0, above.length - 1);
 
       const finalBelow: SceneElement[] = [...below];
       const finalAbove: SceneElement[] = [];
       if (above.length > 0) {
-        if (aboveNeed <= aboveAvail && aboveAvail > 40) {
+        if ((aboveNeed <= aboveAvail && aboveAvail > 40) || !canMoveBelow) {
           finalAbove.push(...above);
         } else {
-          // If items above don't fit above pinned, try scaling `above` slightly or move colliding ones below pinned
           let runningNeed = 0;
           for (let ai = 0; ai < above.length; ai++) {
             const el = above[ai];
-            const h = resolveBoxFromLayout(el, working.get(el.id)).height;
+            const h = resolveBoxFromLayout(el, working.get(el.id)).halfH * 2;
             if (runningNeed + h <= aboveAvail) {
               finalAbove.push(el);
               runningNeed += h + gapPx;
@@ -1035,7 +1073,27 @@ export function reflowElementsAvoidingOverlap(
       }
 
       if (finalAbove.length > 0) {
-        let cursorBottom = pBox.top - gapPx;
+        const aboveGap = Math.max(8, Math.min(gapPx, 16));
+        const aboveGapTotal = aboveGap * Math.max(0, finalAbove.length - 1);
+        const rawAboveSum = finalAbove.reduce(
+          (acc, el) => acc + resolveBoxFromLayout(el, working.get(el.id)).halfH * 2,
+          0,
+        );
+        if (rawAboveSum + aboveGapTotal > aboveAvail && aboveAvail > 24) {
+          const ratio = Math.max(
+            0.42,
+            Math.min(1, (aboveAvail - aboveGapTotal) / Math.max(1, rawAboveSum)),
+          );
+          for (const el of finalAbove) {
+            const cur = working.get(el.id)!;
+            working.set(el.id, {
+              ...cur,
+              scale: Number(Math.max(0.4, (cur.scale || 1) * ratio).toFixed(3)),
+              manualPosition: true,
+            });
+          }
+        }
+        let cursorBottom = pBox.top - aboveGap;
         for (let ai = finalAbove.length - 1; ai >= 0; ai--) {
           const el = finalAbove[ai];
           const cur = working.get(el.id)!;
@@ -1043,24 +1101,31 @@ export function reflowElementsAvoidingOverlap(
           const desiredBottom = Math.min(cursorBottom, b.bottom);
           const nextY = Math.max(Math.round(clusterTop + b.halfH), Math.round(desiredBottom - b.halfH));
           working.set(el.id, { ...cur, y: nextY, manualPosition: true });
-          cursorBottom = nextY - b.halfH - gapPx;
+          cursorBottom = nextY - b.halfH - aboveGap;
         }
       }
 
       if (finalBelow.length > 0) {
         const belowStart = pBox.bottom + gapPx;
-        const belowAvail = Math.max(90, clusterBottom - belowStart);
-        const belowGap = Math.max(10, Math.min(gapPx, 16));
+        const belowAvail = Math.max(24, clusterBottom - belowStart);
+        const belowGap = Math.max(8, Math.min(gapPx, 16));
         const rawNeed =
-          finalBelow.reduce((acc, el) => acc + resolveBoxFromLayout(el, working.get(el.id)).height, 0) +
+          finalBelow.reduce((acc, el) => acc + resolveBoxFromLayout(el, working.get(el.id)).halfH * 2, 0) +
           belowGap * Math.max(0, finalBelow.length - 1);
         if (rawNeed > belowAvail) {
-          const ratio = Math.max(0.45, Math.min(1, (belowAvail - belowGap * Math.max(0, finalBelow.length - 1)) / Math.max(1, rawNeed - belowGap * Math.max(0, finalBelow.length - 1))));
+          const ratio = Math.max(
+            0.4,
+            Math.min(
+              1,
+              (belowAvail - belowGap * Math.max(0, finalBelow.length - 1)) /
+                Math.max(1, rawNeed - belowGap * Math.max(0, finalBelow.length - 1)),
+            ),
+          );
           for (const el of finalBelow) {
             const cur = working.get(el.id)!;
             working.set(el.id, {
               ...cur,
-              scale: Number(Math.max(0.42, (cur.scale || 1) * ratio).toFixed(3)),
+              scale: Number(Math.max(0.38, (cur.scale || 1) * ratio).toFixed(3)),
               manualPosition: true,
             });
           }
@@ -1069,9 +1134,9 @@ export function reflowElementsAvoidingOverlap(
         for (const el of finalBelow) {
           const cur = working.get(el.id)!;
           const b = resolveBoxFromLayout(el, cur);
-          const nextY = Math.round(Math.max(cur.y, cursorTop + b.halfH));
           const maxY = Math.round(clusterBottom - b.halfH);
-          const placedY = cursorTop + b.halfH <= maxY ? Math.min(nextY, maxY) : Math.round(cursorTop + b.halfH);
+          const nextY = Math.round(Math.max(cur.y, cursorTop + b.halfH));
+          const placedY = cursorTop + b.halfH <= maxY ? Math.min(nextY, maxY) : Math.max(Math.round(cursorTop + b.halfH), maxY);
           working.set(el.id, { ...cur, y: placedY, manualPosition: true });
           cursorTop = placedY + b.halfH + belowGap;
         }
@@ -1083,7 +1148,7 @@ export function reflowElementsAvoidingOverlap(
     const availH = Math.max(140, clusterBottom - clusterTop);
     const totalGap = gapPx * Math.max(0, cluster.length - 1);
     const rawHeightSum = cluster.reduce(
-      (acc, el) => acc + resolveBoxFromLayout(el, working.get(el.id)).height,
+      (acc, el) => acc + resolveBoxFromLayout(el, working.get(el.id)).halfH * 2,
       0,
     );
 
@@ -1144,7 +1209,7 @@ export function reflowElementsAvoidingOverlap(
     for (const t of sampleTimes) {
       const active = ordered
         .map((o) => o.el)
-        .filter((el) => t >= el.startTime - 0.01 && t <= el.endTime + 0.01);
+        .filter((el) => isSliceElementActive(el, t));
       if (active.length === 0) continue;
 
       const { safeTop, safeBottom } = getSliceSafeBounds(t);

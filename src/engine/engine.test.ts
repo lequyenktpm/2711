@@ -6,6 +6,7 @@ import {
   cuesToSrt,
   interpolateWordTimings,
   parseTranscriptAuto,
+  projectWordBoundariesToTokens,
   shiftCuesAndWords,
   stripTimestampsFromScript,
   tokenizeTextForKaraoke,
@@ -3290,24 +3291,45 @@ test('translation challenge uses target-language instructions and vocabNotes ins
   const firstJaTr = builtJa.cards.find((c) => c.type === 'translation')!;
   assert.ok(!firstJaTr.phonetic, 'Translation challenge cards must omit full-sentence phonetic/Hiragana');
 
+  assert.ok(
+    !/[\u3040-\u30ff\u4e00-\u9faf]/.test(firstJaTr.sourcePrompt || ''),
+    `Japanese translation quiz prompt with Vietnamese explanation must NOT be written in Japanese: ${firstJaTr.sourcePrompt}`,
+  );
+
   const jaProj = reelCardsToLessonProject(builtJa.cards, {
     title: builtJa.title,
     theme: 'studio-slate',
     targetLang: 'vi',
+    learningLanguage: 'ja',
     aspectRatio: '9:16',
   });
   const askCard = jaProj.elements.find((el) => el.id.includes('reel-tr-prompt-card-'))!;
   assert.ok(askCard.props.kind === 'sentence-card');
-  // Must show Japanese instruction pill/subtitle instead of Vietnamese instruction chrome
+  // When targetLang='vi' with learningLanguage='ja', instruction chrome & quiz prompt must be localized in Vietnamese
   assert.ok(
-    /日本語|訳|声に出|あと/.test(`${askCard.props.subtext}`),
-    `Expected Japanese instruction text in subtext, got: ${askCard.props.subtext}`,
+    /Tiếng Nhật|tiếng Nhật|Lặp lại/.test(`${askCard.props.subtext}`),
+    `Expected Vietnamese instruction text in subtext for targetLang='vi', got: ${askCard.props.subtext}`,
   );
   const ansCard = jaProj.elements.find((el) => el.id.includes('reel-tr-ans-card-'))!;
   assert.ok(ansCard.props.kind === 'sentence-card');
   assert.ok(
     ansCard.props.subtext && !/かな|ひらがな/.test(ansCard.props.subtext),
     'Answer sentence-card subtext should carry vocabNotes/grammar instead of full Hiragana reading',
+  );
+
+  // When targetLang='learning', immersion Japanese UI chrome is preserved
+  const jaImmersionProj = reelCardsToLessonProject(builtJa.cards, {
+    title: builtJa.title,
+    theme: 'studio-slate',
+    targetLang: 'learning',
+    learningLanguage: 'ja',
+    aspectRatio: '9:16',
+  });
+  const askImmersion = jaImmersionProj.elements.find((el) => el.id.includes('reel-tr-prompt-card-'))!;
+  assert.ok(askImmersion.props.kind === 'sentence-card');
+  assert.ok(
+    /日本語|訳|声に出|あと/.test(`${askImmersion.props.subtext}`),
+    `Expected Japanese instruction text in subtext for targetLang='learning', got: ${askImmersion.props.subtext}`,
   );
 });
 
@@ -4901,6 +4923,99 @@ test('JSON parsers preserve durationReport shortfallReason when AI reports unmet
   assert.equal(sceneParsed?.durationReport?.metMinimum, false);
   assert.match(sceneParsed?.durationReport?.shortfallReason || '', /150 seconds/i);
 });
+
+test('reelCardsToLessonProject eliminates +0.08s inter-card drift, includes introSeconds in duration, and avoids slice flicker', () => {
+  const trDeck = buildTranslationCardsFromInput({
+    learningLanguage: 'ja',
+    level: 'N5',
+    targetLang: 'vi',
+    thinkSec: 3,
+    repeatCount: 2,
+    customInputLines: '大丈夫 | Không sao đâu\nKhông sao hết | 大丈夫です',
+  });
+  const firstCustom = trDeck.cards.find((c) => c.type === 'translation')!;
+  assert.equal(firstCustom.sourcePrompt, 'Không sao đâu');
+  assert.equal(firstCustom.content, '大丈夫');
+
+  const durs = [4.0, 9.2, 9.2, 3.5];
+  const projNoWm = reelCardsToLessonProject(trDeck.cards, {
+    title: trDeck.title,
+    theme: 'studio-slate',
+    aspectRatio: '9:16',
+    compositionId: 'story-scenes',
+    targetLang: 'vi',
+    learningLanguage: 'ja',
+    cardDurationsSec: durs,
+  });
+  const sumDurs = Number(durs.reduce((a, b) => a + b, 0).toFixed(2));
+  assert.equal(projNoWm.duration, sumDurs, 'Project duration must match exact sum of card durations without +0.08 drift');
+
+  const projWithIntroOutro = reelCardsToLessonProject(trDeck.cards, {
+    title: trDeck.title,
+    theme: 'studio-slate',
+    aspectRatio: '9:16',
+    compositionId: 'story-scenes',
+    targetLang: 'vi',
+    learningLanguage: 'ja',
+    cardDurationsSec: durs,
+    watermark: {
+      watermarkEnabled: false,
+      watermarkText: '',
+      watermarkCorner: 'bottom-right',
+      watermarkOpacity: 0.65,
+      introSeconds: 2.0,
+      introTitle: 'Luyện phản xạ N5',
+      introSubtitle: 'Nghe & trả lời nhanh',
+      outroSeconds: 1.5,
+      outroLine1: 'Cảm ơn đã xem!',
+      outroLine2: '',
+    },
+  });
+  assert.equal(
+    projWithIntroOutro.duration,
+    Number((sumDurs + 2.0 + 1.5).toFixed(2)),
+    'Project duration must accurately add both introSeconds and outroSeconds',
+  );
+
+  // Verify timer slices beyond s=0, countdown pills, and repeat pills never play flicker animations
+  const countdownPills = projNoWm.elements.filter((el) => el.id.startsWith('reel-tr-countdown-pill-1-'));
+  assert.ok(countdownPills.length >= 2);
+  countdownPills.forEach((slice) => {
+    assert.equal(slice.enterAnimation, 'none');
+    assert.equal(slice.exitAnimation, 'none');
+  });
+  const timerSlices = projNoWm.elements.filter((el) => el.id.startsWith('reel-tr-q-countdown-meter-1-'));
+  assert.ok(timerSlices.length >= 2);
+  timerSlices.forEach((slice, idx) => {
+    if (idx > 0) assert.equal(slice.enterAnimation, 'none');
+    if (idx < timerSlices.length - 1) assert.equal(slice.exitAnimation, 'none');
+  });
+  const repeatPills = projNoWm.elements.filter((el) => el.id.startsWith('reel-tr-pill-rep-1-'));
+  assert.ok(repeatPills.length >= 2);
+  repeatPills.forEach((pill) => {
+    assert.equal(pill.enterAnimation, 'none');
+  });
+});
+
+test('projectWordBoundariesToTokens maps Japanese Edge WordBoundaries onto mismatched karaoke tokens accurately', () => {
+  const tokens = tokenizeTextForKaraoke('ちょっとすみません、お水をいただけますか。');
+  const boundaries = [
+    { word: 'ちょっと', start: 0.0, end: 0.45 },
+    { word: 'すみません', start: 0.48, end: 1.1 },
+    { word: 'お水', start: 1.5, end: 1.9 },
+    { word: 'を', start: 1.9, end: 2.05 },
+    { word: 'いただけますか', start: 2.05, end: 2.85 },
+  ];
+  const mapped = projectWordBoundariesToTokens(tokens, boundaries, 10.0, 10.0, 13.0);
+  assert.ok(mapped && mapped.length === tokens.length);
+  for (let i = 0; i < mapped.length; i++) {
+    assert.ok(mapped[i].start >= 10.0 && mapped[i].end <= 13.0);
+    assert.ok(mapped[i].end > mapped[i].start);
+    if (i > 0) assert.ok(mapped[i].start >= mapped[i - 1].start);
+  }
+  assert.ok(mapped[mapped.length - 1].end >= 12.75);
+});
+
 
 
 
