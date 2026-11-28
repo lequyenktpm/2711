@@ -7,6 +7,8 @@ import {
   FileText,
   FolderOpen,
   Image as ImageIcon,
+  Maximize2,
+  Minimize2,
   Pause,
   Play,
   RotateCcw,
@@ -57,6 +59,7 @@ import {
 } from '../engine/layoutSolver';
 import {
   ASPECT_RATIO_OPTIONS,
+  estimateMp4FileSize,
   ExportAspectRatioId,
   FPS_OPTIONS,
   Mp4ExportSettings,
@@ -215,6 +218,7 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
   const stageDims = getStageDimensionsForAspect(effectiveAspect);
   const resolved = resolveMp4EncodingParams({ ...mp4Settings, aspectRatio: effectiveAspect });
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previewPanelRef = useRef<HTMLElement>(null);
   const bgInputRef = useRef<HTMLInputElement>(null);
   const bgmInputRef = useRef<HTMLInputElement>(null);
   const videoBlobUrlRef = useRef<string | null>(null);
@@ -225,6 +229,7 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
   const [isWatermarkOpen, setIsWatermarkOpen] = useState(false);
   const [isDescOpen, setIsDescOpen] = useState(false);
   const [copiedDescTag, setCopiedDescTag] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [autoReflowOnMove, setAutoReflowOnMove] = useState(true);
   const [dismissedOverlapSig, setDismissedOverlapSig] = useState('');
   const dragStateRef = useRef<{
@@ -254,6 +259,43 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const onFsChange = () => {
+      if (!document.fullscreenElement) {
+        setIsFullscreen((prev) => (prev ? false : prev));
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsFullscreen(false);
+      }
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
+
+  const toggleFullscreen = () => {
+    const panel = previewPanelRef.current;
+    if (isFullscreen) {
+      if (typeof document !== 'undefined' && document.fullscreenElement) {
+        void document.exitFullscreen().catch(() => {});
+      }
+      setIsFullscreen(false);
+      return;
+    }
+    setIsFullscreen(true);
+    if (panel && typeof panel.requestFullscreen === 'function') {
+      void panel.requestFullscreen().catch(() => {
+        // Theater fixed overlay remains active when iframe restricts fullscreen
+      });
+    }
+  };
 
   void dbVersion;
   const vectorCatalog = getEffectiveVectorCatalog();
@@ -489,8 +531,16 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
   };
 
   return (
-    <section className="flex flex-col items-center bg-white border border-slate-200 rounded-xl p-4 h-fit sticky top-4">
-      <div className="w-full flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
+    <section
+      ref={previewPanelRef}
+      data-testid="studio-preview-section"
+      className={
+        isFullscreen
+          ? 'fixed inset-0 z-50 flex flex-col items-center justify-between bg-white p-3 sm:p-5 overflow-y-auto'
+          : 'flex flex-col items-center bg-white border border-slate-200 rounded-xl p-4 h-fit sticky top-4'
+      }
+    >
+      <div className="w-full max-w-6xl flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-100 shrink-0">
         <div className="flex items-center gap-2 text-xs text-slate-500 whitespace-nowrap">
           <span className="font-medium text-slate-800">Xem trước {effectiveAspect}</span>
           <span aria-hidden="true">·</span>
@@ -541,11 +591,36 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
               }}
             />
           ))}
+          <button
+            type="button"
+            data-testid="studio-fullscreen-btn"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? 'Thu gọn Preview (Esc)' : 'Phóng to Preview toàn màn hình'}
+            className={`inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
+              isFullscreen
+                ? 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700'
+                : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+            }`}
+          >
+            {isFullscreen ? (
+              <>
+                <Minimize2 className="w-3.5 h-3.5" />
+                <span>Thu gọn</span>
+              </>
+            ) : (
+              <>
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>Toàn màn hình</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
 
-      {/* Unified Composition & Randomize Bar */}
-      <div className="w-full pt-2.5 flex items-center gap-2">
+      {!isFullscreen && (
+        <>
+          {/* Unified Composition & Randomize Bar */}
+          <div className="w-full pt-2.5 flex items-center gap-2">
         <select
           aria-label="Kiểu phối minh họa & hiệu ứng"
           disabled={isExportingVideo}
@@ -1309,19 +1384,29 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
           </div>
         </div>
       )}
+        </>
+      )}
 
       {/* Live Aspect-Adaptive Preview Canvas */}
-      <div className="my-3 flex flex-col items-center justify-center w-full gap-2">
+      <div className={`my-2.5 flex flex-col items-center justify-center w-full gap-2 ${isFullscreen ? 'flex-1 min-h-0 max-w-6xl' : ''}`}>
         <div
           data-aspect-ratio={effectiveAspect}
           className={`relative overflow-hidden border border-slate-200 shadow-sm bg-slate-100 ${
-            effectiveAspect === '16:9'
-              ? 'w-full max-w-[540px] aspect-video rounded-2xl'
-              : effectiveAspect === '1:1'
-                ? 'w-full max-w-[380px] aspect-square rounded-2xl'
-                : effectiveAspect === '4:5'
-                  ? 'w-full max-w-[330px] aspect-[4/5] rounded-2xl'
-                  : 'h-[515px] aspect-[9/16] rounded-[28px]'
+            isFullscreen
+              ? effectiveAspect === '16:9'
+                ? 'w-full max-w-[1040px] max-h-[calc(100vh-210px)] aspect-video rounded-2xl'
+                : effectiveAspect === '1:1'
+                  ? 'h-[calc(100vh-210px)] max-w-[680px] aspect-square rounded-2xl'
+                  : effectiveAspect === '4:5'
+                    ? 'h-[calc(100vh-210px)] max-w-[540px] aspect-[4/5] rounded-2xl'
+                    : 'h-[calc(100vh-210px)] max-w-[460px] aspect-[9/16] rounded-[28px]'
+              : effectiveAspect === '16:9'
+                ? 'w-full max-w-[540px] aspect-video rounded-2xl'
+                : effectiveAspect === '1:1'
+                  ? 'w-full max-w-[380px] aspect-square rounded-2xl'
+                  : effectiveAspect === '4:5'
+                    ? 'w-full max-w-[330px] aspect-[4/5] rounded-2xl'
+                    : 'h-[515px] aspect-[9/16] rounded-[28px]'
           }`}
         >
           <canvas
@@ -1615,7 +1700,7 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
       </div>
 
       {/* Transport & Scrubber */}
-      <div className="w-full pt-3 border-t border-slate-100 space-y-2.5">
+      <div className={`w-full pt-2.5 border-t border-slate-100 space-y-2.5 shrink-0 ${isFullscreen ? 'max-w-5xl' : ''}`}>
         <div className="flex items-center gap-3">
           <input
             type="range"
@@ -1632,6 +1717,8 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
           </span>
         </div>
 
+        {!isFullscreen && (
+        <>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
           <select
             aria-label="Khung hình xuất MP4"
@@ -1712,6 +1799,29 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
             ))}
           </select>
         </div>
+
+        {(() => {
+          const est = estimateMp4FileSize(Math.max(1, project.duration || 0), {
+            ...mp4Settings,
+            aspectRatio: effectiveAspect,
+          });
+          const qualOpt = QUALITY_OPTIONS.find((q) => q.id === mp4Settings.quality);
+          return (
+            <div
+              data-testid="studio-mp4-estimate-strip"
+              className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[10.5px]"
+            >
+              <span className="text-slate-600">
+                <strong className="text-slate-800">{qualOpt?.label || 'Chuẩn'}:</strong> {est.qualityDescription}
+              </span>
+              <span className="font-mono font-semibold text-indigo-700 tabular-nums">
+                Ước lượng: {est.mbLabel} ({est.rangeLabel})
+              </span>
+            </div>
+          );
+        })()}
+        </>
+        )}
 
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">

@@ -25,6 +25,8 @@ import {
   detectActiveStageOverlaps,
   reflowElementsAvoidingOverlap,
 } from '../layoutSolver';
+import { estimateMp4FileSize, formatMegabytesLabel } from '../mp4Config';
+import { LAYOUT_COMPOSITIONS } from '../illustrationLayouts';
 import {
   buildBatchPromptZipName,
   buildBatchTtsSegmentsForReelCards,
@@ -934,6 +936,192 @@ test('strict A-F vs G-N prompt separation, mandatory end-of-lesson summary, and 
       ),
       `Expected dialogue/audio variant, got ${prop1.props.variant}`,
     );
+  }
+});
+
+test('estimateMp4FileSize scales accurately across quality/resolution/duration presets', () => {
+  const std1080 = estimateMp4FileSize(60, {
+    aspectRatio: '9:16',
+    resolution: '1080p',
+    quality: 'standard',
+    fps: 30,
+  });
+  const high1080 = estimateMp4FileSize(60, {
+    aspectRatio: '9:16',
+    resolution: '1080p',
+    quality: 'high',
+    fps: 30,
+  });
+  const ultra1080 = estimateMp4FileSize(60, {
+    aspectRatio: '9:16',
+    resolution: '1080p',
+    quality: 'ultra',
+    fps: 30,
+  });
+  const std540 = estimateMp4FileSize(60, {
+    aspectRatio: '9:16',
+    resolution: '540p',
+    quality: 'standard',
+    fps: 30,
+  });
+
+  assert.match(std1080.qualityDescription, /CRF 27/);
+  assert.ok(std540.bytes < std1080.bytes, '540p should be lighter than 1080p');
+  assert.ok(std1080.bytes < high1080.bytes, 'standard should be lighter than high');
+  assert.ok(high1080.bytes < ultra1080.bytes, 'high should be lighter than ultra');
+  assert.ok(std1080.minBytes > 0 && std1080.minBytes < std1080.bytes && std1080.maxBytes > std1080.bytes);
+  assert.match(formatMegabytesLabel(std1080.bytes), /MB$/);
+
+  const zeroDur = estimateMp4FileSize(0, {
+    aspectRatio: '9:16',
+    resolution: '1080p',
+    quality: 'standard',
+    fps: 30,
+  });
+  assert.equal(zeroDur.bytes, 0);
+});
+
+test('podcast-duo, dialogue-stage & full-study-cards layouts render cleanly without overlaps + strict 2-language prompts', () => {
+  const compIds = LAYOUT_COMPOSITIONS.map((c) => c.id);
+  for (const id of ['podcast-duo', 'dialogue-stage', 'full-study-cards'] as const) {
+    assert.ok(compIds.includes(id), `Missing layout composition ${id}`);
+  }
+
+  const parsed = parseEnglishReelsAiJson(
+    JSON.stringify({
+      title: '会議でAIの記録を残す？ | 中級者向け (日本語 N3)',
+      level: 'N3',
+      mode: 'podcast_duo',
+      cards: [
+        {
+          type: 'intro',
+          badge: 'PODCAST · N3',
+          title: 'Tranh luận dùng AI trong họp nhóm',
+          content: 'Nghe hội thoại giữa hai kỹ sư Nhật về cách lưu dấu vết kiểm chứng AI.',
+        },
+        {
+          type: 'dialogue',
+          speaker: 'Yuki',
+          speakerGender: 'female',
+          speakerRole: 'PM',
+          title: 'Trưởng nhóm đề xuất lưu lịch sử',
+          content: '賛成です。加えて、入力した指示、参照資料、生成結果、修正履歴を保存します。',
+          translation: 'Tôi đồng ý. Ngoài ra, chúng ta lưu cả câu lệnh, tài liệu tham chiếu và lịch sử chỉnh sửa.',
+          vocabNotes: '修正履歴（しゅうせいりれき）: lịch sử chỉnh sửa — dùng khi cần kiểm tra ai sửa gì.',
+          grammarNote: '〜ておけば: chuẩn bị sẵn từ trước để sau này có thể truy vết.',
+          ttsText: '賛成です。加えて、入力した指示、参照資料、生成結果、修正履歴を保存します。',
+        },
+        {
+          type: 'dialogue',
+          speaker: 'Ken',
+          speakerGender: 'male',
+          speakerRole: 'Lead',
+          title: 'Xác nhận quy trình kiểm tra',
+          content: '根拠を後から追跡できれば、問題が起きても検証できますね。',
+          translation: 'Nếu truy vết được căn cứ sau này thì khi gặp sự cố vẫn kiểm chứng được nhé.',
+          ttsText: '根拠を後から追跡できれば、問題が起きても検証できますね。',
+        },
+        {
+          type: 'outro',
+          badge: 'TỔNG KẾT BÀI HỌC',
+          title: 'Tổng kết: Kiểm chứng AI nơi công sở',
+          content: 'Đã học: 修正履歴 (lịch sử sửa) và mẫu 〜ておけば (làm sẵn trước).',
+        },
+      ],
+    }),
+    { targetLang: 'Tiếng Việt' },
+  );
+  assert.ok(parsed);
+
+  // podcast-duo builds podcast-studio scene with speaker roster & zero visual overlap
+  const podcastProj = reelCardsToLessonProject(parsed.cards, {
+    title: parsed.title,
+    compositionId: 'podcast-duo',
+    targetLang: 'Tiếng Việt',
+  });
+  const studioProp = podcastProj.elements.find(
+    (e) => e.props.kind === 'illustration-prop' && e.props.variant === 'podcast-studio',
+  );
+  assert.ok(studioProp, 'Expected podcast-studio visual element in podcast-duo');
+  if (studioProp?.props.kind === 'illustration-prop') {
+    assert.ok((studioProp.props.data?.nodes?.length || 0) >= 2);
+  }
+  const activeMidPodcast = resolveElementLayoutForAspect(
+    podcastProj.elements,
+    podcastProj.cues[1] ? (podcastProj.cues[1].start + podcastProj.cues[1].end) / 2 : 3.5,
+    '9:16',
+    podcastProj.subtitleConfig,
+    podcastProj.compositionId,
+  );
+  assert.equal(
+    detectActiveStageOverlaps(
+      podcastProj.elements,
+      activeMidPodcast,
+      podcastProj.cues[1] ? (podcastProj.cues[1].start + podcastProj.cues[1].end) / 2 : 3.5,
+    ).length,
+    0,
+  );
+
+  // full-study-cards builds multi-section sentence-cards preserving 100% vocab/grammar notes in 9:16 and 16:9
+  for (const aspect of ['9:16', '16:9'] as const) {
+    const studyProj = reelCardsToLessonProject(parsed.cards, {
+      title: parsed.title,
+      compositionId: 'full-study-cards',
+      aspectRatio: aspect,
+      targetLang: 'Tiếng Việt',
+    });
+    const fullCardEl = studyProj.elements.find(
+      (e) => e.type === 'sentence-card' && e.props.kind === 'sentence-card' && (e.props.sections?.length || 0) >= 2,
+    );
+    assert.ok(fullCardEl, `Expected structured sections in full-study-cards (${aspect})`);
+    if (fullCardEl?.props.kind === 'sentence-card') {
+      const combined = fullCardEl.props.sections?.map((s) => s.text).join(' ') || '';
+      assert.match(combined, /修正履歴（しゅうせいりれき）/);
+      assert.match(combined, /〜ておけば/);
+    }
+    const midTime = studyProj.cues[1] ? (studyProj.cues[1].start + studyProj.cues[1].end) / 2 : 3.5;
+    const resolvedStudy = resolveElementLayoutForAspect(
+      studyProj.elements,
+      midTime,
+      aspect,
+      studyProj.subtitleConfig,
+      studyProj.compositionId,
+    );
+    assert.equal(detectActiveStageOverlaps(studyProj.elements, resolvedStudy, midTime).length, 0);
+  }
+
+  // Strict 2-language purity in Japanese + Vietnamese prompts
+  const jaCreatorPrompt = buildAiCreatorWebAiPrompt({
+    topicHint: 'Trình bày phương án kỹ thuật',
+    formatPreference: 'workplace_tech',
+    learningLanguage: 'ja',
+    level: 'N3',
+    durationMinutes: 3,
+    targetLang: 'Tiếng Việt',
+  });
+  for (const leakedEn of [
+    'Real Situation Episode',
+    '2–3 Speakers Conversation',
+    'Ready to Use',
+    'Key Situational Insight',
+    'Save & Practice Today',
+  ]) {
+    assert.ok(!jaCreatorPrompt.includes(leakedEn), `Creator JA+VI prompt leaked English "${leakedEn}"`);
+  }
+
+  const jaReelsPrompt = buildEnglishReelsWebAiPrompt({
+    sourceText: '賛成です。修正履歴を保存しましょう。',
+    mode: 'vocab',
+    learningLanguage: 'ja',
+    targetLang: 'Tiếng Việt',
+  });
+  for (const leakedEn of [
+    'TODAY LESSON GOAL',
+    'KEY VOCAB & GRAMMAR',
+    'Key Takeaways',
+    'Lesson Complete!',
+  ]) {
+    assert.ok(!jaReelsPrompt.includes(leakedEn), `Reels JA+VI prompt leaked English "${leakedEn}"`);
   }
 });
 

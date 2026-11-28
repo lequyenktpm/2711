@@ -17,9 +17,12 @@ import {
   HelpCircle,
   Image as ImageIcon,
   Loader2,
+  Maximize2,
+  Minimize2,
   Pause,
   Play,
   Plus,
+  Power,
   RotateCcw,
   Sparkles,
   Stamp,
@@ -98,13 +101,16 @@ import { LAYOUT_COMPOSITIONS } from '../engine/illustrationLayouts';
 import {
   ASPECT_RATIO_OPTIONS,
   DEFAULT_MP4_EXPORT_SETTINGS,
+  estimateMp4FileSize,
   ExportAspectRatioId,
   ExportFpsOption,
   ExportQualityId,
   ExportResolutionId,
+  QUALITY_OPTIONS,
   RESOLUTION_OPTIONS,
   resolveDimensionsForAspect,
 } from '../engine/mp4Config';
+import { ShutdownCountdownBanner } from '../utils/systemShutdownHelper';
 import { ExportAbortedError, exportProjectToVideo } from '../engine/mp4Exporter';
 import {
   buildLeveledOutputStem,
@@ -713,6 +719,12 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
   const [mp4Fps, setMp4Fps] = useState<ExportFpsOption>(
     () => initialModeSaved.mp4Fps || DEFAULT_MP4_EXPORT_SETTINGS.fps,
   );
+  const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
+  const [autoShutdownAfterRender, setAutoShutdownAfterRender] = useState(false);
+  const [shutdownCountdownInfo, setShutdownCountdownInfo] = useState<{
+    active: boolean;
+    title?: string;
+  }>({ active: false });
 
   // Per-sub-tab isolated Render/TTS task states via shared renderTaskManager
   const renderTasks = useRenderTasks();
@@ -808,6 +820,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
   );
 
   const videoCanvasRef = useRef<HTMLCanvasElement>(null);
+  const previewFullscreenContainerRef = useRef<HTMLDivElement>(null);
   const bgInputRef = useRef<HTMLInputElement>(null);
   const bgmFileInputRef = useRef<HTMLInputElement>(null);
   const lessonAudioRef = useRef<HTMLAudioElement>(null);
@@ -816,6 +829,44 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
   const exportAbortRef = useRef<AbortController | null>(null);
   const lastCountdownSfxKeyRef = useRef<string>('');
   const switchModeRef = useRef<((m: ReelCreationMode) => void) | null>(null);
+
+  const togglePreviewFullscreen = () => {
+    const el = previewFullscreenContainerRef.current;
+    if (isPreviewFullscreen) {
+      if (typeof document !== 'undefined' && document.fullscreenElement) {
+        void document.exitFullscreen().catch(() => {});
+      }
+      setIsPreviewFullscreen(false);
+      return;
+    }
+    setIsPreviewFullscreen(true);
+    if (el && typeof el.requestFullscreen === 'function') {
+      void el.requestFullscreen().catch(() => {
+        // Theater fixed overlay remains active if iframe restricts native fullscreen
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const onFsChange = () => {
+      if (!document.fullscreenElement) {
+        // Keep React fullscreen state coherent only when exiting native fullscreen
+        setIsPreviewFullscreen((prev) => (prev ? false : prev));
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsPreviewFullscreen(false);
+      }
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
 
   useEffect(() => {
     const scanReelsRecovery = async () => {
@@ -3352,6 +3403,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     const qualAtStart = mp4Quality;
     const fpsAtStart = mp4Fps;
     const descTxtAtStart = videoDescription.txtContent;
+    const autoShutdownAtStart = autoShutdownAfterRender;
 
     startRenderTaskSlot(slotId, {
       kind: 'render',
@@ -3444,6 +3496,9 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       outcome = 'done';
       outcomeMsg = `Đã xuất thành công ${result.fileName} kèm ${cleanExportBase}.txt${result.savedPath ? ` (lưu tại ${result.savedPath})` : ''}!`;
       setModeExportNotice(originMode, outcomeMsg);
+      if (autoShutdownAtStart) {
+        setShutdownCountdownInfo({ active: true, title: result.fileName });
+      }
     } catch (err) {
       if (err instanceof ExportAbortedError || controller.signal.aborted) {
         outcome = 'aborted';
@@ -5248,7 +5303,15 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         </div>
 
         {/* Right: 9:16 Live Video Player, TTS Audio & Direct MP4 Export */}
-        <div className="lg:col-span-5 bg-white border border-slate-200 rounded-xl p-4 space-y-3.5 sticky top-4">
+        <div
+          ref={previewFullscreenContainerRef}
+          data-testid="reels-preview-panel"
+          className={
+            isPreviewFullscreen
+              ? 'fixed inset-0 z-50 bg-white p-4 sm:p-6 lg:px-20 overflow-y-auto space-y-3.5'
+              : 'lg:col-span-5 bg-white border border-slate-200 rounded-xl p-4 space-y-3.5 sticky top-4'
+          }
+        >
           {generatedAudioUrl && (
             <audio
               ref={lessonAudioRef}
@@ -5289,7 +5352,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
               </button>
             </div>
 
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <div
                 role="group"
                 aria-label="Tỉ lệ khung hình English Reels"
@@ -5331,6 +5394,29 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                   </button>
                 </div>
               )}
+              <button
+                type="button"
+                data-testid="reels-fullscreen-btn"
+                onClick={togglePreviewFullscreen}
+                title={isPreviewFullscreen ? 'Thu gọn Preview (Esc)' : 'Phóng to Preview toàn màn hình'}
+                className={`inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
+                  isPreviewFullscreen
+                    ? 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700'
+                    : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                }`}
+              >
+                {isPreviewFullscreen ? (
+                  <>
+                    <Minimize2 className="w-3.5 h-3.5" />
+                    <span>Thu gọn</span>
+                  </>
+                ) : (
+                  <>
+                    <Maximize2 className="w-3.5 h-3.5" />
+                    <span>Toàn màn hình</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
 
@@ -5503,13 +5589,21 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                     <div
                       data-aspect-ratio={reelsAspectRatio}
                       className={`relative mx-auto overflow-hidden border border-slate-200 shadow-sm bg-slate-100 ${
-                        reelsAspectRatio === '16:9'
-                          ? 'w-full max-w-[540px] aspect-video rounded-2xl'
-                          : reelsAspectRatio === '1:1'
-                            ? 'w-full max-w-[360px] aspect-square rounded-2xl'
-                            : reelsAspectRatio === '4:5'
-                              ? 'w-full max-w-[310px] aspect-[4/5] rounded-2xl'
-                              : 'w-full max-w-[270px] aspect-[9/16] rounded-[24px]'
+                        isPreviewFullscreen
+                          ? reelsAspectRatio === '16:9'
+                            ? 'w-full max-w-[920px] aspect-video rounded-2xl'
+                            : reelsAspectRatio === '1:1'
+                              ? 'w-full max-w-[540px] aspect-square rounded-2xl'
+                              : reelsAspectRatio === '4:5'
+                                ? 'w-full max-w-[480px] aspect-[4/5] rounded-2xl'
+                                : 'h-[70vh] max-w-[420px] aspect-[9/16] rounded-[24px]'
+                          : reelsAspectRatio === '16:9'
+                            ? 'w-full max-w-[540px] aspect-video rounded-2xl'
+                            : reelsAspectRatio === '1:1'
+                              ? 'w-full max-w-[360px] aspect-square rounded-2xl'
+                              : reelsAspectRatio === '4:5'
+                                ? 'w-full max-w-[310px] aspect-[4/5] rounded-2xl'
+                                : 'w-full max-w-[270px] aspect-[9/16] rounded-[24px]'
                       }`}
                     >
                       <canvas
@@ -6062,206 +6156,266 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
             </div>
           ) : previewViewMode === 'cards' && activeCard ? (
             <>
-              <div
-                  className={`relative overflow-hidden mx-auto p-5 flex flex-col justify-between border border-slate-200 shadow-sm ${
-                    reelsAspectRatio === '16:9'
-                      ? 'w-full max-w-[460px] aspect-video rounded-2xl'
-                      : 'w-full max-w-[290px] aspect-[9/16] rounded-[24px]'
-                  }`}
-                style={{
-                  background: `linear-gradient(180deg, ${CANVAS_THEMES[selectedTheme]?.bgTop || '#F5F3FF'} 0%, ${CANVAS_THEMES[selectedTheme]?.bgBottom || '#FFF5EB'} 100%)`,
-                  color: CANVAS_THEMES[selectedTheme]?.isDark ? '#F8FAFC' : '#0F172A',
-                }}
-              >
-                {backgroundImage && (
-                  <>
-                    {backgroundImage.kind === 'video' && backgroundImage.videoUrl ? (
-                      <video
-                        src={backgroundImage.videoUrl}
-                        autoPlay
-                        loop
-                        muted
-                        playsInline
-                        data-testid="reels-card-bg-video"
-                        className="absolute inset-0 w-full h-full pointer-events-none"
-                        style={{
-                          objectFit: backgroundImage.fit === 'contain' ? 'contain' : 'cover',
-                        }}
-                      />
-                    ) : backgroundImage.kind === 'preset' && backgroundImage.presetId ? (
-                      <div
-                        data-testid="reels-card-bg-preset"
-                        className="absolute inset-0 w-full h-full pointer-events-none"
-                        style={{
-                          background:
-                            BACKGROUND_PRESETS.find((p) => p.id === backgroundImage.presetId)
-                              ?.previewGradient ||
-                            'linear-gradient(160deg, #1E1B2E 0%, #3B2820 55%, #78350F 100%)',
-                        }}
-                      />
-                    ) : (
-                      backgroundImage.dataUrl && (
-                        <img
-                          src={backgroundImage.dataUrl}
-                          alt="Ảnh nền xem trước thẻ"
-                          data-testid="reels-card-bg-image"
-                          className="absolute inset-0 w-full h-full pointer-events-none"
+              {(() => {
+                const totalCardChars =
+                  (activeCard.title?.length || 0) +
+                  (activeCard.content?.length || 0) +
+                  (activeCard.translation?.length || 0) +
+                  (activeCard.vocabNotes?.length || 0) +
+                  (activeCard.grammarNote?.length || 0) +
+                  (activeCard.explanation?.length || 0) +
+                  (activeCard.options?.join(' ').length || 0);
+                const density: 'spacious' | 'medium' | 'dense' =
+                  totalCardChars > 340 ? 'dense' : totalCardChars > 180 ? 'medium' : 'spacious';
+                const frameDimsClass = isPreviewFullscreen
+                  ? reelsAspectRatio === '16:9'
+                    ? 'w-full max-w-[820px] min-h-[420px] max-h-[74vh] rounded-2xl'
+                    : reelsAspectRatio === '1:1'
+                      ? 'w-full max-w-[540px] min-h-[440px] max-h-[74vh] rounded-2xl'
+                      : reelsAspectRatio === '4:5'
+                        ? 'w-full max-w-[480px] min-h-[480px] max-h-[74vh] rounded-2xl'
+                        : 'w-full max-w-[430px] h-[72vh] min-h-[480px] rounded-[24px]'
+                  : reelsAspectRatio === '16:9'
+                    ? 'w-full max-w-[500px] min-h-[280px] max-h-[540px] rounded-2xl'
+                    : reelsAspectRatio === '1:1'
+                      ? 'w-full max-w-[380px] min-h-[360px] max-h-[560px] rounded-2xl'
+                      : reelsAspectRatio === '4:5'
+                        ? 'w-full max-w-[340px] min-h-[400px] max-h-[580px] rounded-2xl'
+                        : 'w-full max-w-[320px] h-[560px] rounded-[24px]';
+
+                return (
+                  <div
+                    data-testid="reels-card-preview-frame"
+                    className={`relative overflow-hidden mx-auto p-3.5 sm:p-4 flex flex-col gap-2.5 border border-slate-200 shadow-sm ${frameDimsClass}`}
+                    style={{
+                      background: `linear-gradient(180deg, ${CANVAS_THEMES[selectedTheme]?.bgTop || '#F5F3FF'} 0%, ${CANVAS_THEMES[selectedTheme]?.bgBottom || '#FFF5EB'} 100%)`,
+                      color: CANVAS_THEMES[selectedTheme]?.isDark ? '#F8FAFC' : '#0F172A',
+                    }}
+                  >
+                    {backgroundImage && (
+                      <>
+                        {backgroundImage.kind === 'video' && backgroundImage.videoUrl ? (
+                          <video
+                            src={backgroundImage.videoUrl}
+                            autoPlay
+                            loop
+                            muted
+                            playsInline
+                            data-testid="reels-card-bg-video"
+                            className="absolute inset-0 w-full h-full pointer-events-none"
+                            style={{
+                              objectFit: backgroundImage.fit === 'contain' ? 'contain' : 'cover',
+                            }}
+                          />
+                        ) : backgroundImage.kind === 'preset' && backgroundImage.presetId ? (
+                          <div
+                            data-testid="reels-card-bg-preset"
+                            className="absolute inset-0 w-full h-full pointer-events-none"
+                            style={{
+                              background:
+                                BACKGROUND_PRESETS.find((p) => p.id === backgroundImage.presetId)
+                                  ?.previewGradient ||
+                                'linear-gradient(160deg, #1E1B2E 0%, #3B2820 55%, #78350F 100%)',
+                            }}
+                          />
+                        ) : (
+                          backgroundImage.dataUrl && (
+                            <img
+                              src={backgroundImage.dataUrl}
+                              alt="Ảnh nền xem trước thẻ"
+                              data-testid="reels-card-bg-image"
+                              className="absolute inset-0 w-full h-full pointer-events-none"
+                              style={{
+                                objectFit: backgroundImage.fit === 'contain' ? 'contain' : 'cover',
+                              }}
+                            />
+                          )
+                        )}
+                        <div
+                          className="absolute inset-0 pointer-events-none"
                           style={{
-                            objectFit: backgroundImage.fit === 'contain' ? 'contain' : 'cover',
+                            backgroundColor: `rgba(15, 23, 42, ${
+                              backgroundImage.learningScrimOpacity ?? backgroundImage.scrimOpacity ?? 0.22
+                            })`,
                           }}
                         />
-                      )
+                      </>
                     )}
-                    <div
-                      className="absolute inset-0 pointer-events-none"
-                      style={{
-                        backgroundColor: `rgba(15, 23, 42, ${
-                          backgroundImage.learningScrimOpacity ?? backgroundImage.scrimOpacity ?? 0.22
-                        })`,
-                      }}
-                    />
-                  </>
-                )}
 
-                <div
-                  onClick={() => setSelectedCardPreviewField('badge')}
-                  title="Bấm để sửa Nhãn (Badge) ngay dưới Preview"
-                  className={`relative z-10 flex justify-center pt-2 cursor-pointer rounded-lg transition ${
-                    selectedCardPreviewField === 'badge' ? 'ring-2 ring-indigo-500 bg-indigo-50/40' : 'hover:opacity-90'
-                  }`}
-                >
-                  <span className="px-3 py-1 text-[11px] font-bold tracking-wide bg-indigo-100 text-indigo-800 rounded-lg">
-                    {activeCard.badge || activeCard.type.toUpperCase()}
-                  </span>
-                </div>
-
-                <div className="relative z-10 bg-white/95 text-slate-900 rounded-2xl p-4 shadow-sm border border-slate-200/80 space-y-2.5 text-center">
-                  {activeCard.type === 'vocab' && activeCard.title !== activeCard.content && (
                     <div
-                      onClick={() => setSelectedCardPreviewField('title')}
-                      title="Bấm để sửa Tiêu đề & Phiên âm"
-                      className={`text-base font-extrabold text-indigo-700 cursor-pointer rounded px-1 ${
-                        selectedCardPreviewField === 'title' ? 'ring-2 ring-indigo-500 bg-indigo-50' : 'hover:bg-indigo-50/50'
+                      onClick={() => setSelectedCardPreviewField('badge')}
+                      title="Bấm để sửa Nhãn (Badge) ngay dưới Preview"
+                      className={`relative z-10 shrink-0 flex flex-wrap items-center justify-center gap-1.5 pt-0.5 cursor-pointer rounded-lg transition ${
+                        selectedCardPreviewField === 'badge' ? 'ring-2 ring-indigo-500 bg-indigo-50/40' : 'hover:opacity-90'
                       }`}
                     >
-                      {activeCard.title}
+                      <span className="px-2.5 py-0.5 text-[11px] font-bold tracking-wide bg-indigo-100 text-indigo-800 rounded-lg">
+                        {activeCard.badge || activeCard.type.toUpperCase()}
+                      </span>
+                      {activeCard.speaker && (
+                        <span className="px-2 py-0.5 text-[11px] font-semibold bg-emerald-100 text-emerald-800 rounded-lg">
+                          🎙️ {activeCard.speaker}
+                          {activeCard.speakerRole ? ` · ${activeCard.speakerRole}` : ''}
+                        </span>
+                      )}
                     </div>
-                  )}
-                  {activeCard.type !== 'translation' && activeCard.phonetic && (
-                    <div
-                      onClick={() => setSelectedCardPreviewField('title')}
-                      className="text-xs font-mono text-slate-500 cursor-pointer hover:text-indigo-700"
-                    >
-                      {activeCard.phonetic}
-                    </div>
-                  )}
-                  <div
-                    onClick={() => setSelectedCardPreviewField('content')}
-                    title="Bấm để sửa nội dung thẻ ngay bên dưới"
-                    className={`text-sm font-bold leading-snug text-slate-900 cursor-pointer rounded px-1.5 py-0.5 ${
-                      selectedCardPreviewField === 'content' ? 'ring-2 ring-indigo-500 bg-indigo-50' : 'hover:bg-indigo-50/50'
-                    }`}
-                  >
-                    {activeCard.content}
-                  </div>
-                  {activeCard.options && activeCard.options.length > 0 && (
-                    <div
-                      onClick={() => setSelectedCardPreviewField('quiz')}
-                      title="Bấm để sửa đáp án Quiz"
-                      className={`space-y-1.5 pt-1 text-left cursor-pointer rounded-lg p-1 ${
-                        selectedCardPreviewField === 'quiz' ? 'ring-2 ring-indigo-500 bg-indigo-50/40' : 'hover:bg-slate-50'
-                      }`}
-                    >
-                      {activeCard.options.map((opt, idx) => {
-                        const isCorrect = idx === (activeCard.answerIndex ?? 0);
-                        return (
+
+                    <div className="relative z-10 flex-1 min-h-0 overflow-y-auto pr-0.5 flex flex-col">
+                      <div
+                        data-testid="reels-card-preview-body"
+                        className={`my-auto bg-white/95 text-slate-900 rounded-2xl shadow-sm border border-slate-200/80 text-center break-words ${
+                          density === 'dense'
+                            ? 'p-3 space-y-1.5'
+                            : density === 'medium'
+                              ? 'p-3.5 space-y-2'
+                              : 'p-4 space-y-2.5'
+                        }`}
+                      >
+                        {activeCard.type !== 'translation' &&
+                          activeCard.title &&
+                          activeCard.title.trim() !== activeCard.content.trim() && (
+                            <div
+                              onClick={() => setSelectedCardPreviewField('title')}
+                              title="Bấm để sửa Tiêu đề & Phiên âm"
+                              className={`font-extrabold text-indigo-700 cursor-pointer rounded px-1 ${
+                                density === 'dense'
+                                  ? 'text-xs leading-snug'
+                                  : density === 'medium'
+                                    ? 'text-sm leading-snug'
+                                    : 'text-base leading-snug'
+                              } ${
+                                selectedCardPreviewField === 'title' ? 'ring-2 ring-indigo-500 bg-indigo-50' : 'hover:bg-indigo-50/50'
+                              }`}
+                            >
+                              {activeCard.title}
+                            </div>
+                          )}
+                        {activeCard.type !== 'translation' && activeCard.phonetic && (
                           <div
-                            key={idx}
-                            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border flex items-center justify-between ${
-                              isCorrect
-                                ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
-                                : 'bg-slate-50 border-slate-200 text-slate-700'
+                            onClick={() => setSelectedCardPreviewField('title')}
+                            className="text-[11px] font-mono text-slate-500 cursor-pointer hover:text-indigo-700"
+                          >
+                            {activeCard.phonetic}
+                          </div>
+                        )}
+                        <div
+                          onClick={() => setSelectedCardPreviewField('content')}
+                          title="Bấm để sửa nội dung thẻ ngay bên dưới"
+                          className={`font-bold text-slate-900 cursor-pointer rounded px-1.5 py-0.5 ${
+                            density === 'dense'
+                              ? 'text-[12.5px] leading-snug'
+                              : density === 'medium'
+                                ? 'text-[13.5px] leading-snug'
+                                : 'text-sm leading-snug'
+                          } ${
+                            selectedCardPreviewField === 'content' ? 'ring-2 ring-indigo-500 bg-indigo-50' : 'hover:bg-indigo-50/50'
+                          }`}
+                        >
+                          {activeCard.content}
+                        </div>
+                        {activeCard.options && activeCard.options.length > 0 && (
+                          <div
+                            onClick={() => setSelectedCardPreviewField('quiz')}
+                            title="Bấm để sửa đáp án Quiz"
+                            className={`space-y-1 pt-1 text-left cursor-pointer rounded-lg p-1 ${
+                              selectedCardPreviewField === 'quiz' ? 'ring-2 ring-indigo-500 bg-indigo-50/40' : 'hover:bg-slate-50'
                             }`}
                           >
-                            <span>
-                              {String.fromCharCode(65 + idx)}. {opt}
-                            </span>
-                            {isCorrect && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
+                            {activeCard.options.map((opt, idx) => {
+                              const isCorrect = idx === (activeCard.answerIndex ?? 0);
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`px-2.5 py-1.5 rounded-lg text-[11.5px] font-medium border flex items-center justify-between gap-2 ${
+                                    isCorrect
+                                      ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                                      : 'bg-slate-50 border-slate-200 text-slate-700'
+                                  }`}
+                                >
+                                  <span>
+                                    {String.fromCharCode(65 + idx)}. {opt}
+                                  </span>
+                                  {isCorrect && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
+                                </div>
+                              );
+                            })}
                           </div>
-                        );
-                      })}
+                        )}
+                        {activeCard.translation && (
+                          <div
+                            onClick={() => setSelectedCardPreviewField('translation')}
+                            title="Bấm để sửa dịch nghĩa"
+                            className={`text-slate-600 pt-1.5 border-t border-slate-100 cursor-pointer rounded px-1 ${
+                              density === 'dense' ? 'text-[11px] leading-snug' : 'text-xs leading-relaxed'
+                            } ${
+                              selectedCardPreviewField === 'translation' ? 'ring-2 ring-indigo-500 bg-indigo-50' : 'hover:bg-indigo-50/40'
+                            }`}
+                          >
+                            {activeCard.translation}
+                          </div>
+                        )}
+                        {activeCard.vocabNotes && (
+                          <div
+                            onClick={() => setSelectedCardPreviewField('translation')}
+                            className="text-[11px] leading-snug text-indigo-700 font-medium cursor-pointer hover:underline bg-indigo-50/50 rounded-lg px-2 py-1 text-left"
+                          >
+                            <span className="font-bold">Từ vựng:</span> {activeCard.vocabNotes}
+                          </div>
+                        )}
+                        {activeCard.grammarNote && (
+                          <div
+                            onClick={() => setSelectedCardPreviewField('grammarNote')}
+                            className={`text-[11px] leading-snug text-amber-800 font-medium cursor-pointer rounded-lg px-2 py-1 text-left bg-amber-50/60 ${
+                              selectedCardPreviewField === 'grammarNote' ? 'ring-2 ring-indigo-500' : 'hover:bg-amber-50'
+                            }`}
+                          >
+                            <span className="font-bold">Ngữ pháp:</span> {activeCard.grammarNote}
+                          </div>
+                        )}
+                        {activeCard.explanation && (
+                          <div
+                            onClick={() => setSelectedCardPreviewField('quiz')}
+                            className="text-[11px] leading-snug text-emerald-700 font-medium cursor-pointer hover:underline text-left bg-emerald-50/50 rounded-lg px-2 py-1"
+                          >
+                            {activeCard.explanation}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
-                  {activeCard.translation && (
-                    <div
-                      onClick={() => setSelectedCardPreviewField('translation')}
-                      title="Bấm để sửa dịch nghĩa"
-                      className={`text-xs text-slate-600 pt-1 border-t border-slate-100 cursor-pointer rounded px-1 ${
-                        selectedCardPreviewField === 'translation' ? 'ring-2 ring-indigo-500 bg-indigo-50' : 'hover:bg-indigo-50/40'
-                      }`}
-                    >
-                      {activeCard.translation}
-                    </div>
-                  )}
-                  {activeCard.vocabNotes && (
-                    <div
-                      onClick={() => setSelectedCardPreviewField('translation')}
-                      className="text-[11px] text-indigo-700 font-medium cursor-pointer hover:underline"
-                    >
-                      Từ vựng: {activeCard.vocabNotes}
-                    </div>
-                  )}
-                  {activeCard.grammarNote && (
-                    <div
-                      onClick={() => setSelectedCardPreviewField('grammarNote')}
-                      className={`text-[11px] text-amber-700 font-medium cursor-pointer rounded px-1 ${
-                        selectedCardPreviewField === 'grammarNote' ? 'ring-2 ring-indigo-500 bg-amber-50' : 'hover:bg-amber-50/60'
-                      }`}
-                    >
-                      Ngữ pháp: {activeCard.grammarNote}
-                    </div>
-                  )}
-                  {activeCard.explanation && (
-                    <div
-                      onClick={() => setSelectedCardPreviewField('quiz')}
-                      className="text-[11px] text-emerald-700 font-medium cursor-pointer hover:underline"
-                    >
-                      {activeCard.explanation}
-                    </div>
-                  )}
-                </div>
 
-                {watermarkConfig.watermarkEnabled && watermarkConfig.watermarkText.trim() && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedCardPreviewField('watermark')}
-                    className={`relative z-10 self-end px-2 py-0.5 text-[10px] font-semibold rounded bg-black/55 text-white ${
-                      selectedCardPreviewField === 'watermark' ? 'ring-2 ring-indigo-400' : ''
-                    }`}
-                  >
-                    {watermarkConfig.watermarkText}
-                  </button>
-                )}
-
-                <div className="relative z-10 flex flex-col items-center gap-2 pb-1">
-                  <button
-                    type="button"
-                    disabled={isPreviewingVoice}
-                    onClick={() => void handlePreviewSingleCardVoice()}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white/95 border border-slate-200 rounded-lg hover:bg-white shadow-xs"
-                  >
-                    {isPreviewingVoice ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Volume2 className="w-3.5 h-3.5 text-indigo-600" />
+                    {watermarkConfig.watermarkEnabled && watermarkConfig.watermarkText.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCardPreviewField('watermark')}
+                        className={`relative z-10 shrink-0 self-end px-2 py-0.5 text-[10px] font-semibold rounded bg-black/55 text-white ${
+                          selectedCardPreviewField === 'watermark' ? 'ring-2 ring-indigo-400' : ''
+                        }`}
+                      >
+                        {watermarkConfig.watermarkText}
+                      </button>
                     )}
-                    <span>Nghe thử thẻ này</span>
-                  </button>
-                  {previewAudioUrl && (
-                    <audio controls autoPlay src={previewAudioUrl} className="w-full h-8" />
-                  )}
-                </div>
-              </div>
+
+                    <div className="relative z-10 shrink-0 flex flex-col items-center gap-1.5 pt-0.5">
+                      <button
+                        type="button"
+                        disabled={isPreviewingVoice}
+                        onClick={() => void handlePreviewSingleCardVoice()}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white/95 border border-slate-200 rounded-lg hover:bg-white shadow-xs"
+                      >
+                        {isPreviewingVoice ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Volume2 className="w-3.5 h-3.5 text-indigo-600" />
+                        )}
+                        <span>Nghe thử thẻ này</span>
+                      </button>
+                      {previewAudioUrl && (
+                        <audio controls autoPlay src={previewAudioUrl} className="w-full h-8" />
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {selectedCardPreviewField && (
                 <div
@@ -7125,6 +7279,54 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                 </select>
               </div>
             </div>
+            {(() => {
+              const effectiveDuration = Math.max(1, previewProject.duration || 0);
+              const sizeEst = estimateMp4FileSize(effectiveDuration, {
+                aspectRatio: reelsAspectRatio,
+                resolution: mp4Resolution,
+                quality: mp4Quality,
+                fps: mp4Fps,
+              });
+              const qualOption = QUALITY_OPTIONS.find((q) => q.id === mp4Quality);
+              return (
+                <div
+                  data-testid="reels-mp4-estimate-box"
+                  className="pt-2 border-t border-slate-200/80 space-y-1.5 text-[10.5px]"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-slate-600">
+                      <strong className="text-slate-800">{qualOption?.label || 'Chuẩn'}:</strong>{' '}
+                      {sizeEst.qualityDescription}
+                    </span>
+                    <span
+                      data-testid="reels-mp4-size-badge"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-800 font-semibold font-mono tabular-nums"
+                    >
+                      Ước lượng: {sizeEst.mbLabel} ({sizeEst.rangeLabel})
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-slate-500">
+                    <span className="tabular-nums">
+                      {generatedAudioFile ? 'Theo Audio đã tạo' : 'Ước tính từ kịch bản'} ({effectiveDuration.toFixed(1)}s · {(sizeEst.encoding.videoBitrate / 1_000_000).toFixed(2)} Mbps + 128k audio)
+                    </span>
+                    <label
+                      className="inline-flex items-center gap-1.5 text-slate-700 font-medium cursor-pointer"
+                      title="Chỉ hoạt động khi chạy KineticSub Studio cục bộ trên Windows qua run.bat (có 15 giây đếm ngược & nút hủy)"
+                    >
+                      <input
+                        type="checkbox"
+                        data-testid="reels-auto-shutdown-toggle"
+                        checked={autoShutdownAfterRender}
+                        onChange={(e) => setAutoShutdownAfterRender(e.target.checked)}
+                        className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                      />
+                      <Power className="w-3 h-3 text-amber-600" />
+                      <span>Tự tắt máy sau khi render xong (Windows local)</span>
+                    </label>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Description & Hashtags (.txt companion output matching learner's native language) */}
@@ -7426,6 +7628,12 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
             cartoonAnimationSpec: spec,
           });
         }}
+      />
+
+      <ShutdownCountdownBanner
+        active={shutdownCountdownInfo.active}
+        completedTitle={shutdownCountdownInfo.title}
+        onCancel={() => setShutdownCountdownInfo({ active: false })}
       />
     </div>
   );

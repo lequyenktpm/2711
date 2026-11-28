@@ -234,6 +234,7 @@ export type BuiltinIllustrationVariant =
   | 'p168-slider-compare'
   | 'p168-story-dialogue'
   | 'cartoon-host'
+  | 'podcast-studio'
   | 'dynamic-scene';
 
 export type IllustrationVariant = BuiltinIllustrationVariant | (string & {});
@@ -477,6 +478,9 @@ export type LayoutCompositionId =
   | 'p168-slider-compare'
   | 'word-reveal'
   | '3d-shapes'
+  | 'podcast-duo'
+  | 'dialogue-stage'
+  | 'full-study-cards'
   | 'custom';
 
 export interface CustomComponentPresetConfig {
@@ -497,10 +501,18 @@ export interface CustomComponentPresetConfig {
   illustrationY?: number;
 }
 
+export interface SentenceCardSection {
+  label?: string;
+  text: string;
+  tone?: 'neutral' | 'indigo' | 'amber' | 'emerald';
+}
+
 export interface SentenceCardProps {
   kind: 'sentence-card';
   text: string;
   subtext?: string;
+  speakerLabel?: string;
+  sections?: SentenceCardSection[];
   badge?: 'check' | 'cross' | 'question' | 'none';
   stampText?: string;
   stampColor?: string;

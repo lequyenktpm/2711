@@ -29,6 +29,7 @@ import {
   LayoutCompositionId,
   LessonProject,
   parseDurationReportMeta,
+  SentenceCardProps,
   SubtitleDisplayConfig,
   TitleOverlayLayout,
   TranscriptCue,
@@ -1996,7 +1997,7 @@ export function buildEnglishReelsWebAiPrompt(params: {
       ? 'KHÔNG viết tiếng Việt hay bản dịch thừa trong `badge`, `translation`, `explanation`, `visual.subtitle`, `visual.labels` — toàn bộ text hiển thị trên thẻ phải viết bằng chính ngôn ngữ đang học ngắn gọn, rõ nghĩa.'
       : locale.code === 'learning'
         ? 'CHẾ ĐỘ GIẢI THÍCH BẰNG CHÍNH NGÔN NGỮ MUỐN HỌC (MONOLINGUAL IMMERSION): BẮT BUỘC viết toàn bộ `badge`, `translation`, `explanation`, `explanationSpeech`, `visual.subtitle`, `visual.labels` bằng **ĐÚNG NGÔN NGỮ ĐANG HỌC (`learningLang`)** mà bạn tự nhận diện từ `# NỘI DUNG GỐC` (giải thích nghĩa, sắc thái, đối chiếu cách dùng hoàn toàn bằng chính ngôn ngữ đó — TUYỆT ĐỐI KHÔNG dịch sang tiếng Việt hay ngôn ngữ thứ ba!).'
-        : `BẮT BUỘC viết toàn bộ \`badge\`, \`translation\`, \`explanation\`, \`visual.subtitle\`, \`visual.labels\` (nếu là nhãn giải thích) bằng ngôn ngữ mục tiêu: **${locale.targetLanguageLabel}**. Không trộn lẫn ngôn ngữ khác!`;
+        : `LUẬT SẮT CHỈ DÙNG ĐÚNG 2 NGÔN NGỮ (TUYỆT ĐỐI CẤM LẪN NGÔN NGỮ THỨ 3): Toàn bộ nội dung bài học CHỈ ĐƯỢC PHÉP xuất hiện đúng 2 ngôn ngữ: (1) Ngôn ngữ đang học (\`learningLang\` tự nhận diện từ # NỘI DUNG GỐC) cho câu mẫu/từ vựng/ttsText, và (2) Ngôn ngữ giải thích **${locale.targetLanguageLabel}** cho \`badge\`, \`title\` thẻ, \`translation\`, \`vocabNotes\`, \`grammarNote\`, \`explanation\`, \`explanationSpeech\`, \`visual.subtitle\`, \`visual.labels\`. Nếu \`learningLang\` KHÔNG PHẢI tiếng Anh và \`${locale.targetLanguageLabel}\` KHÔNG PHẢI tiếng Anh thì **TUYỆT ĐỐI CẤM** chèn bất kỳ câu, định nghĩa hay tiêu đề tiếng Anh nào vào bất kỳ trường nào!`;
 
   const isBilingualMode =
     locale.code !== 'none' &&
@@ -2114,7 +2115,11 @@ export function buildEnglishReelsWebAiPrompt(params: {
     `      "translation": ${JSON.stringify(locale.promptExampleTranslation)},`,
     ...(isBilingualMode
       ? ['      "ttsText": "",']
-      : ['      "ttsText": "Welcome to today\'s lesson on <Exact Topic>. Let\'s start with the first key expression.",']),
+      : [
+          params.learningLanguage && params.learningLanguage !== 'en'
+            ? '      "ttsText": "<Lời chào mở đầu & giới thiệu chủ đề viết 100% bằng đúng learningLang>",'
+            : '      "ttsText": "Welcome to today\'s lesson on <Exact Topic>. Let\'s start with the first key expression.",',
+        ]),
     ...(locale.code !== 'none'
       ? [`      "explanationSpeech": ${JSON.stringify(exampleIntroExplSpeech)},`]
       : []),
@@ -2126,7 +2131,7 @@ export function buildEnglishReelsWebAiPrompt(params: {
         ]
       : [
           '        "variant": "bs-card-header",',
-          '        "formula": "TODAY LESSON GOAL",',
+          `        "formula": ${JSON.stringify(locale.lessonOverviewFormula)},`,
           '        "title": "<Tên bài học thực tế>",',
           `        "subtitle": ${JSON.stringify(locale.introVisualSubtitle)},`,
           '        "sceneIcon": "graduation"',
@@ -2143,13 +2148,13 @@ export function buildEnglishReelsWebAiPrompt(params: {
     '    {',
     '      "type": "vocab",',
     `      "badge": ${JSON.stringify(`${locale.readingBadgePrefix} #1`)},`,
-    '      "title": "<Tiêu đề ngắn cho mục / câu 1>",',
-    '      "content": "<Câu hoặc từ vựng thực tế trích từ nguồn — viết tự nhiên, KHÔNG viết lại cả câu bằng Hiragana/Furigana>",',
+    '      "title": "<Tiêu đề ngắn bằng ngôn ngữ giải thích>",',
+    '      "content": "<Câu hoặc từ vựng thực tế trích từ nguồn bằng đúng learningLang — KHÔNG viết lại cả câu bằng Hiragana/Furigana>",',
     '      "phonetic": "",',
-    '      "vocabNotes": "<Nếu có từ khó so với level: giải thích + cách dùng + chú ý (nếu từ khó là Kanji thì kèm Hiragana riêng từ đó, VD: 雰囲気（ふんいき）)>",',
-    '      "grammarNote": "<Nếu có ngữ pháp khó so với level: công thức + cách dùng + chú ý nếu có>",',
+    `      "vocabNotes": "<Giải thích bằng ${locale.targetLanguageLabel} nếu có từ khó so với level: nghĩa + cách dùng + chú ý (nếu từ khó là Kanji thì kèm Hiragana riêng từ đó, VD: 雰囲気（ふんいき）)>",`,
+    `      "grammarNote": "<Giải thích bằng ${locale.targetLanguageLabel} nếu có ngữ pháp khó so với level: công thức + cách dùng + chú ý nếu có>",`,
     `      "translation": ${JSON.stringify(locale.promptExampleVocabTranslation)},`,
-    '      "ttsText": "<Câu hoặc từ vựng tự nhiên để đọc>",',
+    '      "ttsText": "<Câu hoặc từ vựng tự nhiên bằng đúng learningLang để đọc>",',
     ...(params.compositionId === 'cartoon-host'
       ? [
           '      "cartoonAction": "point-up",',
@@ -2161,7 +2166,7 @@ export function buildEnglishReelsWebAiPrompt(params: {
       : [
           '      "visual": {',
           '        "variant": "css-sticky-note",',
-          '        "title": "KEY VOCAB & GRAMMAR",',
+          `        "title": ${JSON.stringify(`${locale.vocabPrefix.replace(/:$/, '')} & ${locale.grammarPrefix.replace(/:$/, '')}`)},`,
           `        "labels": ${JSON.stringify(locale.promptExampleStickyLabels)},`,
           '        "sceneIcon": "book"',
           '      }',
@@ -2173,15 +2178,19 @@ export function buildEnglishReelsWebAiPrompt(params: {
           '      "type": "quiz",',
           '      "badge": "QUIZ #1",',
           '      "title": "<Chỉ thêm card quiz khi nguồn có câu hỏi hoặc bật chế độ Quiz>",',
-          '      "contextExcerpt": "<1-2 câu bằng chứng trực tiếp nếu là bài đọc>",',
-          '      "content": "<Câu hỏi kiểm tra ngay phần vừa học>",',
-          '      "translation": "<Nghĩa ngắn gọn câu hỏi>",',
-          '      "options": ["Option A", "Option B", "Option C"],',
+          '      "contextExcerpt": "<1-2 câu bằng chứng trực tiếp từ bài bằng đúng learningLang>",',
+          '      "content": "<Câu hỏi kiểm tra ngay phần vừa học bằng đúng learningLang>",',
+          `      "translation": "<Nghĩa ngắn gọn câu hỏi bằng ${locale.targetLanguageLabel}>",`,
+          '      "options": ["<Phương án A bằng đúng learningLang>", "<Phương án B bằng đúng learningLang>", "<Phương án C bằng đúng learningLang>"],',
           '      "answerIndex": 1,',
           '      "thinkSec": 5,',
           `      "explanation": ${JSON.stringify(locale.promptExampleExplanation)},`,
-          '      "ttsText": "Now let\'s test what we just read! ... Question one: ... A, Option A. B, Option B. C, Option C. Take five seconds to think.",',
-          '      "ttsAnswerText": "Time is up! The correct answer is B, Option B.",',
+          params.learningLanguage && params.learningLanguage !== 'en'
+            ? '      "ttsText": "<Lời dẫn quiz + đọc câu hỏi + phương án + lời mời nghĩ 5 giây viết 100% bằng đúng learningLang>",'
+            : '      "ttsText": "Now let\'s test what we just read! Question one: ... A, ... B, ... C, ... Take five seconds to think.",',
+          params.learningLanguage && params.learningLanguage !== 'en'
+            ? '      "ttsAnswerText": "<Lời công bố hết giờ & đáp án đúng viết 100% bằng đúng learningLang>",'
+            : '      "ttsAnswerText": "Time is up! The correct answer is B.",',
           ...(params.compositionId === 'cartoon-host'
             ? [
                 '      "cartoonAction": "thinking-chin",',
@@ -2201,12 +2210,16 @@ export function buildEnglishReelsWebAiPrompt(params: {
     '    {',
     '      "type": "outro",',
     `      "badge": ${JSON.stringify(locale.outroBadge)},`,
-    '      "title": "Key Takeaways",',
+    `      "title": ${JSON.stringify(locale.outroTitle)},`,
     `      "content": ${JSON.stringify(locale.promptExampleOutroContent)},`,
     `      "translation": ${JSON.stringify(locale.promptExampleOutroTranslation)},`,
     ...(isBilingualMode
       ? ['      "ttsText": "",']
-      : ['      "ttsText": "Great job! Today you practiced <Exact Topic>. Review these expressions every day.",']),
+      : [
+          params.learningLanguage && params.learningLanguage !== 'en'
+            ? '      "ttsText": "<Lời tổng kết bài học viết 100% bằng đúng learningLang>",'
+            : '      "ttsText": "Great job! Today you practiced <Exact Topic>. Review these expressions every day.",',
+        ]),
     ...(locale.code !== 'none'
       ? [`      "explanationSpeech": ${JSON.stringify(exampleOutroExplSpeech)},`]
       : []),
@@ -2218,7 +2231,7 @@ export function buildEnglishReelsWebAiPrompt(params: {
       : [
           '      "visual": {',
           '        "variant": "css-bento-stats",',
-          '        "title": "Lesson Complete!",',
+          `        "title": ${JSON.stringify(locale.outroTitle)},`,
           `        "labels": ${JSON.stringify(locale.promptExampleOutroLabels)},`,
           '        "sceneIcon": "sparkles"',
           '      }',
@@ -2744,11 +2757,29 @@ export function buildAiCreatorWebAiPrompt(params: {
                 ? 'Lo clave no es memorizar herramientas, sino saber hacer la pregunta correcta en el momento preciso.'
                 : 'What actually sets top performers apart is not knowing tool buzzwords—it is framing clear constraints before you ask.';
 
+    const introKicker = isMultiSpeakerFormat
+      ? explainSample('HỘI THOẠI THỰC TẾ · ĐA NHÂN VẬT', 'REAL CONVERSATION · MULTI-SPEAKER', `${langOption.nativeName} CONVERSATION`)
+      : isPodcastFormat
+        ? explainSample('TẬP PODCAST THỰC TẾ', 'SPOKEN PODCAST EPISODE', `${langOption.nativeName} PODCAST`)
+        : isShadowingFormat
+          ? explainSample('LUYỆN SHADOWING TỰ NHIÊN', 'NATURAL SHADOWING FLOW', `${langOption.nativeName} SHADOWING`)
+          : explainSample('TÌNH HUỐNG & GÓC NHÌN THỰC TẾ', 'REAL SITUATION & INSIGHT', `${langOption.nativeName} SITUATION`);
+
+    const defaultSituationTitle = explainSample(
+      isMultiSpeakerFormat ? 'Hội thoại ứng xử thực tế' : 'Tình huống giao tiếp thực tế',
+      isMultiSpeakerFormat ? 'Real Conversation Episode' : 'Real Situation Episode',
+      isMultiSpeakerFormat ? '実戦会話エピソード' : '実戦シチュエーション',
+    );
+
+    const visualTitleIntro = isMultiSpeakerFormat
+      ? explainSample('Hội thoại 2–3 người nói', '2–3 Speakers Conversation', '複数人のリアル会話')
+      : explainSample('Mạch nói tự nhiên', 'Natural Spoken Flow', '自然な会話の流れ');
+
     return [
       '    {',
       '      "type": "title",',
-      `      "kicker": ${JSON.stringify(isMultiSpeakerFormat ? 'REAL CONVERSATION · MULTI-SPEAKER' : isPodcastFormat ? 'SPOKEN PODCAST EPISODE' : isShadowingFormat ? 'NATURAL SHADOWING FLOW' : 'REAL SITUATION & INSIGHT')},`,
-      `      "title": ${JSON.stringify(topicHint ? `${topicHint} | ${chosenLevel}` : `Real Situation Episode | ${chosenLevel}`)},`,
+      `      "kicker": ${JSON.stringify(introKicker)},`,
+      `      "title": ${JSON.stringify(topicHint ? `${topicHint} | ${formatAudienceLevelLabel(chosenLevel, learningLang)}` : `${defaultSituationTitle} | ${formatAudienceLevelLabel(chosenLevel, learningLang)}`)},`,
       `      "speech": ${JSON.stringify(exIntroSpeech)},`,
       ...(includeExplanationSpeech
         ? [
@@ -2763,9 +2794,9 @@ export function buildAiCreatorWebAiPrompt(params: {
         : []),
       '      "visual": {',
       '        "variant": "bs-card-header",',
-      `        "formula": "${chosenLevel} · SPOKEN FLOW",`,
-      `        "title": ${JSON.stringify(isMultiSpeakerFormat ? '2–3 Speakers Conversation' : 'Natural Spoken Flow')},`,
-      '        "subtitle": "Nghe mạch nói tự nhiên · Tổng kết kiến thức cuối bài",',
+      `        "formula": ${JSON.stringify(`${chosenLevel} · ${explainSample('GIAO TIẾP THỰC TẾ', 'SPOKEN FLOW', '会話フロー')}`)},`,
+      `        "title": ${JSON.stringify(visualTitleIntro)},`,
+      `        "subtitle": ${JSON.stringify(explainSample('Nghe mạch nói tự nhiên · Tổng kết kiến thức cuối bài', 'Listen to natural flow · Key recap at end', '自然な会話を聞いて最後に要点整理'))},`,
       '        "sceneIcon": "mic"',
       '      }',
       '    },',
@@ -2778,13 +2809,13 @@ export function buildAiCreatorWebAiPrompt(params: {
             `      "speakerGender": ${JSON.stringify(spkA.gender)},`,
             `      "speakerRole": ${JSON.stringify(spkA.role)},`,
           ]
-        : ['      "kicker": "TURN 01 · OPENING SITUATION",']),
+        : [`      "kicker": ${JSON.stringify(explainSample('LƯỢT 01 · MỞ TÌNH HUỐNG', 'TURN 01 · OPENING SITUATION', '場面01 · 導入'))},`]),
       '      "phonetic": "",',
-      `      "title": ${JSON.stringify(isMultiSpeakerFormat ? `${spkA.name} mở vấn đề` : 'Mở đầu tình huống thực tế')},`,
+      `      "title": ${JSON.stringify(isMultiSpeakerFormat ? explainSample(`${spkA.name} mở vấn đề`, `${spkA.name} opens the discussion`, `${spkA.name}の発言`) : explainSample('Mở đầu tình huống thực tế', 'Opening the real situation', '状況の導入'))},`,
       `      "content": ${JSON.stringify(sampleTurn1Speech)},`,
       `      "speech": ${JSON.stringify(sampleTurn1Speech)},`,
       `      "translation": ${JSON.stringify(explainSample('Bản dịch tự nhiên của câu nói này sang tiếng Việt.', 'Natural meaning of this spoken line.', 'Natural meaning of this spoken line.'))},`,
-      `      "vocabNotes": ${JSON.stringify(learningLang === 'ja' ? '導入（どうにゅう）: triển khai, áp dụng vào thực tế — dùng trong bối cảnh công việc/hệ thống; chú ý Kanji chữ 導 dễ đọc nhầm.' : '(Chỉ điền nếu trong câu có từ vựng khó so với level, kèm giải thích + cách dùng + chú ý; để "" nếu câu đơn giản)')},`,
+      `      "vocabNotes": ${JSON.stringify(learningLang === 'ja' ? explainSample('導入（どうにゅう）: triển khai, áp dụng vào thực tế — dùng trong bối cảnh công việc/hệ thống; chú ý Kanji chữ 導 dễ đọc nhầm.', '導入（どうにゅう）: introduction/deployment of a tool in a workflow.', '導入（どうにゅう）: ツールや仕組みを新しく取り入れること。') : '')},`,
       '      "grammarNote": "",',
       ...(includeExplanationSpeech
         ? [
@@ -2799,8 +2830,8 @@ export function buildAiCreatorWebAiPrompt(params: {
         : []),
       '      "visual": {',
       `        "variant": ${JSON.stringify(isMultiSpeakerFormat ? 'p168-story-dialogue' : 'ear-listen')},`,
-      `        "title": ${JSON.stringify(isMultiSpeakerFormat ? spkA.name : 'Luyện nghe & nói đuổi theo')},`,
-      `        "reactionText": ${JSON.stringify(isMultiSpeakerFormat ? spkA.name : 'Speaker')},`,
+      `        "title": ${JSON.stringify(isMultiSpeakerFormat ? spkA.name : explainSample('Luyện nghe & nói đuổi theo', 'Listen & shadow naturally', '聞いてシャドーイング'))},`,
+      `        "reactionText": ${JSON.stringify(isMultiSpeakerFormat ? spkA.name : explainSample('Người nói', 'Speaker', '話者'))},`,
       `        "speechText": ${JSON.stringify(sampleTurn1Speech)},`,
       '        "sceneIcon": "mic"',
       '      }',
@@ -2814,14 +2845,14 @@ export function buildAiCreatorWebAiPrompt(params: {
             `      "speakerGender": ${JSON.stringify(spkB.gender)},`,
             `      "speakerRole": ${JSON.stringify(spkB.role)},`,
           ]
-        : ['      "kicker": "TURN 02 · KEY INSIGHT",']),
+        : [`      "kicker": ${JSON.stringify(explainSample('LƯỢT 02 · GÓC NHÌN CHÍNH', 'TURN 02 · KEY INSIGHT', '場面02 · 核心'))},`]),
       '      "phonetic": "",',
-      `      "title": ${JSON.stringify(isMultiSpeakerFormat ? `${spkB.name} phản hồi & lưu ý thực tế` : 'Triển khai góc nhìn & kinh nghiệm thực tế')},`,
+      `      "title": ${JSON.stringify(isMultiSpeakerFormat ? explainSample(`${spkB.name} phản hồi & lưu ý thực tế`, `${spkB.name} replies with key insight`, `${spkB.name}の返答`) : explainSample('Triển khai góc nhìn & kinh nghiệm thực tế', 'Practical insight & perspective', '実践的な視点'))},`,
       `      "content": ${JSON.stringify(sampleTurn2Speech)},`,
       `      "speech": ${JSON.stringify(sampleTurn2Speech)},`,
       `      "translation": ${JSON.stringify(explainSample('Bản dịch tự nhiên câu phản hồi / góc nhìn thực chiến.', 'Natural meaning of the reply/insight.', 'Natural meaning of the reply/insight.'))},`,
       '      "vocabNotes": "",',
-      '      "grammarNote": "(Chỉ ghi nếu có cấu trúc khó so với level: giải thích + cách dùng + chú ý)",',
+      `      "grammarNote": ${JSON.stringify(explainSample('(Chỉ ghi nếu có cấu trúc khó so với level: giải thích + cách dùng + chú ý bằng Tiếng Việt)', '(Only fill if there is difficult grammar for this level)', ''))},`,
       ...(includeExplanationSpeech
         ? [
             `      "explanationSpeech": ${JSON.stringify(
@@ -2835,17 +2866,17 @@ export function buildAiCreatorWebAiPrompt(params: {
         : []),
       '      "visual": {',
       `        "variant": ${JSON.stringify(isMultiSpeakerFormat ? 'css-chat-thread' : 'css-sticky-note')},`,
-      `        "title": ${JSON.stringify(isMultiSpeakerFormat ? `${spkA.name} ↔ ${spkB.name}` : 'Key Situational Insight')},`,
-      `        "labels": ${JSON.stringify(isMultiSpeakerFormat ? [`${spkA.name}: Đề xuất giải pháp`, `${spkB.name}: Bổ sung góc nhìn rủi ro`] : ['Tình huống thực tế', 'Cách ứng xử tự nhiên'])},`,
+      `        "title": ${JSON.stringify(isMultiSpeakerFormat ? `${spkA.name} ↔ ${spkB.name}` : explainSample('Góc nhìn tình huống', 'Key Situational Insight', '場面のポイント'))},`,
+      `        "labels": ${JSON.stringify(isMultiSpeakerFormat ? [`${spkA.name}: ${explainSample('Đề xuất giải pháp', 'Proposes idea', '提案')}`, `${spkB.name}: ${explainSample('Nêu lưu ý rủi ro', 'Adds risk guardrail', '注意点')}`] : [explainSample('Tình huống thực tế', 'Real situation', '実践場面'), explainSample('Cách ứng xử tự nhiên', 'Natural response', '自然な対応')])},`,
       '        "sceneIcon": "chat"',
       '      }',
       '    },',
       '    {',
       '      "type": "vocab",',
-      '      "badge": "TỔNG KẾT BÀI HỌC",',
-      '      "title": "Hôm nay bạn vừa học được gì?",',
-      `      "content": ${JSON.stringify(explainSample('Tóm tắt mạch hội thoại/tình huống + các kỹ năng giao tiếp & từ vựng trọng tâm vừa nắm được.', 'Summary of today’s conversation/scenario and practical takeaways.', 'Summary of today’s takeaways.'))},`,
-      `      "speech": ${JSON.stringify(exOutroSpeech || 'Great job today.')},`,
+      `      "badge": ${JSON.stringify(explainSample('TỔNG KẾT BÀI HỌC', 'LESSON SUMMARY', 'まとめ'))},`,
+      `      "title": ${JSON.stringify(explainSample('Hôm nay bạn vừa học được gì?', 'What did you learn today?', '今日のまとめ'))},`,
+      `      "content": ${JSON.stringify(explainSample('Tóm tắt mạch hội thoại/tình huống + các kỹ năng giao tiếp & từ vựng trọng tâm vừa nắm được.', 'Summary of today’s conversation/scenario and practical takeaways.', '今日の会話の要点と実践表現のまとめ。'))},`,
+      `      "speech": ${JSON.stringify(exOutroSpeech || sampleTurn2Speech)},`,
       ...(includeExplanationSpeech
         ? [
             `      "explanationSpeech": ${JSON.stringify(
@@ -2857,11 +2888,11 @@ export function buildAiCreatorWebAiPrompt(params: {
             )},`,
           ]
         : []),
-      '      "translation": "Tổng kết nội dung chính & kiến thức ứng dụng thực tế",',
+      `      "translation": ${JSON.stringify(explainSample('Tổng kết nội dung chính & kiến thức ứng dụng thực tế', 'Key content recap & practical application', '要点整理'))},`,
       '      "visual": {',
       '        "variant": "bs-list-group",',
-      '        "title": "Tổng kết kiến thức bài học",',
-      '        "labels": ["1. Nội dung chính vừa nghe", "2. Cách xử lý tình huống", "3. Từ/cụm đắt giá cần nhớ"],',
+      `        "title": ${JSON.stringify(locale.outroTitle)},`,
+      `        "labels": ${JSON.stringify(explainSample('a', 'b', 'c') === 'a' ? ['1. Nội dung chính vừa nghe', '2. Cách xử lý tình huống', '3. Từ/cụm đắt giá cần nhớ'] : locale.outroLabels)},`,
       '        "sceneIcon": "check"',
       '      }',
       '    },',
@@ -3016,6 +3047,7 @@ export function buildAiCreatorWebAiPrompt(params: {
     ...dualTtsRules,
     difficultVocabGrammarRule,
     '- NEVER put `/IPA/` symbols, `&`, markdown (`**`, `#`), URLs, or emojis inside `speech` or `explanationSpeech`.',
+    `- **LUẬT SẮT CHỈ DÙNG ĐÚNG 2 NGÔN NGỮ (STRICT 2-LANGUAGE PURITY — CẤM LẪN NGÔN NGỮ THỨ 3)**: Toàn bộ file JSON **CHỈ ĐƯỢC PHÉP chứa đúng 2 ngôn ngữ**: (1) **${langOption.nativeName}** (cho lời thoại speech, ví dụ, tiêu đề bài học gốc), và (2) **${explainLangName}** (cho toàn bộ title thẻ, badge, translation, vocabNotes, grammarNote, explanation, explanationSpeech, visual.subtitle, visual.labels). **TUYỆT ĐỐI CẤM** viết xen bất kỳ tiêu đề thẻ, bản dịch nghĩa, giải thích từ vựng/ngữ pháp, hay nhãn nút visual bằng ngôn ngữ thứ 3 (nhất là tiếng Anh) khi cả 2 ngôn ngữ đã chọn đều KHÔNG phải tiếng Anh! Kiểm tra lại từng trường trước khi trả kết quả.`,
     `- ${translationRule}`,
     '',
     TYPOGRAPHY_MOBILE_READABILITY_PROMPT_BLOCK,
@@ -3029,7 +3061,7 @@ export function buildAiCreatorWebAiPrompt(params: {
       : [
           '- **STRICT ANTI-REPETITION RULE**: NEVER assign the same `visual.variant` to two consecutive cards!' +
             (isMultiSpeakerFormat
-              ? ' For 2–3 speaker turns, rotate conversation visuals cleanly (`"p168-story-dialogue"`, `"css-chat-thread"`, `"ear-listen"`, `"speech-bubble"`, `"avatar-speech"`, `"p168-situation-cards"`).'
+              ? ' For 2–3 speaker turns, rotate conversation visuals cleanly (`"podcast-studio"`, `"p168-story-dialogue"`, `"css-chat-thread"`, `"ear-listen"`, `"speech-bubble"`, `"avatar-speech"`).'
               : ''),
           variantsListText,
           `- Valid \`visual.sceneIcon\` names (NEVER invent outside this list): ${sceneIconsListText}`,
@@ -3064,7 +3096,7 @@ export function buildAiCreatorWebAiPrompt(params: {
       : selectedExampleBlocks),
     '    {',
     '      "type": "outro",',
-    '      "title": "Save & Practice Today",',
+    `      "title": ${JSON.stringify(locale.outroTitle)},`,
     `      "translation": ${JSON.stringify(locale.promptExampleOutroTranslation)},`,
     `      "speech": ${JSON.stringify(exOutroSpeech)},`,
     ...(includeExplanationSpeech
@@ -3077,7 +3109,7 @@ export function buildAiCreatorWebAiPrompt(params: {
               isConversationalScriptMode
                 ? 'Lesson recap: today you mastered the full scenario flow, practical response strategies, and the key natural expressions to use right away!'
                 : 'Save this video and review these expressions again tomorrow!',
-              exOutroSpeech || 'Save this video and review these expressions again tomorrow!',
+              exOutroSpeech || locale.outroTranslation,
             ),
           )},`,
         ]
@@ -3090,7 +3122,7 @@ export function buildAiCreatorWebAiPrompt(params: {
       : [
           '      "visual": {',
           '        "variant": "css-bento-stats",',
-          '        "title": "Ready to Use!",',
+          `        "title": ${JSON.stringify(locale.outroBadge)},`,
           `        "labels": ${JSON.stringify(locale.promptExampleOutroLabels)},`,
           '        "sceneIcon": "sparkles"',
           '      }',
@@ -5727,6 +5759,42 @@ export function reelCardsToLessonProject(
       cardText: '#0F172A',
       emphasisColor: '#2563EB',
     },
+    'podcast-duo': {
+      showStrip: false,
+      stripY: 170,
+      pillY: 210,
+      illY: 515,
+      cardY: 1015,
+      pillBg: '#312E81',
+      pillColor: '#E0E7FF',
+      cardBg: '#1E293B',
+      cardText: '#F8FAFC',
+      emphasisColor: '#FACC15',
+    },
+    'dialogue-stage': {
+      showStrip: false,
+      stripY: 170,
+      pillY: 210,
+      illY: 530,
+      cardY: 1020,
+      pillBg: '#DBEAFE',
+      pillColor: '#1E40AF',
+      cardBg: '#FFFFFF',
+      cardText: '#0F172A',
+      emphasisColor: '#2563EB',
+    },
+    'full-study-cards': {
+      showStrip: false,
+      stripY: 170,
+      pillY: 195,
+      illY: 520,
+      cardY: 875,
+      pillBg: '#E0E7FF',
+      pillColor: '#3730A3',
+      cardBg: '#FFFFFF',
+      cardText: '#0F172A',
+      emphasisColor: '#4F46E5',
+    },
   };
   const activeProfile = compLayoutProfile[compId] ?? compLayoutProfile['story-scenes'];
 
@@ -6872,84 +6940,224 @@ export function reelCardsToLessonProject(
         },
       });
 
-      if (compId !== 'cartoon-host') {
+      const speakerRoster = (() => {
+        const roster: Array<{ name: string; role?: string; color: string }> = [];
+        for (const sc of safeCards) {
+          const spName = sc.speaker?.trim();
+          if (spName && !roster.some((r) => r.name === spName)) {
+            const palette = speakerBadgeColors[roster.length % speakerBadgeColors.length];
+            roster.push({
+              name: spName,
+              role: sc.speakerRole,
+              color: palette.text,
+            });
+          }
+        }
+        return roster;
+      })();
+
+      if (compId === 'full-study-cards') {
+        const showTitleHeading =
+          card.type === 'vocab' &&
+          Boolean(card.title) &&
+          card.title !== card.content &&
+          !card.title.startsWith('Reading Point') &&
+          !card.title.startsWith('Lesson Point') &&
+          !card.title.startsWith('Câu ') &&
+          !card.title.startsWith('Line ') &&
+          !card.title.startsWith('文 ');
+        const fullHeadText = showTitleHeading ? card.title : card.content;
+        const fullSubText = showTitleHeading
+          ? [card.phonetic, card.content].filter(Boolean).join('\n') || undefined
+          : card.phonetic || undefined;
+        const fullSections: SentenceCardProps['sections'] = [];
+        if (card.translation?.trim()) {
+          fullSections.push({ text: card.translation.trim(), tone: 'neutral' });
+        }
+        if (card.vocabNotes?.trim()) {
+          fullSections.push({ label: 'Từ vựng', text: card.vocabNotes.trim(), tone: 'indigo' });
+        }
+        if (card.grammarNote?.trim()) {
+          fullSections.push({ label: 'Ngữ pháp', text: card.grammarNote.trim(), tone: 'amber' });
+        }
+        if (card.explanation?.trim()) {
+          fullSections.push({ label: 'Giải thích', text: card.explanation.trim(), tone: 'emerald' });
+        }
+
         elements.push({
-          id: `reel-prop-${idx}`,
-          type: 'illustration-prop',
-          label: `Visual #${idx + 1}`,
+          id: `reel-card-${idx}`,
+          type: 'sentence-card',
+          label: `Full Study #${idx + 1}: ${card.title.slice(0, 28)}`,
           startTime: start,
           endTime: end,
           enterAnimation: 'fade-scale',
           exitAnimation: 'fade-out',
-          layout: { x: 540, y: activeProfile.illY, width: 860, scale: 0.96, zIndex: 10 },
+          layout: {
+            x: 540,
+            y: 880,
+            width: 920,
+            scale: 1,
+            zIndex: 20,
+          },
           props: {
-            kind: 'illustration-prop',
-            variant: visualSpec.variant,
-            data: visualSpec.data,
+            kind: 'sentence-card',
+            speakerLabel: card.speaker
+              ? `🎙️ ${card.speaker}${card.speakerRole ? ` · ${card.speakerRole}` : ''}`
+              : undefined,
+            text: fullHeadText,
+            subtext: fullSubText,
+            sections: fullSections.length > 0 ? fullSections : undefined,
+            badge: card.type === 'outro' ? 'check' : 'none',
+            emphasisWord: card.type === 'vocab' && !card.title.startsWith('Reading') ? card.title : undefined,
+            emphasisColor: isDark ? '#FACC15' : '#4F46E5',
+            bgColor: isDark ? 'rgba(15, 23, 42, 0.96)' : '#FFFFFF',
+            textColor: isDark ? '#F8FAFC' : '#0F172A',
+          },
+        });
+      } else {
+        let resolvedPropVariant = visualSpec.variant;
+        let resolvedPropData = visualSpec.data;
+
+        if (compId === 'podcast-duo' && card.type !== 'intro' && card.type !== 'outro') {
+          const studioNodes =
+            speakerRoster.length >= 2
+              ? speakerRoster.slice(0, 3).map((r, ri) => ({
+                  label: r.name,
+                  sublabel: r.role || `Host ${ri + 1}`,
+                  color: r.color,
+                }))
+              : [
+                  { label: card.speaker || 'Host A', sublabel: card.speakerRole || 'Host 1', color: '#3B82F6' },
+                  { label: 'Host B', sublabel: 'Co-Host', color: '#8B5CF6' },
+                ];
+          resolvedPropVariant = 'podcast-studio';
+          resolvedPropData = {
+            ...visualSpec.data,
+            labels: undefined,
+            formula: card.speaker ? 'PODCAST · LIVE' : 'PODCAST STUDIO',
+            title: card.title || card.badge,
+            reactionText: card.speaker || studioNodes[0]?.label,
+            nodes: studioNodes,
+            sceneIcon: 'mic',
+          };
+        } else if (compId === 'dialogue-stage' && card.type !== 'intro' && card.type !== 'outro') {
+          if (idx % 2 === 1) {
+            resolvedPropVariant = 'p168-story-dialogue';
+            resolvedPropData = {
+              ...visualSpec.data,
+              labels:
+                speakerRoster.length >= 2
+                  ? speakerRoster.slice(0, 3).map((r) => r.name)
+                  : [card.speaker || 'Speaker A', 'Conversation'],
+              title: card.title || card.badge,
+              reactionText: card.speaker || 'Speaker',
+              speechText: card.content,
+              highlightWord: card.translation || card.title,
+              sceneIcon: 'chat',
+            };
+          } else {
+            const prevCard = idx > 0 ? safeCards[idx - 1] : undefined;
+            resolvedPropVariant = 'css-chat-thread';
+            resolvedPropData = {
+              ...visualSpec.data,
+              title:
+                speakerRoster.length >= 2
+                  ? speakerRoster.slice(0, 2).map((r) => r.name).join(' ↔ ')
+                  : card.speaker || card.title,
+              labels: [
+                prevCard?.speaker ? `${prevCard.speaker}: ${prevCard.content.slice(0, 38)}` : card.title,
+                card.speaker ? `${card.speaker}: ${card.content.slice(0, 42)}` : card.content.slice(0, 42),
+              ],
+              sceneIcon: 'chat',
+            };
+          }
+        }
+
+        if (compId !== 'cartoon-host') {
+          elements.push({
+            id: `reel-prop-${idx}`,
+            type: 'illustration-prop',
+            label: `Visual #${idx + 1}`,
+            startTime: start,
+            endTime: end,
+            enterAnimation: 'fade-scale',
+            exitAnimation: 'fade-out',
+            layout: { x: 540, y: activeProfile.illY, width: 860, scale: 0.96, zIndex: 10 },
+            props: {
+              kind: 'illustration-prop',
+              variant: resolvedPropVariant,
+              data: resolvedPropData,
+            },
+          });
+        }
+
+        const badgeHaystack = `${card.badge} ${card.title} ${displayHeadline} ${displaySub || ''}`;
+        const inferredReelBadge: 'check' | 'cross' | 'question' | 'none' =
+          card.type === 'outro'
+            ? 'check'
+            : card.type === 'intro'
+              ? 'none'
+              : /\b(avoid|rude|wrong|mistake|don't say|stop saying)\b|tránh|sai/i.test(badgeHaystack) ||
+                  /(?:^|[\s「『(【])NG(?:$|[\s」』)】:：!])/u.test(badgeHaystack)
+                ? 'cross'
+                : /\b(natural|polite|better|instead|smart|tip|upgrade)\b|nên dùng|tự nhiên|chuẩn/i.test(
+                      badgeHaystack,
+                    )
+                  ? 'check'
+                  : 'none';
+
+        elements.push({
+          id: `reel-card-${idx}`,
+          type: 'sentence-card',
+          label: `Card #${idx + 1}: ${card.title.slice(0, 28)}`,
+          startTime: start,
+          endTime: end,
+          enterAnimation: cardEnterAnim,
+          exitAnimation: 'fade-out',
+          layout: {
+            x: 540,
+            y: activeProfile.cardY,
+            width: 880,
+            scale: compId === 'cartoon-host' ? 0.94 : 1,
+            zIndex: 20,
+          },
+          props: {
+            kind: 'sentence-card',
+            speakerLabel:
+              compId === 'podcast-duo' || compId === 'dialogue-stage'
+                ? card.speaker
+                  ? `🎙️ ${card.speaker}${card.speakerRole ? ` · ${card.speakerRole}` : ''}`
+                  : undefined
+                : undefined,
+            text: displayHeadline,
+            subtext: displaySub,
+            badge: inferredReelBadge,
+            stampText:
+              inferredReelBadge === 'cross'
+                ? 'AVOID'
+                : inferredReelBadge === 'check' && card.type !== 'outro'
+                  ? 'NATURAL'
+                  : undefined,
+            stampColor:
+              inferredReelBadge === 'cross'
+                ? '#DC2626'
+                : inferredReelBadge === 'check'
+                  ? '#16A34A'
+                  : undefined,
+            emphasisWord: card.type === 'vocab' && !card.title.startsWith('Reading') ? card.title : undefined,
+            emphasisColor:
+              inferredReelBadge === 'cross'
+                ? '#DC2626'
+                : activeProfile.emphasisColor ?? (card.type === 'outro' ? '#16A34A' : '#2563EB'),
+            bgColor: isDark
+              ? 'rgba(15, 23, 42, 0.94)'
+              : inferredReelBadge === 'cross'
+                ? '#FFF1F2'
+                : activeProfile.cardBg ?? '#FFFFFF',
+            textColor: isDark ? '#F8FAFC' : (activeProfile.cardText ?? '#0F172A'),
           },
         });
       }
-
-      const badgeHaystack = `${card.badge} ${card.title} ${displayHeadline} ${displaySub || ''}`;
-      const inferredReelBadge: 'check' | 'cross' | 'question' | 'none' =
-        card.type === 'outro'
-          ? 'check'
-          : card.type === 'intro'
-            ? 'none'
-            : /\b(avoid|rude|wrong|mistake|don't say|stop saying)\b|tránh|sai/i.test(badgeHaystack) ||
-                /(?:^|[\s「『(【])NG(?:$|[\s」』)】:：!])/u.test(badgeHaystack)
-              ? 'cross'
-              : /\b(natural|polite|better|instead|smart|tip|upgrade)\b|nên dùng|tự nhiên|chuẩn/i.test(
-                    badgeHaystack,
-                  )
-                ? 'check'
-                : 'none';
-
-      elements.push({
-        id: `reel-card-${idx}`,
-        type: 'sentence-card',
-        label: `Card #${idx + 1}: ${card.title.slice(0, 28)}`,
-        startTime: start,
-        endTime: end,
-        enterAnimation: cardEnterAnim,
-        exitAnimation: 'fade-out',
-        layout: {
-          x: 540,
-          y: activeProfile.cardY,
-          width: 880,
-          scale: compId === 'cartoon-host' ? 0.94 : 1,
-          zIndex: 20,
-        },
-        props: {
-          kind: 'sentence-card',
-          text: displayHeadline,
-          subtext: displaySub,
-          badge: inferredReelBadge,
-          stampText:
-            inferredReelBadge === 'cross'
-              ? 'AVOID'
-              : inferredReelBadge === 'check' && card.type !== 'outro'
-                ? 'NATURAL'
-                : undefined,
-          stampColor:
-            inferredReelBadge === 'cross'
-              ? '#DC2626'
-              : inferredReelBadge === 'check'
-                ? '#16A34A'
-                : undefined,
-          emphasisWord: card.type === 'vocab' && !card.title.startsWith('Reading') ? card.title : undefined,
-          emphasisColor:
-            inferredReelBadge === 'cross'
-              ? '#DC2626'
-              : activeProfile.emphasisColor ?? (card.type === 'outro' ? '#16A34A' : '#2563EB'),
-          bgColor: isDark
-            ? 'rgba(15, 23, 42, 0.94)'
-            : inferredReelBadge === 'cross'
-              ? '#FFF1F2'
-              : activeProfile.cardBg ?? '#FFFFFF',
-          textColor: isDark ? '#F8FAFC' : (activeProfile.cardText ?? '#0F172A'),
-        },
-      });
     }
 
     elements.push({

@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import crypto from 'node:crypto';
-import { ChildProcess, spawn } from 'node:child_process';
+import { ChildProcess, execFile, spawn } from 'node:child_process';
 import dns from 'node:dns/promises';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -4293,6 +4293,78 @@ Return ONLY valid JSON with keys:
   app.delete('/api/studio/job/:jobId', async (req, res) => {
     await cleanupStudioJob(req.params.jobId);
     res.json({ ok: true });
+  });
+
+  const isLoopbackSystemRequest = (req: express.Request): boolean => {
+    const ip = (req.ip || req.socket?.remoteAddress || '').replace(/^::ffff:/, '').toLowerCase();
+    const hostHeader = String(req.headers.host || '').split(':')[0].toLowerCase();
+    const isIpLocal = ip === '127.0.0.1' || ip === '::1' || ip === 'localhost';
+    const isHostLocal =
+      !hostHeader || hostHeader === 'localhost' || hostHeader === '127.0.0.1' || hostHeader === '[::1]';
+    return isIpLocal && isHostLocal;
+  };
+
+  app.post('/api/system/shutdown', (req, res) => {
+    if (!isLoopbackSystemRequest(req)) {
+      res.json({
+        ok: false,
+        supported: false,
+        platform: process.platform,
+        reason:
+          'Chức năng tự tắt máy chỉ hoạt động khi chạy KineticSub Studio cục bộ trên máy Windows cá nhân (run.bat), không khả dụng khi mở từ xa hoặc trên server cloud.',
+      });
+      return;
+    }
+    if (process.platform !== 'win32') {
+      res.json({
+        ok: false,
+        supported: false,
+        platform: process.platform,
+        reason: `Môi trường hiện tại là ${process.platform}. Lệnh tự tắt máy an toàn chỉ hỗ trợ khi chạy app cục bộ trên Windows (run.bat).`,
+      });
+      return;
+    }
+
+    const rawDelay = Number(req.body?.delaySeconds ?? 15);
+    const delaySeconds = Number.isFinite(rawDelay) ? Math.max(5, Math.min(120, Math.round(rawDelay))) : 15;
+    execFile(
+      'shutdown',
+      ['/s', '/t', String(delaySeconds), '/c', 'KineticSub Studio: Da render xong video.'],
+      { windowsHide: true },
+      (err) => {
+        if (err) {
+          res.json({
+            ok: false,
+            supported: false,
+            platform: process.platform,
+            reason: `Không thể đặt lịch tắt máy Windows: ${err.message}`,
+          });
+          return;
+        }
+        res.json({
+          ok: true,
+          supported: true,
+          platform: 'win32',
+          delaySeconds,
+          message: `Đã hẹn tắt máy Windows sau ${delaySeconds} giây (có thể bấm Hủy tắt máy để hủy bằng shutdown /a).`,
+        });
+      },
+    );
+  });
+
+  app.post('/api/system/cancel-shutdown', (req, res) => {
+    if (!isLoopbackSystemRequest(req) || process.platform !== 'win32') {
+      res.json({ ok: true, supported: false, platform: process.platform });
+      return;
+    }
+    execFile('shutdown', ['/a'], { windowsHide: true }, () => {
+      res.json({
+        ok: true,
+        supported: true,
+        platform: 'win32',
+        message: 'Đã hủy lệnh tắt máy Windows.',
+      });
+    });
   });
 
   // Always return JSON errors for /api/* routes (including PayloadTooLargeError 413)

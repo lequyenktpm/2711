@@ -11,6 +11,7 @@ import {
   FileJson,
   Loader2,
   Mic,
+  Power,
   Shuffle,
   SlidersHorizontal,
   Sparkles,
@@ -35,6 +36,7 @@ import { subscribeCartoonAnimations } from '../engine/cartoonAnimationDb';
 import { subscribeCustomComponents } from '../engine/customComponentStore';
 import { LAYOUT_COMPOSITIONS, pickRandomComposition } from '../engine/illustrationLayouts';
 import {
+  estimateMp4FileSize,
   FPS_OPTIONS,
   Mp4ExportSettings,
   QUALITY_OPTIONS,
@@ -142,6 +144,8 @@ interface AutomationPipelinePanelProps {
   onOpenAudioSubtitleStudio: () => void;
   onCancelExportVideo?: () => void;
   onOpenAnimationStudio?: () => void;
+  autoShutdownAfterRender?: boolean;
+  onChangeAutoShutdownAfterRender?: (next: boolean) => void;
 }
 
 export const AutomationPipelinePanel: React.FC<AutomationPipelinePanelProps> = ({
@@ -176,6 +180,8 @@ export const AutomationPipelinePanel: React.FC<AutomationPipelinePanelProps> = (
   onOpenAudioSubtitleStudio,
   onCancelExportVideo,
   onOpenAnimationStudio,
+  autoShutdownAfterRender = false,
+  onChangeAutoShutdownAfterRender,
 }) => {
   const [initialSaved] = useState(() => loadPersistedSettings().studio);
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -2059,6 +2065,51 @@ export const AutomationPipelinePanel: React.FC<AutomationPipelinePanelProps> = (
                     </select>
                   </div>
                 </div>
+                {(() => {
+                  const estDuration = Math.max(1, audioDurationSec ?? project.duration ?? 0);
+                  const est = estimateMp4FileSize(estDuration, mp4Settings);
+                  const qualOption = QUALITY_OPTIONS.find((q) => q.id === mp4Settings.quality);
+                  return (
+                    <div
+                      data-testid="pipeline-mp4-estimate-box"
+                      className="pt-2 border-t border-slate-200/80 space-y-1.5 text-[11px]"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-slate-600">
+                          <strong className="text-slate-800">{qualOption?.label || 'Chuẩn'}:</strong>{' '}
+                          {est.qualityDescription}
+                        </span>
+                        <span
+                          data-testid="pipeline-mp4-size-badge"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-800 font-semibold font-mono tabular-nums"
+                        >
+                          Ước lượng: {est.mbLabel} ({est.rangeLabel})
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-slate-500">
+                        <span className="tabular-nums">
+                          {audioDurationSec ? 'Theo thời lượng Audio' : 'Ước tính từ Timeline'} ({estDuration.toFixed(1)}s · {(est.encoding.videoBitrate / 1_000_000).toFixed(2)} Mbps)
+                        </span>
+                        {onChangeAutoShutdownAfterRender && (
+                          <label
+                            className="inline-flex items-center gap-1.5 text-slate-700 font-medium cursor-pointer"
+                            title="Chỉ hoạt động khi chạy KineticSub Studio cục bộ trên Windows qua run.bat"
+                          >
+                            <input
+                              type="checkbox"
+                              data-testid="studio-auto-shutdown-toggle"
+                              checked={autoShutdownAfterRender}
+                              onChange={(e) => onChangeAutoShutdownAfterRender(e.target.checked)}
+                              className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            <Power className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Tự tắt máy sau khi render xong (Windows local)</span>
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {parsedPreviewPlan?.durationReport &&

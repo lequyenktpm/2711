@@ -3941,6 +3941,7 @@ const VARIANTS_WITH_NATIVE_LABELS = new Set<string>([
   'p168-slider-compare',
   'p168-story-dialogue',
   'cartoon-host',
+  'podcast-studio',
   'dynamic-scene',
   'custom-vector',
 ]);
@@ -7121,6 +7122,8 @@ function drawIllustrationProp(
     ctx.font = `800 24px ${FONT_DISPLAY}`;
     ctx.fillStyle = '#1D4ED8';
     ctx.fillText(keyHighlight, 0, 143, 640);
+  } else if (props.variant === 'podcast-studio') {
+    drawPodcastStudioScene(ctx, props.data, time, cues);
   } else if (props.variant === 'dynamic-scene' && props.data?.dynamicScene) {
     drawDynamicScene(ctx, props.data.dynamicScene, time);
   } else {
@@ -7254,6 +7257,128 @@ function drawDynamicScene(
   }
 }
 
+function drawPodcastStudioScene(
+  ctx: CanvasRenderingContext2D,
+  data: IllustrationPropData | undefined,
+  time: number,
+  cues: TranscriptCue[],
+) {
+  const cardW = 840;
+  const cardH = 368;
+  fillCardWithShadow(ctx, -cardW / 2, -cardH / 2, cardW, cardH, 32, '#0F172A', 0.24);
+  ctx.strokeStyle = 'rgba(129, 140, 248, 0.38)';
+  ctx.lineWidth = 2.5;
+  drawRoundedRectPath(ctx, -cardW / 2, -cardH / 2, cardW, cardH, 32);
+  ctx.stroke();
+
+  // Top studio header bar
+  ctx.fillStyle = 'rgba(30, 41, 59, 0.9)';
+  drawRoundedRectPath(ctx, -cardW / 2 + 16, -cardH / 2 + 16, cardW - 32, 48, 18);
+  ctx.fill();
+
+  ctx.fillStyle = '#EF4444';
+  ctx.beginPath();
+  ctx.arc(-cardW / 2 + 46, -cardH / 2 + 40, 8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.font = `800 19px ${FONT_DISPLAY}`;
+  ctx.fillStyle = '#F8FAFC';
+  ctx.fillText(data?.formula || 'PODCAST STUDIO', -cardW / 2 + 68, -cardH / 2 + 40, 320);
+
+  ctx.textAlign = 'right';
+  ctx.font = `600 18px ${FONT_SANS}`;
+  ctx.fillStyle = '#94A3B8';
+  ctx.fillText(data?.title || 'Multi-Speaker Dialogue', cardW / 2 - 34, -cardH / 2 + 40, 380);
+
+  // Speaker roster (2 or 3 hosts)
+  const rawNodes = data?.nodes && data.nodes.length >= 2
+    ? data.nodes.slice(0, 3)
+    : [
+        { label: data?.labels?.[0] || 'Host A', sublabel: 'Host 1', color: '#3B82F6' },
+        { label: data?.labels?.[1] || 'Host B', sublabel: 'Host 2', color: '#8B5CF6' },
+      ];
+  const activeSpeaker = (data?.reactionText || rawNodes[0]?.label || '').trim().toLowerCase();
+  const lip = computeSpeechLipSyncState(cues, time);
+
+  const count = rawNodes.length;
+  const colW = count === 2 ? 365 : 248;
+  const colGap = count === 2 ? 28 : 18;
+  const startX = -((count * colW + (count - 1) * colGap) / 2);
+
+  rawNodes.forEach((spk, idx) => {
+    const cx = startX + idx * (colW + colGap) + colW / 2;
+    const spkAccent = spk.color || (idx === 0 ? '#3B82F6' : idx === 1 ? '#8B5CF6' : '#10B981');
+    const isActive = activeSpeaker
+      ? spk.label.trim().toLowerCase() === activeSpeaker ||
+        activeSpeaker.includes(spk.label.trim().toLowerCase())
+      : idx === 0;
+
+    ctx.fillStyle = isActive ? 'rgba(59, 130, 246, 0.18)' : 'rgba(30, 41, 59, 0.72)';
+    drawRoundedRectPath(ctx, cx - colW / 2, -104, colW, 184, 24);
+    ctx.fill();
+    ctx.strokeStyle = isActive ? spkAccent : 'rgba(148, 163, 184, 0.25)';
+    ctx.lineWidth = isActive ? 3.5 : 1.5;
+    ctx.stroke();
+
+    // Animated speaking glow ring + avatar
+    if (isActive) {
+      const pulse = 1 + 0.08 * Math.sin(time * 9);
+      ctx.save();
+      ctx.strokeStyle = hexToRgba(spkAccent, 0.45);
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(cx, -34, 48 * pulse, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    drawCharacterAvatar(ctx, {
+      x: cx,
+      y: -36,
+      shirtColor: spkAccent,
+      hairColor: idx % 2 === 0 ? '#0F172A' : '#78350F',
+      hairStyle: idx % 2 === 1 ? 'bob' : 'side',
+      expression: isActive ? 'happy' : 'curious',
+      scale: 0.62,
+      lipSync: isActive ? lip : undefined,
+    });
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `800 22px ${FONT_DISPLAY}`;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(spk.label, cx, 26, colW - 24);
+
+    if (isActive) {
+      ctx.fillStyle = spkAccent;
+      drawRoundedRectPath(ctx, cx - 64, 42, 128, 28, 14);
+      ctx.fill();
+      ctx.font = `800 15px ${FONT_SANS}`;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText('● ON MIC', cx, 56, 114);
+    } else if (spk.sublabel) {
+      ctx.font = `600 16px ${FONT_SANS}`;
+      ctx.fillStyle = '#94A3B8';
+      ctx.fillText(spk.sublabel, cx, 56, colW - 24);
+    }
+  });
+
+  // Live animated audio spectrum footer bar
+  const barCount = 26;
+  const barW = 14;
+  const barGap = 14;
+  const waveStartX = -((barCount * barW + (barCount - 1) * barGap) / 2);
+  for (let b = 0; b < barCount; b++) {
+    const wave = 0.25 + 0.75 * Math.abs(Math.sin(time * 6.2 + b * 0.48) * Math.cos(time * 2.4 + b * 0.2));
+    const bh = Math.round(12 + wave * 42);
+    ctx.fillStyle = b % 3 === 0 ? '#60A5FA' : b % 3 === 1 ? '#A78BFA' : '#34D399';
+    drawRoundedRectPath(ctx, waveStartX + b * (barW + barGap), 132 - bh / 2, barW, bh, 7);
+    ctx.fill();
+  }
+}
+
 function drawSentenceCard(
   ctx: CanvasRenderingContext2D,
   props: SentenceCardProps,
@@ -7264,37 +7389,127 @@ function drawSentenceCard(
   const innerMaxW = Math.max(180, safeWidth - 88);
   const textLen = props.text.trim().length;
   const widthScale = Math.min(1, safeWidth / 760);
-  const baseHeadFont = textLen > 95 ? 36 : textLen > 58 ? 42 : 48;
-  const maxHeadFont = Math.max(22, Math.round(baseHeadFont * widthScale));
+  const hasSections = Array.isArray(props.sections) && props.sections.length > 0;
+  const baseHeadFont = hasSections
+    ? textLen > 140
+      ? 28
+      : textLen > 85
+        ? 32
+        : 36
+    : textLen > 95
+      ? 36
+      : textLen > 58
+        ? 42
+        : 48;
+  const maxHeadFont = Math.max(20, Math.round(baseHeadFont * widthScale));
 
-  const fittedHead = fitWrappedTextBlock(ctx, props.text, innerMaxW, 380, {
+  const fittedHead = fitWrappedTextBlock(ctx, props.text, innerMaxW, hasSections ? 340 : 380, {
     fontWeight: 700,
     maxFontSize: maxHeadFont,
-    minFontSize: 20,
-    maxLines: 6,
-    lineHeightRatio: 1.28,
+    minFontSize: hasSections ? 16 : 20,
+    maxLines: hasSections ? 10 : 6,
+    lineHeightRatio: 1.26,
   });
-  const headFontSize = fittedHead.fontSize;
-  const lineH = fittedHead.lineHeight;
-  const lines = fittedHead.lines;
+  let headFontSize = fittedHead.fontSize;
+  let lineH = fittedHead.lineHeight;
+  let lines = fittedHead.lines;
 
-  const subFontSize = Math.max(17, Math.round(25 * widthScale));
+  const subFontSize = Math.max(16, Math.round((hasSections ? 22 : 25) * widthScale));
   const subLineH = Math.round(subFontSize * 1.26);
   const fittedSub = props.subtext
-    ? fitWrappedTextBlock(ctx, props.subtext, innerMaxW, 190, {
+    ? fitWrappedTextBlock(ctx, props.subtext, innerMaxW, hasSections ? 220 : 280, {
         fontWeight: 600,
         maxFontSize: subFontSize,
-        minFontSize: 16,
-        maxLines: 5,
-        lineHeightRatio: 1.26,
+        minFontSize: 12,
+        maxLines: hasSections ? 6 : 9,
+        lineHeightRatio: 1.24,
       })
     : null;
-  const subLines = fittedSub ? fittedSub.lines : [];
-  const actualSubFont = fittedSub ? fittedSub.fontSize : subFontSize;
-  const actualSubLineH = fittedSub ? fittedSub.lineHeight : subLineH;
-  const subH = subLines.length > 0 ? subLines.length * actualSubLineH + 18 : 0;
+  let subLines = fittedSub ? fittedSub.lines : [];
+  let actualSubFont = fittedSub ? fittedSub.fontSize : subFontSize;
+  let actualSubLineH = fittedSub ? fittedSub.lineHeight : subLineH;
+
+  // Responsive multi-section layout (Translation + Vocab + Grammar + Explanation — ZERO '...' truncation)
+  interface MeasuredSection {
+    label?: string;
+    tone: 'neutral' | 'indigo' | 'amber' | 'emerald';
+    fontSize: number;
+    lineHeight: number;
+    lines: string[];
+    boxH: number;
+  }
+  let measuredSections: MeasuredSection[] = [];
+  if (hasSections && props.sections) {
+    const rawSections = props.sections.filter((s) => Boolean(s.text && s.text.trim()));
+    const sectionInnerW = Math.max(160, innerMaxW - 28);
+    // Iteratively find section + head font size so ALL sections fit comfortably inside maxStudyCardH
+    const maxStudyCardH = 1040;
+    let tryScale = 1;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      if (attempt > 0) {
+        tryScale = Math.max(0.62, tryScale - 0.08);
+        const reHead = fitWrappedTextBlock(ctx, props.text, innerMaxW, Math.round(320 * tryScale), {
+          fontWeight: 700,
+          maxFontSize: Math.max(16, Math.round(maxHeadFont * tryScale)),
+          minFontSize: 15,
+          maxLines: 12,
+          lineHeightRatio: 1.22,
+        });
+        headFontSize = reHead.fontSize;
+        lineH = reHead.lineHeight;
+        lines = reHead.lines;
+        if (props.subtext) {
+          const reSub = fitWrappedTextBlock(ctx, props.subtext, innerMaxW, 140, {
+            fontWeight: 600,
+            maxFontSize: Math.max(14, Math.round(subFontSize * tryScale)),
+            minFontSize: 13,
+            maxLines: 5,
+            lineHeightRatio: 1.2,
+          });
+          subLines = reSub.lines;
+          actualSubFont = reSub.fontSize;
+          actualSubLineH = reSub.lineHeight;
+        }
+      }
+
+      const secMaxFont = Math.max(14, Math.round(23 * widthScale * tryScale));
+      measuredSections = rawSections.map((sec) => {
+        const displayStr = sec.label ? `${sec.label}: ${sec.text.trim()}` : sec.text.trim();
+        const fitted = fitWrappedTextBlock(ctx, displayStr, sectionInnerW, 240, {
+          fontWeight: 600,
+          fontFamily: FONT_SANS,
+          maxFontSize: secMaxFont,
+          minFontSize: 13,
+          maxLines: 10,
+          lineHeightRatio: 1.24,
+        });
+        const boxH = fitted.lines.length * fitted.lineHeight + 18;
+        return {
+          label: sec.label,
+          tone: sec.tone || 'neutral',
+          fontSize: fitted.fontSize,
+          lineHeight: fitted.lineHeight,
+          lines: fitted.lines,
+          boxH,
+        };
+      });
+
+      const speakerHCalc = props.speakerLabel ? 42 : 0;
+      const subHCalc = subLines.length > 0 ? subLines.length * actualSubLineH + 14 : 0;
+      const secHCalc = measuredSections.reduce((acc, s) => acc + s.boxH + 10, 0);
+      const estTotal = lines.length * lineH + subHCalc + speakerHCalc + secHCalc + 74;
+      if (estTotal <= maxStudyCardH) break;
+    }
+  }
+
+  const speakerH = props.speakerLabel ? 42 : 0;
+  const subH = subLines.length > 0 ? subLines.length * actualSubLineH + 16 : 0;
+  const sectionsH = measuredSections.reduce((acc, s) => acc + s.boxH + 10, 0);
   const stampPad = props.stampText ? 18 : 0;
-  const cardH = Math.max(156, lines.length * lineH + subH + 74 + stampPad);
+  const cardH = Math.max(
+    156,
+    lines.length * lineH + subH + speakerH + sectionsH + 74 + stampPad,
+  );
   const x = -safeWidth / 2;
   const y = -cardH / 2;
 
@@ -7321,11 +7536,33 @@ function drawSentenceCard(
   drawRoundedRectPath(ctx, x + 10, y + 8, safeWidth - 20, cardH - 16, 30);
   ctx.clip();
 
+  // Render optional speaker label badge at top of card
+  const blockH =
+    speakerH +
+    lines.length * lineH +
+    subH +
+    sectionsH;
+  let cursorY = y + Math.max(30, (cardH - stampPad * 0.45 - blockH) / 2);
+
+  if (props.speakerLabel) {
+    ctx.save();
+    ctx.font = `800 20px ${FONT_DISPLAY}`;
+    const spW = Math.min(innerMaxW, Math.max(140, ctx.measureText(props.speakerLabel).width + 32));
+    ctx.fillStyle = isDarkBg ? 'rgba(99, 102, 241, 0.28)' : '#EEF2FF';
+    drawRoundedRectPath(ctx, -spW / 2, cursorY, spW, 32, 16);
+    ctx.fill();
+    ctx.fillStyle = isDarkBg ? '#A5B4FC' : '#4338CA';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(props.speakerLabel, 0, cursorY + 16, spW - 20);
+    ctx.restore();
+    cursorY += speakerH;
+  }
+
   // Render lines with optional emphasis word + kinetic highlight pill sweep
   ctx.font = `700 ${headFontSize}px ${FONT_DISPLAY}`;
   ctx.textBaseline = 'middle';
-  const totalContentH = (lines.length - 1) * lineH + subH;
-  const startTextY = y + (cardH - stampPad * 0.45) / 2 - totalContentH / 2;
+  const startTextY = cursorY + lineH / 2;
   const emphasisLower = props.emphasisWord?.trim().toLowerCase();
   const emphColor = props.emphasisColor || (isDarkBg ? '#FACC15' : '#2563EB');
   const sweepProgress = easeOutQuint(clamp01((elElapsed - 0.1) / 0.38));
@@ -7384,14 +7621,77 @@ function drawSentenceCard(
     }
   });
 
+  cursorY += lines.length * lineH;
+
   if (subLines.length > 0) {
+    cursorY += 8;
     ctx.font = `600 ${actualSubFont}px ${FONT_DISPLAY}`;
     ctx.textAlign = 'center';
     ctx.fillStyle = isDarkBg ? '#94A3B8' : '#475569';
-    const subStartY = startTextY + (lines.length - 1) * lineH + Math.round(lineH * 0.88);
+    const subStartY = cursorY + actualSubLineH / 2;
     subLines.forEach((sLn, sIdx) => {
       ctx.fillText(sLn, 0, subStartY + sIdx * actualSubLineH, innerMaxW);
     });
+    cursorY += subLines.length * actualSubLineH + 8;
+  }
+
+  // Structured All-in-One Study Sections
+  if (measuredSections.length > 0) {
+    cursorY += 6;
+    const toneStyles: Record<
+      'neutral' | 'indigo' | 'amber' | 'emerald',
+      { bg: string; darkBg: string; text: string; darkText: string; border: string }
+    > = {
+      neutral: {
+        bg: '#F8FAFC',
+        darkBg: 'rgba(30, 41, 59, 0.85)',
+        text: '#334155',
+        darkText: '#E2E8F0',
+        border: '#E2E8F0',
+      },
+      indigo: {
+        bg: '#EEF2FF',
+        darkBg: 'rgba(49, 46, 129, 0.45)',
+        text: '#3730A3',
+        darkText: '#C7D2FE',
+        border: '#C7D2FE',
+      },
+      amber: {
+        bg: '#FFFBEB',
+        darkBg: 'rgba(120, 53, 15, 0.42)',
+        text: '#9A3412',
+        darkText: '#FDE68A',
+        border: '#FDE68A',
+      },
+      emerald: {
+        bg: '#ECFDF5',
+        darkBg: 'rgba(6, 78, 59, 0.42)',
+        text: '#065F46',
+        darkText: '#A7F3D0',
+        border: '#A7F3D0',
+      },
+    };
+
+    for (const sec of measuredSections) {
+      const style = toneStyles[sec.tone];
+      const bx = -innerMaxW / 2;
+      ctx.fillStyle = isDarkBg ? style.darkBg : style.bg;
+      drawRoundedRectPath(ctx, bx, cursorY, innerMaxW, sec.boxH, 16);
+      ctx.fill();
+      ctx.strokeStyle = isDarkBg ? 'rgba(148, 163, 184, 0.22)' : style.border;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.font = `600 ${sec.fontSize}px ${FONT_SANS}`;
+      ctx.fillStyle = isDarkBg ? style.darkText : style.text;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const firstLineY = cursorY + 9 + sec.lineHeight / 2;
+      sec.lines.forEach((sLn, sIdx) => {
+        ctx.fillText(sLn, 0, firstLineY + sIdx * sec.lineHeight, innerMaxW - 24);
+      });
+      cursorY += sec.boxH + 10;
+    }
   }
   ctx.restore();
 

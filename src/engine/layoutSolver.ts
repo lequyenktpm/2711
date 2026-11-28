@@ -147,6 +147,7 @@ export function estimateElementHalfExtents(el: SceneElement): {
         variant === 'p168-situation-cards' ||
         variant === 'p168-slider-compare' ||
         variant === 'p168-story-dialogue' ||
+        variant === 'podcast-studio' ||
         variant === 'cartoon-host' ||
         variant === 'dynamic-scene' ||
         variant === 'custom-vector';
@@ -169,6 +170,8 @@ export function estimateElementHalfExtents(el: SceneElement): {
         baseHalfH = 122;
       } else if (variant === 'avatar-speech') {
         baseHalfH = 116;
+      } else if (variant === 'podcast-studio') {
+        baseHalfH = 192;
       } else if (variant === 'cartoon-host') {
         baseHalfH = 335;
       } else if (
@@ -244,28 +247,51 @@ export function estimateElementHalfExtents(el: SceneElement): {
     }
     case 'sentence-card': {
       const innerW = Math.max(180, clampedWidth - 88);
+      const hasSections = Array.isArray(el.props.sections) && el.props.sections.length > 0;
       const textLen = (el.props.text || '').trim().length;
       const widthScale = Math.min(1, clampedWidth / 760);
-      const baseFont = textLen > 95 ? 36 : textLen > 52 ? 40 : 46;
-      const headFontSize = Math.max(22, Math.round(baseFont * widthScale));
+      const baseFont = hasSections
+        ? textLen > 120
+          ? 30
+          : textLen > 65
+            ? 34
+            : 38
+        : textLen > 95
+          ? 36
+          : textLen > 52
+            ? 40
+            : 46;
+      const headFontSize = Math.max(20, Math.round(baseFont * widthScale));
       const lineH = Math.round(headFontSize * 1.28);
       const rawLines = (el.props.text || '')
         .split(/\r?\n/)
         .reduce((acc, part) => acc + estimateWrappedLineCount(part, innerW, headFontSize), 0);
-      const lines = Math.min(6, Math.max(1, rawLines));
-      const subFont = Math.max(19, Math.round(30 * widthScale));
+      const lines = Math.min(hasSections ? 9 : 6, Math.max(1, rawLines));
+      const subFont = Math.max(18, Math.round((hasSections ? 22 : 30) * widthScale));
       const subLineH = Math.round(subFont * 1.26);
       const subLines = el.props.subtext
         ? Math.min(
-            5,
+            hasSections ? 4 : 5,
             el.props.subtext
               .split(/\r?\n/)
               .reduce((acc, part) => acc + estimateWrappedLineCount(part, innerW, subFont), 0),
           )
         : 0;
-      const subH = subLines > 0 ? subLines * subLineH + 18 : 0;
+      const subH = subLines > 0 ? subLines * subLineH + 16 : 0;
+      const speakerExtra = el.props.speakerLabel ? 42 : 0;
+      let sectionsH = 0;
+      if (hasSections && el.props.sections) {
+        const secFont = Math.max(16, Math.round(23 * widthScale));
+        const secLineH = Math.round(secFont * 1.26);
+        for (const sec of el.props.sections) {
+          const combined = sec.label ? `${sec.label}: ${sec.text}` : sec.text;
+          const sLines = Math.max(1, estimateWrappedLineCount(combined, innerW - 24, secFont));
+          sectionsH += sLines * secLineH + 26;
+        }
+      }
       const stampPad = el.props.stampText ? 18 : 0;
-      const cardH = Math.max(156, lines * lineH + subH + 74 + stampPad);
+      const rawCardH = Math.max(156, lines * lineH + subH + speakerExtra + sectionsH + 74 + stampPad);
+      const cardH = hasSections ? Math.min(980, rawCardH) : rawCardH;
       const badgeExtra = el.props.badge && el.props.badge !== 'none' ? 18 : 0;
       const stampExtra = el.props.stampText ? 22 : 0;
       baseHalfH = Math.ceil((cardH + badgeExtra + stampExtra) / 2);

@@ -1,5 +1,5 @@
 {
-  "activeTab": "studio",
+  "activeTab": "reels",
   "studio": {
     "aspectRatio": "9:16",
     "resolution": "540p",
@@ -39,16 +39,16 @@
     "inlineRate": 1,
     "inlineWhisperSync": true
   },
-  "updatedAt": 1795800824486,
+  "updatedAt": 1795851420468,
   "reels": {
-    "reelCreationMode": "translation",
+    "reelCreationMode": "creator",
     "creatorTopicHint": "",
     "creatorFormat": "auto",
     "creatorLearningLang": "ja",
     "creatorLevel": "N5",
     "creatorDurationMinutes": 30,
     "creatorItemCount": 60,
-    "lessonTitle": "Hotel Check-in & Polite Requests",
+    "lessonTitle": "Kỹ sư đề xuất nhật ký kiểm tra (監査ログ)",
     "rawText": "## Hotel Check-in & Polite Requests\nWhen arriving at a hotel, polite requests sound much warmer than direct commands.\n1. I'd like to check in under the name Alex Morgan.\n2. Could we have a quiet room on a higher floor?\n3. What time is breakfast served tomorrow morning?\n\nTrue / False Quiz\nQ1. Direct commands like \"Give me the room key\" always sound friendlier than \"Could I have\".\n(A) True\n(B) False\nAnswer: B\nExplanation: Modal verbs like \"Could I\" soften the request and sound polite in hospitality English.",
     "includeQuizInPrompt": "auto",
     "mode": "vocab",
@@ -134,7 +134,7 @@
       },
       "creator": {
         "includeQuizInPrompt": "auto",
-        "mode": "vocab",
+        "mode": "reading",
         "targetLang": "learning",
         "ttsProvider": "auto",
         "ttsVoice": "ja-JP-NanamiNeural",
@@ -142,9 +142,9 @@
         "splitAudioByRole": false,
         "explanationTtsVoice": "en-US-JennyNeural",
         "ttsRate": 1,
-        "reelsAspectRatio": "16:9",
+        "reelsAspectRatio": "9:16",
         "selectedTheme": "pastel-sunrise",
-        "selectedComposition": "cartoon-host",
+        "selectedComposition": "full-study-cards",
         "subtitlePosition": "bottom",
         "subtitleSize": "md",
         "subtitleBoxStyle": "card",

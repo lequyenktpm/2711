@@ -195,6 +195,33 @@ export const LAYOUT_COMPOSITIONS: LayoutCompositionMeta[] = [
     signatureVariant: 'flow-diagram',
   },
   {
+    id: 'podcast-duo',
+    name: '🎙️ Podcast Studio (2–3 người + Sóng âm)',
+    shortLabel: 'Podcast Studio',
+    description:
+      'Phòng thu Podcast hiển thị 2–3 người nói, đèn báo mic người đang nói & sóng âm nhảy mượt cho Podcast / Shadowing',
+    recommendedTheme: 'studio-slate',
+    signatureVariant: 'podcast-studio',
+  },
+  {
+    id: 'dialogue-stage',
+    name: '💬 Hội thoại nhiều người (Nhân vật + Bong bóng thoại)',
+    shortLabel: 'Hội thoại đa vai',
+    description:
+      'Sân khấu hội thoại luân phiên khung truyện & bong bóng chat đa vai đồng bộ đổi màu từng người nói',
+    recommendedTheme: 'pastel-sunrise',
+    signatureVariant: 'p168-story-dialogue',
+  },
+  {
+    id: 'full-study-cards',
+    name: '📋 Thẻ Học Đầy Đủ (Toàn bộ Nghĩa + Từ vựng + Ngữ pháp)',
+    shortLabel: 'Thẻ học đầy đủ',
+    description:
+      'Xuất video hiển thị trọn vẹn từng thẻ như mục Xem Thẻ (Câu + Nghĩa + Từ vựng khó + Ngữ pháp), tự co giãn không cắt chữ',
+    recommendedTheme: 'soft-lavender',
+    signatureVariant: 'bs-card-header',
+  },
+  {
     id: 'custom',
     name: '🎨 Tự sáng tạo từ Kho Component',
     shortLabel: 'Tự sáng tạo',
@@ -961,6 +988,71 @@ function buildIllustrationDataForComposition(
       };
     }
 
+    case 'podcast-duo': {
+      const speakers = stripItems.slice(0, 3);
+      return {
+        variant: 'podcast-studio',
+        data: {
+          formula: 'PODCAST STUDIO',
+          title: seg.topicLabel || 'Multi-Speaker Dialogue',
+          reactionText: speakers[segIdx % Math.max(1, speakers.length)]?.label || 'Host A',
+          nodes:
+            speakers.length >= 2
+              ? speakers.map((sp, i) => ({
+                  label: sp.label,
+                  sublabel: sp.sublabel || `Host ${i + 1}`,
+                  color: sp.accentColor || (i === 0 ? '#3B82F6' : i === 1 ? '#8B5CF6' : '#10B981'),
+                }))
+              : [
+                  { label: 'Host A', sublabel: 'Mở lời', color: '#3B82F6' },
+                  { label: 'Host B', sublabel: 'Phản hồi', color: '#8B5CF6' },
+                ],
+          sceneIcon: 'mic',
+        },
+      };
+    }
+
+    case 'dialogue-stage': {
+      const speakers = stripItems.slice(0, 3);
+      const activeSpk = speakers[segIdx % Math.max(1, speakers.length)]?.label || 'Speaker A';
+      if (segIdx % 2 === 0) {
+        return {
+          variant: 'p168-story-dialogue',
+          data: {
+            labels: speakers.length >= 2 ? speakers.map((s) => s.label) : ['Mở đầu', 'Đáp lại', 'Ghi nhớ'],
+            title: seg.topicLabel || 'Hội thoại thực tế',
+            reactionText: activeSpk,
+            speechText: cleanShortPhrase(seg.cardText, 12, 84),
+            highlightWord: seg.emphasisWord || cleanShortPhrase(seg.subtext || seg.topicLabel, 6, 40),
+            sceneIcon: 'chat',
+          },
+        };
+      }
+      return {
+        variant: 'css-chat-thread',
+        data: {
+          title: speakers.map((s) => s.label).slice(0, 2).join(' ↔ ') || 'Hội thoại',
+          labels: [
+            cleanShortPhrase(segments[Math.max(0, segIdx - 1)]?.cardText || seg.topicLabel, 9, 44),
+            cleanShortPhrase(seg.cardText, 9, 44),
+          ],
+          sceneIcon: 'chat',
+        },
+      };
+    }
+
+    case 'full-study-cards': {
+      return {
+        variant: 'bs-card-header',
+        data: {
+          formula: seg.topicLabel,
+          title: cleanShortPhrase(seg.cardText, 8, 50),
+          subtitle: seg.subtext || 'Thẻ học đầy đủ',
+          sceneIcon: contextualIcon,
+        },
+      };
+    }
+
     case 'word-reveal':
     case '3d-shapes': {
       const resolved = resolveContextualVisualForCue(seg.cueText, seg.cardText, 'degree-scale');
@@ -1272,25 +1364,52 @@ export function recomposeProjectWithStyle(
     };
   }
 
-  if (compositionId === 'word-reveal') {
-    // Unified @xun52000 Word Reveal kinetic typography choreography
+  if (compositionId === 'word-reveal' || compositionId === 'full-study-cards') {
+    const isFullStudy = compositionId === 'full-study-cards';
     segments.forEach((seg, idx) => {
       const safeStart = Math.max(0, seg.startTime);
       const safeEnd = Math.max(safeStart + 0.45, seg.endTime);
       const isDark = isDarkCanvasTheme(nextTheme);
+      if (isFullStudy) {
+        newVisuals.push({
+          id: `comp-full-pill-${idx + 1}`,
+          type: 'topic-pill',
+          label: `Nhãn: ${seg.topicLabel}`,
+          startTime: Number(safeStart.toFixed(2)),
+          endTime: Number(safeEnd.toFixed(2)),
+          enterAnimation: 'pop-up',
+          exitAnimation: 'fade-out',
+          layout: { x: 540, y: 205, width: 520, scale: 1, zIndex: 14 },
+          props: {
+            kind: 'topic-pill',
+            text: seg.topicLabel,
+            bgColor: isDark ? '#334155' : '#E0E7FF',
+            textColor: isDark ? '#FACC15' : '#3730A3',
+          },
+        });
+      }
       newVisuals.push({
-        id: `comp-word-reveal-${idx + 1}`,
+        id: `${isFullStudy ? 'comp-full-card' : 'comp-word-reveal'}-${idx + 1}`,
         type: 'sentence-card',
-        label: `Word Reveal #${idx + 1}: ${seg.cardText.slice(0, 24)}`,
+        label: `${isFullStudy ? 'Full Study' : 'Word Reveal'} #${idx + 1}: ${seg.cardText.slice(0, 24)}`,
         startTime: Number(safeStart.toFixed(2)),
         endTime: Number(safeEnd.toFixed(2)),
         enterAnimation: 'fade-scale',
         exitAnimation: idx === segments.length - 1 ? 'fade-out' : 'shrink',
-        layout: { x: 540, y: 780, width: 880, scale: 1, zIndex: 22 },
+        layout: {
+          x: 540,
+          y: isFullStudy ? 875 : 780,
+          width: isFullStudy ? 920 : 880,
+          scale: 1,
+          zIndex: 22,
+        },
         props: {
           kind: 'sentence-card',
           text: seg.cardText,
           subtext: seg.subtext || seg.topicLabel,
+          sections: isFullStudy && seg.subtext
+            ? [{ label: 'Chi tiết', text: seg.subtext, tone: 'indigo' }]
+            : undefined,
           badge: seg.badge,
           stampText: seg.stampText,
           stampColor: seg.stampColor,
@@ -1584,6 +1703,32 @@ export function recomposeProjectWithStyle(
         cardBg: '#FFFFFF',
         cardText: '#0F172A',
         emphasisColor: '#DB2777',
+        showToneMeter: false,
+      },
+      'podcast-duo': {
+        showStrip: false,
+        stripY: 175,
+        pillY: 220,
+        illY: 575,
+        cardY: 1035,
+        pillBg: '#312E81',
+        pillColor: '#E0E7FF',
+        cardBg: '#1E293B',
+        cardText: '#F8FAFC',
+        emphasisColor: '#FACC15',
+        showToneMeter: false,
+      },
+      'dialogue-stage': {
+        showStrip: false,
+        stripY: 175,
+        pillY: 220,
+        illY: 590,
+        cardY: 1035,
+        pillBg: '#DBEAFE',
+        pillColor: '#1E40AF',
+        cardBg: '#FFFFFF',
+        cardText: '#0F172A',
+        emphasisColor: '#2563EB',
         showToneMeter: false,
       },
     };

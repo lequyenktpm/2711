@@ -210,6 +210,14 @@ export const VECTOR_COMPONENT_CATALOG: VectorComponentMeta[] = [
     keywords: /\b(cartoon|host|mascot|gimmys|lip.?sync|avatar|presenter)\b/i,
     defaultIcon: 'mic',
   },
+  {
+    variant: 'podcast-studio',
+    category: 'dialogue',
+    label: 'Podcast Studio (2–3 người + Sóng âm)',
+    description: 'Khung phòng thu Podcast với 2–3 nhân vật, huy hiệu người đang nói và sóng âm nhảy theo thời gian',
+    keywords: /\b(podcast|interview|host a|host b|guest|two speakers|multi.?speaker|shadowing|discussion)\b/i,
+    defaultIcon: 'mic',
+  },
 
   // ── Grammar & Structure @englishpracticing168 infographics ─────────────────
   {

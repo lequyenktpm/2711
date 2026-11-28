@@ -23,6 +23,7 @@ import { StageOverlayZone } from './components/InlinePreviewElementEditor';
 import { StagePreview } from './components/StagePreview';
 import { TimelineAndInspector } from './components/TimelineAndInspector';
 import { TtsFallbackToast } from './components/TtsFallbackToast';
+import { ShutdownCountdownBanner } from './utils/systemShutdownHelper';
 import {
   DEFAULT_BGM_PRESET,
   DEFAULT_BGM_VOLUME,
@@ -183,6 +184,11 @@ export default function App() {
   const [exportProgress, setExportProgress] = useState<number>(0);
   const [exportStageLabel, setExportStageLabel] = useState<string>('');
   const [exportError, setExportError] = useState<string | null>(null);
+  const [autoShutdownAfterRender, setAutoShutdownAfterRender] = useState<boolean>(false);
+  const [shutdownCountdownInfo, setShutdownCountdownInfo] = useState<{
+    active: boolean;
+    title?: string;
+  }>({ active: false });
   const [lastExportSummary, setLastExportSummary] = useState<{
     fileName: string;
     savedPath?: string;
@@ -1208,6 +1214,7 @@ export default function App() {
       }
 
       const targetProject = projectOverride ?? project;
+      const autoShutdownAtStart = autoShutdownAfterRender;
       const controller = new AbortController();
       exportAbortControllerRef.current = controller;
 
@@ -1335,6 +1342,9 @@ export default function App() {
             outputCount: 1,
           });
         }
+        if (autoShutdownAtStart) {
+          setShutdownCountdownInfo({ active: true, title: result.fileName });
+        }
         return result;
       } catch (err) {
         if (err instanceof ExportAbortedError || controller.signal.aborted) {
@@ -1372,6 +1382,7 @@ export default function App() {
       studioCustomBgmFile,
       studioDescriptionStyle,
       studioDescription,
+      autoShutdownAfterRender,
     ],
   );
 
@@ -1811,6 +1822,8 @@ export default function App() {
                 onOpenAdvancedEditor={() => setIsAdvancedOpen(true)}
                 onOpenAudioSubtitleStudio={() => setIsAudioSubStudioOpen(true)}
                 onCancelExportVideo={handleCancelExportVideo}
+                autoShutdownAfterRender={autoShutdownAfterRender}
+                onChangeAutoShutdownAfterRender={setAutoShutdownAfterRender}
                 onOpenAnimationStudio={() => {
                   const hostEl = project.elements.find(
                     (el) => el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host',
@@ -2068,6 +2081,12 @@ export default function App() {
       />
 
       <TtsFallbackToast />
+
+      <ShutdownCountdownBanner
+        active={shutdownCountdownInfo.active}
+        completedTitle={shutdownCountdownInfo.title}
+        onCancel={() => setShutdownCountdownInfo({ active: false })}
+      />
     </div>
   );
 }

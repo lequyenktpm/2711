@@ -665,6 +665,7 @@ test('all @englishpracticing168 compositions and presets produce 0 overlap viola
           recomposed.elements.length > 0 &&
           recomposed.elements.every((e) => e.type === 'karaoke-card')) ||
         (comp.id === 'word-reveal' && recomposed.elements.some((e) => e.type === 'sentence-card')) ||
+        (comp.id === 'full-study-cards' && recomposed.elements.some((e) => e.type === 'sentence-card')) ||
         (comp.id === '3d-shapes' && recomposed.elements.some((e) => e.type === 'shape-3d')),
       `Expected signature variant for composition ${comp.id}`,
     );

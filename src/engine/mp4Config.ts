@@ -54,6 +54,7 @@ export const RESOLUTION_OPTIONS: Array<{
 export const QUALITY_OPTIONS: Array<{
   id: ExportQualityId;
   label: string;
+  shortDescription: string;
   baseBitrate1080p30: number;
   audioBitrate: number;
   crf: number;
@@ -61,6 +62,7 @@ export const QUALITY_OPTIONS: Array<{
   {
     id: 'standard',
     label: 'Thấp / Tiêu chuẩn (Nhẹ nhất)',
+    shortDescription: 'CRF 27 · 2.6 Mbps chuẩn 1080p30 · Audio 128 kbps — file nhẹ, render nhanh nhất',
     baseBitrate1080p30: 2_600_000,
     audioBitrate: 128_000,
     crf: 27,
@@ -68,6 +70,7 @@ export const QUALITY_OPTIONS: Array<{
   {
     id: 'high',
     label: 'Cao (TikTok chuẩn)',
+    shortDescription: 'CRF 22 · 6.0 Mbps chuẩn 1080p30 · Audio 192 kbps — sắc nét, cân bằng upload',
     baseBitrate1080p30: 6_000_000,
     audioBitrate: 192_000,
     crf: 22,
@@ -75,6 +78,7 @@ export const QUALITY_OPTIONS: Array<{
   {
     id: 'ultra',
     label: 'Siêu nét (Tối đa)',
+    shortDescription: 'CRF 18 · 11.0 Mbps chuẩn 1080p30 · Audio 256 kbps — độ chi tiết tối đa',
     baseBitrate1080p30: 11_000_000,
     audioBitrate: 256_000,
     crf: 18,
@@ -133,5 +137,53 @@ export function resolveMp4EncodingParams(settings: Mp4ExportSettings): ResolvedM
     crf: qual.crf,
     resolutionLabel: `${res.id} (${width}×${height})`,
     qualityLabel: qual.label,
+  };
+}
+
+export interface EstimatedMp4FileSize {
+  durationSec: number;
+  bytes: number;
+  minBytes: number;
+  maxBytes: number;
+  mbLabel: string;
+  rangeLabel: string;
+  encoding: ResolvedMp4Encoding;
+  qualityDescription: string;
+}
+
+export function formatMegabytesLabel(bytes: number): string {
+  const mb = Math.max(0, bytes) / (1024 * 1024);
+  if (mb < 1) return `${(Math.max(0, bytes) / 1024).toFixed(0)} KB`;
+  if (mb < 10) return `${mb.toFixed(1)} MB`;
+  return `${Math.round(mb * 10) / 10} MB`;
+}
+
+export function estimateMp4FileSize(
+  durationSec: number,
+  settings: Mp4ExportSettings,
+): EstimatedMp4FileSize {
+  const safeDuration = Number.isFinite(durationSec) && durationSec > 0 ? durationSec : 0;
+  const encoding = resolveMp4EncodingParams(settings);
+  const qual =
+    QUALITY_OPTIONS.find((q) => q.id === settings.quality) ?? QUALITY_OPTIONS[0];
+  const totalBps = encoding.videoBitrate + encoding.audioBitrate;
+  const bytes =
+    safeDuration > 0 ? Math.round((totalBps / 8) * safeDuration * 1.02) : 0;
+  // Educational slides / static frames with CRF compression typically land ~0.72x–1.12x nominal bitrate
+  const minBytes = Math.round(bytes * 0.72);
+  const maxBytes = Math.round(bytes * 1.12);
+
+  return {
+    durationSec: safeDuration,
+    bytes,
+    minBytes,
+    maxBytes,
+    mbLabel: safeDuration > 0 ? `~${formatMegabytesLabel(bytes)}` : '—',
+    rangeLabel:
+      safeDuration > 0
+        ? `${formatMegabytesLabel(minBytes)} – ${formatMegabytesLabel(maxBytes)}`
+        : 'Chờ audio để ước lượng',
+    encoding,
+    qualityDescription: qual.shortDescription,
   };
 }
