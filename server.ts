@@ -922,12 +922,11 @@ async function synthesizeGoogleTranslateTtsChunked(
   const partFiles: string[] = [];
   for (let i = 0; i < pieces.length; i++) {
     const q = encodeURIComponent(pieces[i]);
-    const speedParam = rate < 0.85 ? '&ttsspeed=0.7' : '';
     const clients = ['tw-ob', 'gtx'];
     let chunkBuf: Buffer | null = null;
     let lastStatus = 0;
     for (const client of clients) {
-      const url = `https://translate.googleapis.com/translate_tts?ie=UTF-8&q=${q}&tl=${encodeURIComponent(normalizedLang)}&client=${client}${speedParam}`;
+      const url = `https://translate.googleapis.com/translate_tts?ie=UTF-8&q=${q}&tl=${encodeURIComponent(normalizedLang)}&client=${client}`;
       const res = await fetch(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36',
@@ -2070,10 +2069,13 @@ async function startServer(): Promise<void> {
           const spanRawWavPath = path.join(tmpDir, `seg_raw_${i}_${sIdx}.wav`);
           const spanNormPath = path.join(tmpDir, `seg_norm_${i}_${sIdx}.wav`);
           await fs.promises.writeFile(spanRawPath, synth.buffer);
+          const safeAtempo = Number(Math.max(0.5, Math.min(2.0, segRate)).toFixed(3));
+          const applyAtempo = synth.provider !== 'edge' && Math.abs(safeAtempo - 1) >= 0.02;
           await runProcess('ffmpeg', [
             '-y',
             '-i',
             spanRawPath,
+            ...(applyAtempo ? ['-af', `atempo=${safeAtempo.toFixed(3)}`] : []),
             '-ar',
             '24000',
             '-ac',

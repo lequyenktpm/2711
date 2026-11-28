@@ -1415,14 +1415,19 @@ export function recomposeProjectWithStyle(
               ? '#B45309'
               : seg.topicColor || '#3730A3';
 
+      const pillStart = idx === 0 ? Math.max(0, safeStart) : Number(safeStart.toFixed(3));
+      const nextSegStartCartoon =
+        idx < segments.length - 1 ? Math.max(safeEnd, segments[idx + 1].startTime) : project.duration;
+      const pillEnd = Number(Math.max(safeEnd, nextSegStartCartoon).toFixed(3));
+
       newVisuals.push({
         id: `comp-cartoon-pill-${idx + 1}`,
         type: 'topic-pill',
         label: `Nhãn ngữ cảnh #${idx + 1}: ${pillText}`,
-        startTime: Number(safeStart.toFixed(2)),
-        endTime: Number(safeEnd.toFixed(2)),
-        enterAnimation: 'pop-up',
-        exitAnimation: 'fade-out',
+        startTime: pillStart,
+        endTime: pillEnd,
+        enterAnimation: idx === 0 ? 'pop-up' : 'none',
+        exitAnimation: idx === segments.length - 1 ? 'fade-out' : 'none',
         layout: {
           x: 540,
           y: subPos === 'top' ? 430 : 205,
@@ -1442,10 +1447,10 @@ export function recomposeProjectWithStyle(
         id: `comp-cartoon-card-${idx + 1}`,
         type: 'sentence-card',
         label: `Thẻ tương tác #${idx + 1}: ${seg.cardText.slice(0, 24)}`,
-        startTime: Number(safeStart.toFixed(2)),
-        endTime: Number(safeEnd.toFixed(2)),
-        enterAnimation: 'pop-up',
-        exitAnimation: idx === segments.length - 1 ? 'fade-out' : 'shrink',
+        startTime: pillStart,
+        endTime: pillEnd,
+        enterAnimation: idx === 0 ? 'pop-up' : 'none',
+        exitAnimation: idx === segments.length - 1 ? 'fade-out' : 'none',
         layout: {
           x: 540,
           y: subPos === 'top' ? 600 : 395,
@@ -1526,9 +1531,12 @@ export function recomposeProjectWithStyle(
             type: 'karaoke-card',
             label: `Sub #${idx + 1}: ${cue.text.slice(0, 26)}`,
             startTime: cue.start,
-            endTime: cue.end,
-            enterAnimation: 'pop-up',
-            exitAnimation: 'fade-out',
+            endTime:
+              idx < project.cues.length - 1
+                ? Math.max(cue.end, project.cues[idx + 1].start)
+                : cue.end,
+            enterAnimation: idx === 0 ? 'pop-up' : 'none',
+            exitAnimation: idx === project.cues.length - 1 ? 'fade-out' : 'none',
             layout: { x: 540, y: targetKaraokeY, width: 900, scale: 1, zIndex: 35 },
             props: {
               kind: 'karaoke-card',
@@ -1585,17 +1593,19 @@ export function recomposeProjectWithStyle(
     );
     segments.forEach((seg, idx) => {
       const safeStart = Math.max(0, seg.startTime);
-      const safeEnd = Math.max(safeStart + 0.45, seg.endTime);
+      const nextSegStartFull =
+        idx < segments.length - 1 ? Math.max(seg.startTime + 0.45, segments[idx + 1].startTime) : project.duration;
+      const safeEnd = Math.max(safeStart + 0.45, seg.endTime, nextSegStartFull);
       const isDark = isDarkCanvasTheme(nextTheme);
       if (isFullStudy) {
         newVisuals.push({
           id: `comp-full-pill-${idx + 1}`,
           type: 'topic-pill',
           label: `Nhãn: ${seg.topicLabel}`,
-          startTime: Number(safeStart.toFixed(2)),
-          endTime: Number(safeEnd.toFixed(2)),
-          enterAnimation: 'pop-up',
-          exitAnimation: 'fade-out',
+          startTime: Number(safeStart.toFixed(3)),
+          endTime: Number(safeEnd.toFixed(3)),
+          enterAnimation: idx === 0 ? 'pop-up' : 'none',
+          exitAnimation: idx === segments.length - 1 ? 'fade-out' : 'none',
           layout: { x: 540, y: 205, width: 520, scale: 1, zIndex: 14 },
           props: {
             kind: 'topic-pill',
@@ -1609,10 +1619,10 @@ export function recomposeProjectWithStyle(
         id: `${isFullStudy ? 'comp-full-card' : 'comp-word-reveal'}-${idx + 1}`,
         type: 'sentence-card',
         label: `${isFullStudy ? 'Full Study' : 'Word Reveal'} #${idx + 1}: ${seg.cardText.slice(0, 24)}`,
-        startTime: Number(safeStart.toFixed(2)),
-        endTime: Number(safeEnd.toFixed(2)),
-        enterAnimation: 'fade-scale',
-        exitAnimation: idx === segments.length - 1 ? 'fade-out' : 'shrink',
+        startTime: Number(safeStart.toFixed(3)),
+        endTime: Number(safeEnd.toFixed(3)),
+        enterAnimation: idx === 0 ? 'fade-scale' : 'none',
+        exitAnimation: idx === segments.length - 1 ? 'fade-out' : 'none',
         layout: {
           x: 540,
           y: isFullStudy ? 875 : 780,
@@ -1666,16 +1676,18 @@ export function recomposeProjectWithStyle(
 
     let lastCard3dEnd = -1;
     segments.forEach((seg, idx) => {
-      const safeStart = Math.max(0, seg.startTime, lastCard3dEnd + 0.03);
-      const safeEnd = Math.max(safeStart + 0.45, seg.endTime);
+      const safeStart = Math.max(0, seg.startTime, lastCard3dEnd >= 0 ? lastCard3dEnd : 0);
+      const nextSegStart3d =
+        idx < segments.length - 1 ? Math.max(safeStart + 0.45, segments[idx + 1].startTime) : project.duration;
+      const safeEnd = Math.max(safeStart + 0.45, seg.endTime, nextSegStart3d);
       newVisuals.push({
         id: `comp-3d-pill-${idx + 1}`,
         type: 'shape-3d',
         label: `Pill 3D: ${seg.topicLabel}`,
-        startTime: Number(safeStart.toFixed(2)),
-        endTime: Number(safeEnd.toFixed(2)),
-        enterAnimation: 'drop-in',
-        exitAnimation: 'fade-out',
+        startTime: Number(safeStart.toFixed(3)),
+        endTime: Number(safeEnd.toFixed(3)),
+        enterAnimation: idx === 0 ? 'drop-in' : 'none',
+        exitAnimation: idx === segments.length - 1 ? 'fade-out' : 'none',
         layout: { x: 540, y: 245, width: 520, height: 112, scale: 1, zIndex: 18 },
         props: {
           kind: 'shape-3d',
@@ -1696,10 +1708,10 @@ export function recomposeProjectWithStyle(
         id: `comp-3d-card-${idx + 1}`,
         type: 'shape-3d',
         label: `Card 3D: ${seg.cardText.slice(0, 22)}`,
-        startTime: Number(safeStart.toFixed(2)),
-        endTime: Number(safeEnd.toFixed(2)),
-        enterAnimation: 'pop-up',
-        exitAnimation: idx === segments.length - 1 ? 'fade-out' : 'shrink',
+        startTime: Number(safeStart.toFixed(3)),
+        endTime: Number(safeEnd.toFixed(3)),
+        enterAnimation: idx === 0 ? 'pop-up' : 'none',
+        exitAnimation: idx === segments.length - 1 ? 'fade-out' : 'none',
         layout: { x: 540, y: 540, width: 840, height: 240, scale: 1, zIndex: 20 },
         props: {
           kind: 'shape-3d',
@@ -1978,19 +1990,19 @@ export function recomposeProjectWithStyle(
       const safeStart = Math.max(0, seg.startTime);
       const safeEnd = Math.max(safeStart + 0.45, seg.endTime);
       const nextSegStart =
-        idx < segments.length - 1 ? Math.max(safeEnd, segments[idx + 1].startTime - 0.03) : project.duration;
+        idx < segments.length - 1 ? Math.max(safeEnd, segments[idx + 1].startTime) : project.duration;
 
-      const pillStart = Math.max(safeStart, lastPillEnd + 0.03);
+      const pillStart = Math.max(safeStart, lastPillEnd >= 0 ? lastPillEnd : 0);
       const pillEnd = Math.max(safeEnd, nextSegStart);
       if (pillEnd - pillStart >= 0.35) {
         newVisuals.push({
           id: `comp-pill-${idx + 1}`,
           type: 'topic-pill',
           label: `Nhãn: ${seg.topicLabel}`,
-          startTime: Number(pillStart.toFixed(2)),
-          endTime: Number(pillEnd.toFixed(2)),
-          enterAnimation: 'pop-up',
-          exitAnimation: 'fade-out',
+          startTime: Number(pillStart.toFixed(3)),
+          endTime: Number(pillEnd.toFixed(3)),
+          enterAnimation: idx === 0 ? 'pop-up' : 'none',
+          exitAnimation: idx === segments.length - 1 ? 'fade-out' : 'none',
           layout: { x: 540, y: profile.pillY, width: 410, scale: 1, zIndex: 12 },
           props: {
             kind: 'topic-pill',
@@ -2011,17 +2023,17 @@ export function recomposeProjectWithStyle(
         project,
       );
 
-      const illStart = idx === 0 ? 0 : Math.max(safeStart, lastIllEnd + 0.03);
+      const illStart = idx === 0 ? 0 : Math.max(safeStart, lastIllEnd >= 0 ? lastIllEnd : 0);
       const illEnd = idx === segments.length - 1 ? project.duration : Math.max(safeEnd, nextSegStart);
       if (illEnd - illStart >= 0.35) {
         newVisuals.push({
           id: `comp-ill-${idx + 1}`,
           type: 'illustration-prop',
           label: `Minh họa: ${builtIllustration.variant}`,
-          startTime: Number(illStart.toFixed(2)),
-          endTime: Number(illEnd.toFixed(2)),
-          enterAnimation: 'fade-scale',
-          exitAnimation: 'fade-out',
+          startTime: Number(illStart.toFixed(3)),
+          endTime: Number(illEnd.toFixed(3)),
+          enterAnimation: idx === 0 ? 'fade-scale' : 'none',
+          exitAnimation: idx === segments.length - 1 ? 'fade-out' : 'none',
           layout: {
             x: 540,
             y: profile.illY,
@@ -2038,16 +2050,17 @@ export function recomposeProjectWithStyle(
         lastIllEnd = illEnd;
       }
 
-      const cardStart = Math.max(safeStart, lastCardEnd + 0.03);
-      if (safeEnd - cardStart >= 0.35) {
+      const cardStart = Math.max(safeStart, lastCardEnd >= 0 ? lastCardEnd : 0);
+      const cardEnd = Math.max(safeEnd, nextSegStart);
+      if (cardEnd - cardStart >= 0.35) {
         newVisuals.push({
           id: `comp-card-${idx + 1}`,
           type: 'sentence-card',
           label: `Thẻ câu: ${seg.cardText.slice(0, 24)}`,
-          startTime: Number(cardStart.toFixed(2)),
-          endTime: Number(safeEnd.toFixed(2)),
-          enterAnimation: 'pop-up',
-          exitAnimation: idx === segments.length - 1 ? 'fade-out' : 'shrink',
+          startTime: Number(cardStart.toFixed(3)),
+          endTime: Number(cardEnd.toFixed(3)),
+          enterAnimation: idx === 0 ? 'pop-up' : 'none',
+          exitAnimation: idx === segments.length - 1 ? 'fade-out' : 'none',
           layout: { x: 540, y: profile.cardY, width: 830, scale: 1, zIndex: 20 },
           props: {
             kind: 'sentence-card',
@@ -2062,7 +2075,7 @@ export function recomposeProjectWithStyle(
             textColor: profile.cardText,
           },
         });
-        lastCardEnd = safeEnd;
+        lastCardEnd = cardEnd;
       }
     });
 
@@ -2251,19 +2264,19 @@ export function applyCustomComponentComposition(
     const safeStart = Math.max(0, seg.startTime);
     const safeEnd = Math.max(safeStart + 0.45, seg.endTime);
     const nextSegStart =
-      idx < segments.length - 1 ? Math.max(safeEnd, segments[idx + 1].startTime - 0.03) : project.duration;
+      idx < segments.length - 1 ? Math.max(safeEnd, segments[idx + 1].startTime) : project.duration;
 
-    const pillStart = Math.max(safeStart, lastPillEnd + 0.03);
+    const pillStart = Math.max(safeStart, lastPillEnd >= 0 ? lastPillEnd : 0);
     const pillEnd = Math.max(safeEnd, nextSegStart);
     if (pillEnd - pillStart >= 0.35) {
       newVisuals.push({
         id: `comp-custom-pill-${idx + 1}`,
         type: 'topic-pill',
         label: `Nhãn: ${seg.topicLabel}`,
-        startTime: Number(pillStart.toFixed(2)),
-        endTime: Number(pillEnd.toFixed(2)),
-        enterAnimation: 'pop-up',
-        exitAnimation: 'fade-out',
+        startTime: Number(pillStart.toFixed(3)),
+        endTime: Number(pillEnd.toFixed(3)),
+        enterAnimation: idx === 0 ? 'pop-up' : 'none',
+        exitAnimation: idx === segments.length - 1 ? 'fade-out' : 'none',
         layout: { x: 540, y: pillY, width: 410, scale: 1, zIndex: 12 },
         props: {
           kind: 'topic-pill',
@@ -2275,17 +2288,17 @@ export function applyCustomComponentComposition(
       lastPillEnd = pillEnd;
     }
 
-    const illStart = idx === 0 ? 0 : Math.max(safeStart, lastIllEnd + 0.03);
+    const illStart = idx === 0 ? 0 : Math.max(safeStart, lastIllEnd >= 0 ? lastIllEnd : 0);
     const illEnd = idx === segments.length - 1 ? project.duration : Math.max(safeEnd, nextSegStart);
     if (illEnd - illStart >= 0.35) {
       newVisuals.push({
         id: `comp-custom-ill-${idx + 1}`,
         type: 'illustration-prop',
         label: `Kho Component: ${matchedMeta?.label || customConfig.variant}`,
-        startTime: Number(illStart.toFixed(2)),
-        endTime: Number(illEnd.toFixed(2)),
-        enterAnimation: 'fade-scale',
-        exitAnimation: 'fade-out',
+        startTime: Number(illStart.toFixed(3)),
+        endTime: Number(illEnd.toFixed(3)),
+        enterAnimation: idx === 0 ? 'fade-scale' : 'none',
+        exitAnimation: idx === segments.length - 1 ? 'fade-out' : 'none',
         layout: { x: 540, y: illY, width: 880, scale: 1, zIndex: 9 },
         props: {
           kind: 'illustration-prop',
@@ -2296,16 +2309,17 @@ export function applyCustomComponentComposition(
       lastIllEnd = illEnd;
     }
 
-    const cardStart = Math.max(safeStart, lastCardEnd + 0.03);
-    if (customConfig.showSentenceCard !== false && safeEnd - cardStart >= 0.35) {
+    const cardStart = Math.max(safeStart, lastCardEnd >= 0 ? lastCardEnd : 0);
+    const cardEnd = Math.max(safeEnd, nextSegStart);
+    if (customConfig.showSentenceCard !== false && cardEnd - cardStart >= 0.35) {
       newVisuals.push({
         id: `comp-custom-card-${idx + 1}`,
         type: 'sentence-card',
         label: `Thẻ câu: ${seg.cardText.slice(0, 24)}`,
-        startTime: Number(cardStart.toFixed(2)),
-        endTime: Number(safeEnd.toFixed(2)),
-        enterAnimation: 'pop-up',
-        exitAnimation: idx === segments.length - 1 ? 'fade-out' : 'shrink',
+        startTime: Number(cardStart.toFixed(3)),
+        endTime: Number(cardEnd.toFixed(3)),
+        enterAnimation: idx === 0 ? 'pop-up' : 'none',
+        exitAnimation: idx === segments.length - 1 ? 'fade-out' : 'none',
         layout: { x: 540, y: cardY, width: 830, scale: 1, zIndex: 20 },
         props: {
           kind: 'sentence-card',
@@ -2320,7 +2334,7 @@ export function applyCustomComponentComposition(
           textColor: customConfig.cardTextColor || '#0F172A',
         },
       });
-      lastCardEnd = safeEnd;
+      lastCardEnd = cardEnd;
     }
   });
 

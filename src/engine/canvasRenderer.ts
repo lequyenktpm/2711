@@ -559,9 +559,18 @@ function computeStableProjectCartoonStackBottom(
   isTopSub: boolean,
 ): number {
   const sampleTimes = collectSampleTimesForCartoonSlices(elements);
+  const hasAnyHostEl = elements.some(
+    (el) => el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host',
+  );
   let maxBottom = aspectRatio === '9:16' ? (isTopSub ? 375 : 212) : isTopSub ? 320 : 178;
   for (const st of sampleTimes) {
     const slice = elements.filter((el) => isActiveElementInSlice(el, elements, st));
+    if (
+      hasAnyHostEl &&
+      !slice.some((el) => el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host')
+    ) {
+      continue;
+    }
     const sb =
       aspectRatio === '9:16'
         ? computeStackBottom916ForSlice(slice, isTopSub)
@@ -583,11 +592,16 @@ export function resolveElementLayoutForAspect(
   const explicitPos = subtitleConfig?.position ?? (compositionId === 'plain' ? 'center' : undefined);
   const stage = getStageDimensionsForAspect(aspectRatio);
 
-  const isCartoonHostProject =
-    compositionId === 'cartoon-host' ||
-    elements.some(
-      (el) => el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host',
-    );
+  const activeSliceAtTime = elements.filter((el) => isActiveElementInSlice(el, elements, time));
+  const hasAnyCartoonHostEl = elements.some(
+    (el) => el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host',
+  );
+  const hasActiveCartoonHostAtTime = activeSliceAtTime.some(
+    (el) => el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host',
+  );
+  const isCartoonHostProject = hasAnyCartoonHostEl
+    ? hasActiveCartoonHostAtTime
+    : compositionId === 'cartoon-host';
 
   if (aspectRatio === '9:16') {
     const visible916 = isCartoonHostProject
@@ -1251,7 +1265,14 @@ export function resolveElementLayoutForAspect(
   const hasSplitColumns =
     (midVisuals.length > 0 && (midCards.length > 0 || midQuizOpts.length > 0 || midMeters.length > 0)) ||
     mid3dBlocks.length >= 2;
-  const hasTitleOnLeft169 = Boolean(titleBox && titleBox.x < stage.width * 0.48);
+  const hasRightHeaderSplit169 = visible.some(
+    (el) =>
+      !(el.props.kind === 'illustration-prop' && el.props.variant === 'cartoon-host') &&
+      el.type !== 'karaoke-card',
+  );
+  const hasTitleOnLeft169 = titleBox
+    ? titleBox.x < stage.width * 0.48
+    : compositionId === 'cartoon-host' && hasRightHeaderSplit169;
 
   for (const el of elements) {
     if (el.layout.manualPosition) {

@@ -6700,18 +6700,22 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
                       )}
 
                       <div className="flex flex-wrap items-center gap-2">
-                        <select
-                          aria-label="Tốc độ đọc TTS"
-                          value={readingTtsRate}
-                          onChange={(e) => setReadingTtsRate(Number(e.target.value))}
-                          className="px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg"
-                        >
-                          <option value={0.75}>0.75x</option>
-                          <option value={0.9}>0.9x</option>
-                          <option value={1.0}>1.0x</option>
-                          <option value={1.15}>1.15x</option>
-                          <option value={1.3}>1.3x</option>
-                        </select>
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg">
+                          <span className="text-[11px] font-medium text-slate-600 whitespace-nowrap">Tốc độ đọc:</span>
+                          <input
+                            type="range"
+                            min={0.65}
+                            max={1.3}
+                            step={0.05}
+                            aria-label="Tốc độ đọc TTS"
+                            value={readingTtsRate}
+                            onChange={(e) => setReadingTtsRate(Number(e.target.value))}
+                            className="w-20 accent-emerald-600 cursor-pointer"
+                          />
+                          <span className="text-[11px] font-mono font-semibold text-emerald-700 w-9 text-right">
+                            {readingTtsRate.toFixed(2)}x
+                          </span>
+                        </div>
                         <button
                           type="button"
                           disabled={isGeneratingReadingTts || !readingText.trim()}

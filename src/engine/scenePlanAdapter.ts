@@ -1555,10 +1555,10 @@ export function scenePlanToProject(
       );
       if (hasVisual) return;
 
-      const startT = Math.max(win.start, lastVisualEnd + 0.02);
+      const startT = Math.max(win.start, lastVisualEnd >= 0 ? lastVisualEnd : 0);
       const nextWinStart =
         idx < enrichWindows.length - 1
-          ? Math.max(win.end, enrichWindows[idx + 1].start - 0.02)
+          ? Math.max(win.end, enrichWindows[idx + 1].start)
           : totalDuration;
       const endT =
         idx === enrichWindows.length - 1
@@ -1592,10 +1592,10 @@ export function scenePlanToProject(
         id: `auto-enrich-prop-${idx + 1}`,
         type: 'illustration-prop',
         label: `Minh họa: ${chosenVariant}`,
-        startTime: Number(startT.toFixed(2)),
-        endTime: Number(endT.toFixed(2)),
-        enterAnimation: 'fade-scale',
-        exitAnimation: 'fade-out',
+        startTime: Number(startT.toFixed(3)),
+        endTime: Number(endT.toFixed(3)),
+        enterAnimation: idx === 0 ? 'fade-scale' : 'none',
+        exitAnimation: idx === enrichWindows.length - 1 ? 'fade-out' : 'none',
         layout: { x: 540, y: safeY, width: 860, scale: 1, zIndex: 8 },
         props: {
           kind: 'illustration-prop',
@@ -1741,16 +1741,18 @@ export function scenePlanToProject(
     }
   }
 
-  // Add bottom karaoke cues
+  // Add bottom karaoke cues with seamless touching boundaries (no inter-cue flash)
   cues.forEach((cue, idx) => {
+    const nextCueStart =
+      idx < cues.length - 1 ? Math.max(cue.end, cues[idx + 1].start) : cue.end;
     elements.push({
       id: `karaoke-cue-${idx + 1}`,
       type: 'karaoke-card',
       label: `Sub động #${idx + 1}`,
       startTime: cue.start,
-      endTime: cue.end,
-      enterAnimation: isCartoonHost ? 'pop-up' : 'slide-up',
-      exitAnimation: 'fade-out',
+      endTime: nextCueStart,
+      enterAnimation: idx === 0 ? (isCartoonHost ? 'pop-up' : 'slide-up') : 'none',
+      exitAnimation: idx === cues.length - 1 ? 'fade-out' : 'none',
       layout: { x: 540, y: 1580, width: isCartoonHost ? 900 : 920, scale: 1, zIndex: 40 },
       props: {
         kind: 'karaoke-card',
@@ -1762,6 +1764,28 @@ export function scenePlanToProject(
         variant: isCartoonHost ? 'yellow-pill' : isDarkTheme ? 'dark-bar' : 'white-card',
       },
     });
+  });
+
+  // Smooth contiguous same-type transitions (snap small <= 0.12s handoff gaps & remove flicker)
+  const sortedByType = new Map<string, SceneElement[]>();
+  elements.forEach((el) => {
+    const list = sortedByType.get(el.type) ?? [];
+    list.push(el);
+    sortedByType.set(el.type, list);
+  });
+  sortedByType.forEach((list) => {
+    if (list.length < 2) return;
+    list.sort((a, b) => a.startTime - b.startTime);
+    for (let i = 0; i < list.length - 1; i++) {
+      const cur = list[i];
+      const nxt = list[i + 1];
+      const gap = nxt.startTime - cur.endTime;
+      if (gap >= -0.02 && gap <= 0.12) {
+        cur.endTime = nxt.startTime;
+        cur.exitAnimation = 'none';
+        nxt.enterAnimation = 'none';
+      }
+    }
   });
 
   const resolvedElements = resolveProjectOverlaps(elements);

@@ -1474,15 +1474,23 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
             ? project.elements.find((el) => el.id === selectedElementId) ?? null
             : null;
           const lessonTime = Math.max(0, currentTime - getEffectiveIntroSeconds(project));
+          const resolvedTitleBox = resolveLessonTitleBox(project, effectiveAspect, currentTime);
           const resolvedMap = resolveElementLayoutForAspect(
             project.elements,
             lessonTime,
             effectiveAspect,
             project.subtitleConfig,
             project.compositionId,
+            resolvedTitleBox
+              ? {
+                  x: resolvedTitleBox.x,
+                  y: resolvedTitleBox.y,
+                  width: resolvedTitleBox.width,
+                  height: resolvedTitleBox.height,
+                }
+              : null,
           );
           const resolvedLayout = selectedEl ? resolvedMap.get(selectedEl.id) || selectedEl.layout : null;
-          const resolvedTitleBox = resolveLessonTitleBox(project, effectiveAspect, currentTime);
 
           const overlaps = detectActiveStageOverlaps(
             project.elements,

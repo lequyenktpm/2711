@@ -403,7 +403,8 @@ export function detectReelMode(text: string): Exclude<ReelMode, 'auto'> {
   const lower = text.toLowerCase();
   const hasQuizSignals =
     /\btrue\s*\/\s*false\b|\btrue or false\b|\bmultiple choice\b|\bcomprehension\b/i.test(lower) ||
-    /(^|\n)\s*(?:q?\d+[.)]|\([a-d]\)|[a-d][.)])\s+/i.test(text);
+    /(?:並べ替え|並び替え|sắp xếp từ|trắc nghiệm|選択問題)/i.test(text) ||
+    /(^|\n)\s*(?:q?\d+[.)．]|\([a-d]\)|[a-d][.)]|（[A-Dａ-ｄ]）|[A-DＡ-Ｄ][.)）])\s+/im.test(text);
   if (hasQuizSignals) return 'quiz';
 
   const lines = text
@@ -457,9 +458,77 @@ export function splitMultipleExercisesFromText(text: string): ReelExtractedExerc
   });
 }
 
-export function estimateCardSpeechDuration(text: string): number {
+export const DEFAULT_STANDARD_TTS_RATE = 1.0;
+export const DEFAULT_DIALOGUE_TTS_RATE = 0.85;
+
+export function isDialogueCreatorFormat(format?: CreatorFormatCategory | string): boolean {
+  return (
+    format === 'real_life' ||
+    format === 'shadowing_dialogue' ||
+    format === 'podcast_duo'
+  );
+}
+
+export function isNarratorSpeakerName(speaker?: string): boolean {
+  const s = String(speaker || '').trim();
+  if (!s) return false;
+  return /^(?:narrator|host\s*narrator|storyteller|announcer|giới\s*thiệu|người\s*kể(?:\s*chuyện)?|người\s*dẫn(?:\s*chuyện)?|mc|ナレーター|旁白|내레이터)$/i.test(
+    s,
+  );
+}
+
+export function isDialogueSummaryCard(card: Pick<ReelCard, 'type' | 'badge' | 'title'>): boolean {
+  if (card.type === 'outro') return true;
+  if (card.type !== 'vocab' && card.type !== 'transition') return false;
+  return /^(?:summary|recap(?:\s*card)?|tổng\s*kết|tóm\s*tắt|lesson\s*summary|what\s*did\s*you\s*learn|hôm\s*nay\s*bạn|まとめ|今日のまとめ|课程总结)/i.test(
+    `${card.badge || ''} ${card.title || ''}`.trim(),
+  );
+}
+
+export function isConversationSpeakerCard(card: ReelCard): boolean {
+  if (card.type === 'intro' || card.type === 'outro') return false;
+  if (isDialogueSummaryCard(card)) return false;
+  const sp = String(card.speaker || '').trim();
+  return Boolean(sp) && !isNarratorSpeakerName(sp);
+}
+
+export function isDialogueLessonCards(
+  cards: ReelCard[],
+  compositionId?: LayoutCompositionId,
+): boolean {
+  const speakers = new Set<string>();
+  for (const card of cards) {
+    if (isConversationSpeakerCard(card)) {
+      speakers.add(String(card.speaker || '').trim().toLowerCase());
+    }
+  }
+  if (speakers.size >= 2) return true;
+  if (
+    speakers.size >= 1 &&
+    (compositionId === 'podcast-duo' || compositionId === 'dialogue-stage')
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function getDefaultTtsRateForFormat(
+  format?: CreatorFormatCategory | string,
+  cards?: ReelCard[],
+  compositionId?: LayoutCompositionId,
+): number {
+  if (isDialogueCreatorFormat(format)) return DEFAULT_DIALOGUE_TTS_RATE;
+  if (cards && cards.length > 0 && isDialogueLessonCards(cards, compositionId)) {
+    return DEFAULT_DIALOGUE_TTS_RATE;
+  }
+  return DEFAULT_STANDARD_TTS_RATE;
+}
+
+export function estimateCardSpeechDuration(text: string, rate = 1): number {
   const words = text.trim().split(/\s+/).filter(Boolean).length;
-  return Number(Math.max(2.2, Math.min(18, words / 2.4 + 0.65)).toFixed(2));
+  const safeRate = Math.max(0.65, Math.min(1.5, Number.isFinite(rate) ? rate : 1));
+  const raw = Math.max(2.2, Math.min(18, words / 2.4 + 0.65)) / safeRate;
+  return Number(Math.max(1.8, Math.min(24, raw)).toFixed(2));
 }
 
 function isMetadataNoiseLine(line: string): boolean {
@@ -1258,31 +1327,68 @@ export function getQuizCardSpeechParts(
     card.type === 'quiz'
       ? Math.max(0, Math.min(10, Number(card.thinkSec ?? 5)))
       : 0;
+  const lang = card.learningLang || inferLearningLangFromCards([card]);
 
   let questionSpeech = sanitizeTtsSpeech(card.ttsText || card.content || card.title);
   if (
     card.type === 'quiz' &&
-    !/^(?:now|here is|let's|quick quiz|question|time for)/i.test(questionSpeech)
+    !/^(?:now|here is|let's|quick quiz|question|time for|次|問題|クイズ|下一题|问题|다음|문제|question suivante|prochaine question|siguiente pregunta|ahora)/i.test(
+      questionSpeech,
+    )
   ) {
     const leadIn =
-      quizPosition <= 1
-        ? "Now let's test your understanding! ... Question one:"
-        : `Next question, number ${quizPosition}: ...`;
+      lang === 'ja'
+        ? quizPosition <= 1
+          ? '理解度チェックです！ 第1問。'
+          : `第${quizPosition}問。`
+        : lang === 'zh'
+          ? quizPosition <= 1
+            ? '现在来测试一下理解！第1题。'
+            : `第${quizPosition}题。`
+          : lang === 'ko'
+            ? quizPosition <= 1
+              ? '이해도를 확인해 볼까요! 첫 번째 문제입니다.'
+              : `${quizPosition}번 문제입니다.`
+            : lang === 'fr'
+              ? quizPosition <= 1
+                ? 'Testons votre compréhension ! Question un :'
+                : `Question ${quizPosition} :`
+              : lang === 'es'
+                ? quizPosition <= 1
+                  ? '¡Vamos a comprobar lo que aprendiste! Pregunta uno:'
+                  : `Pregunta ${quizPosition}:`
+                : quizPosition <= 1
+                  ? "Now let's test your understanding! ... Question one:"
+                  : `Next question, number ${quizPosition}: ...`;
     questionSpeech = `${leadIn} ${questionSpeech}`;
   }
   if (
     card.type === 'quiz' &&
     opts.length > 0 &&
-    !/(?:take\s+(?:five|\d+)\s+seconds|seconds?\s+to\s+think)/i.test(questionSpeech)
+    !/(?:take\s+(?:five|\d+)\s+seconds|seconds?\s+to\s+think|秒考えて|秒思考|초 동안 생각|secondes pour réfléchir|segundos para pensar)/i.test(
+      questionSpeech,
+    )
   ) {
     const optStr = opts
       .slice(0, 4)
       .map((o, i) => `${String.fromCharCode(65 + i)}, ${o}`)
       .join('. ');
+    const thinkCue =
+      thinkSec > 0
+        ? lang === 'ja'
+          ? `${thinkSec}秒考えてみてください。`
+          : lang === 'zh'
+            ? `请思考${thinkSec}秒。`
+            : lang === 'ko'
+              ? `${thinkSec}초 동안 생각해 보세요.`
+              : lang === 'fr'
+                ? `Prenez ${thinkSec} secondes pour réfléchir.`
+                : lang === 'es'
+                  ? `Tómate ${thinkSec} segundos para pensar.`
+                  : `Take ${thinkSec} seconds to think.`
+        : '';
     questionSpeech = sanitizeTtsSpeech(
-      `${questionSpeech.replace(/[.!?]+$/, '')}. ... ${optStr}. ${
-        thinkSec > 0 ? `Take ${thinkSec} seconds to think.` : ''
-      }`,
+      `${questionSpeech.replace(/[.!?。！？]+$/, '')}. ... ${optStr}. ${thinkCue}`,
     );
   }
 
@@ -1292,7 +1398,17 @@ export function getQuizCardSpeechParts(
     const ansLabel = opts[safeAnsIdx];
     const expl = card.explanation ? ` ${card.explanation}` : '';
     answerSpeech = sanitizeTtsSpeech(
-      `Time is up! The correct answer is ${letter}, ${ansLabel}.${expl}`,
+      lang === 'ja'
+        ? `時間です！正解は ${letter}、${ansLabel} です。${expl}`
+        : lang === 'zh'
+          ? `时间到！正确答案是 ${letter}，${ansLabel}。${expl}`
+          : lang === 'ko'
+            ? `시간이 되었습니다! 정답은 ${letter}번, ${ansLabel}입니다.${expl}`
+            : lang === 'fr'
+              ? `Le temps est écoulé ! La bonne réponse est ${letter}, ${ansLabel}.${expl}`
+              : lang === 'es'
+                ? `¡Se acabó el tiempo! La respuesta correcta es ${letter}, ${ansLabel}.${expl}`
+                : `Time is up! The correct answer is ${letter}, ${ansLabel}.${expl}`,
     );
   }
 
@@ -1571,6 +1687,7 @@ export function buildReelCardsRuleBased(
     title?: string;
     mode?: ReelMode;
     targetLang?: string;
+    learningLanguage?: LearningLanguageId;
     includeQuiz?: boolean;
   },
 ): { title: string; mode: Exclude<ReelMode, 'auto'>; cards: ReelCard[] } {
@@ -1580,10 +1697,11 @@ export function buildReelCardsRuleBased(
   const lines = worksheet.lines.filter((l) => Boolean(l) && !isMetadataNoiseLine(l));
   const mode =
     options?.mode && options.mode !== 'auto' ? options.mode : detectReelMode(cleaned);
-  const docTitle = worksheet.title || 'English Practice Reel';
+  const docTitle = worksheet.title || 'Language Practice Reel';
   const spokenTitle = sanitizeTtsSpeech(docTitle).replace(/[.!?]+$/, '');
   const detectedLang = inferLearningLangFromCards(
     [{ id: 'probe', type: 'vocab', badge: '', title: docTitle, content: cleaned, ttsText: cleaned }],
+    options?.learningLanguage,
   );
   const locale = getReelLocaleStrings(options?.targetLang, detectedLang);
   const allowQuiz = options?.includeQuiz !== false;
@@ -1595,18 +1713,36 @@ export function buildReelCardsRuleBased(
         ? `今日は「${spokenTitle}」を学びましょう。`
         : detectedLang === 'ko'
           ? `오늘은 ${spokenTitle}에 대해 배워볼게요.`
-          : mode === 'quiz'
-            ? `Welcome to today's lesson on ${spokenTitle}. First, read the key details, then answer our interactive quiz.`
-            : mode === 'vocab'
-              ? `Welcome to today's vocabulary lesson on ${spokenTitle}. Today we will learn essential phrases and their meanings.`
-              : `Welcome to today's reading lesson on ${spokenTitle}. Follow each sentence, learn key vocabulary and grammar, and practice aloud.`;
+          : detectedLang === 'fr'
+            ? mode === 'quiz'
+              ? `Bienvenue dans ce quiz sur ${spokenTitle}. Lisez attentivement et choisissez la bonne réponse.`
+              : `Bienvenue dans la leçon d'aujourd'hui sur ${spokenTitle}.`
+            : detectedLang === 'es'
+              ? mode === 'quiz'
+                ? `Bienvenido a este quiz sobre ${spokenTitle}. Lee con atención y elige la respuesta correcta.`
+                : `Bienvenido a la lección de hoy sobre ${spokenTitle}.`
+              : mode === 'quiz'
+                ? `Welcome to today's lesson on ${spokenTitle}. First, read the key details, then answer our interactive quiz.`
+                : mode === 'vocab'
+                  ? `Welcome to today's vocabulary lesson on ${spokenTitle}. Today we will learn essential phrases and their meanings.`
+                  : `Welcome to today's reading lesson on ${spokenTitle}. Follow each sentence, learn key vocabulary and grammar, and practice aloud.`;
 
   const introExplanation =
-    locale.code === 'vi'
-      ? `Chào mừng bạn đến với bài học ${docTitle}. Hãy nghe kỹ từng phần và luyện đọc theo nhé.`
-      : locale.code === 'ja'
-        ? `${docTitle}のレッスンへようこそ。順番に聞いて一緒に練習しましょう。`
-        : undefined;
+    locale.code !== 'none'
+      ? locale.code === 'vi'
+        ? `Chào mừng bạn đến với bài học ${docTitle}. Hãy nghe kỹ từng phần và luyện đọc theo nhé.`
+        : locale.code === 'ja'
+          ? `${docTitle}のレッスンへようこそ。順番に聞いて一緒に練習しましょう。`
+          : locale.code === 'zh'
+            ? `欢迎来到本节课：${docTitle}。请认真跟读并完成练习。`
+            : locale.code === 'ko'
+              ? `${docTitle} 수업에 오신 것을 환영합니다. 함께 듣고 연습해 보세요.`
+              : locale.code === 'fr'
+                ? `Bienvenue dans cette leçon sur ${docTitle}. Écoutez attentivement et pratiquez à voix haute.`
+                : locale.code === 'es'
+                  ? `Bienvenido a la lección sobre ${docTitle}. Escucha con atención y practica en voz alta.`
+                  : sanitizeTtsSpeech(`${locale.introRoadmapLine} Topic: ${docTitle}.`)
+      : undefined;
 
   const cards: ReelCard[] = [
     {
@@ -1779,8 +1915,10 @@ export function buildReelCardsRuleBased(
             phonetic,
             translation: meaning,
             explanationSpeech:
-              locale.code === 'vi' && meaning
-                ? sanitizeTtsSpeech(`Nghĩa là ${meaning}`)
+              locale.code !== 'none' && meaning
+                ? sanitizeTtsSpeech(
+                    locale.code === 'vi' ? `Từ ${word} có nghĩa là ${meaning}` : `${word}: ${meaning}`,
+                  )
                 : undefined,
             learningLang: detectedLang,
             ttsText: cleanSpoken,
@@ -1802,7 +1940,7 @@ export function buildReelCardsRuleBased(
       for (const s of sentences.slice(0, sentenceCap)) {
         const cleanSpoken = sanitizeTtsSpeech(s);
         if (!cleanSpoken) continue;
-        const notes = extractVocabAndGrammarNote(s, options?.targetLang);
+        const notes = extractVocabAndGrammarNote(s, options?.targetLang, detectedLang);
         const combinedNote = [notes.vocabNote, notes.grammarNote].filter(Boolean).join('\n') || undefined;
         const ctx = resolveContextualVisualForCue(`${secHeadingLabel} ${s}`, s);
         cards.push({
@@ -1814,7 +1952,7 @@ export function buildReelCardsRuleBased(
           translation: combinedNote,
           grammarNote: notes.grammarNote,
           explanationSpeech:
-            locale.code === 'vi' && combinedNote
+            locale.code !== 'none' && combinedNote
               ? sanitizeTtsSpeech(combinedNote)
               : undefined,
           learningLang: detectedLang,
@@ -1842,16 +1980,17 @@ export function buildReelCardsRuleBased(
         .filter(Boolean);
 
       let sectionQuizCount = 0;
-      const maxQuizPerSection = isMultiSection ? 2 : 4;
+      const maxQuizPerSection = isMultiSection ? 2 : 6;
       for (const block of qBlocks) {
-        if (sectionQuizCount >= maxQuizPerSection || globalQuizCount >= 6) break;
+        if (sectionQuizCount >= maxQuizPerSection || globalQuizCount >= 8) break;
         const blockLines = block.split('\n').map((l) => l.trim()).filter(Boolean);
         if (blockLines.length === 0) continue;
         const firstLine = blockLines[0];
         const looksLikeQuizBlock =
           /^Q\d+[.)]\s+/i.test(firstLine) ||
-          /\b(?:Answer|Key|Đáp án)[:\s]/i.test(block) ||
+          /\b(?:Answer|Key|Đáp án)\s*[:\s]/i.test(block) ||
           /^(?:\([A-Da-d]\)|[A-Da-d][.)])\s+/m.test(block) ||
+          /(?:sắp xếp|reorder|arrange|put.*in order|word order)/i.test(block) ||
           (mode === 'quiz' && /^Q?\d+[.)]\s+/i.test(firstLine));
         if (!looksLikeQuizBlock) continue;
 
@@ -1861,29 +2000,34 @@ export function buildReelCardsRuleBased(
         const opts: string[] = [];
         let answerIndex = 0;
         let explanation = '';
+        let rawAnswerText = '';
         for (const bl of blockLines.slice(1)) {
           const optMatch = bl.match(/^(?:\(([A-Da-d])\)|([A-Da-d])[.)])\s+(.+)$/);
           if (optMatch) {
             opts.push(optMatch[3].trim());
             continue;
           }
-          const ansMatch = bl.match(/^(?:Answer|Key|Đáp án)[:\s]+(.+)$/i);
+          const ansMatch = bl.match(/^(?:Answer|Key|Đáp án)\s*[:\s]+(.+)$/i);
           if (ansMatch) {
             const val = ansMatch[1].trim();
+            rawAnswerText = val;
             const letterIdx = 'abcd'.indexOf(val.charAt(0).toLowerCase());
-            if (letterIdx >= 0 && letterIdx < Math.max(2, opts.length || 4)) {
+            if (letterIdx >= 0 && (val.length <= 2 || /^[A-Da-d][.)\s]/.test(val)) && letterIdx < Math.max(2, opts.length || 4)) {
               answerIndex = letterIdx;
             } else if (/^false$/i.test(val)) {
               answerIndex = 1;
             }
             continue;
           }
-          if (/^(?:Explanation|Giải thích)[:\s]+/i.test(bl)) {
-            explanation = bl.replace(/^(?:Explanation|Giải thích)[:\s]+/i, '').trim();
+          if (/^(?:Explanation|Giải thích)\s*[:\s]+/i.test(bl)) {
+            explanation = bl.replace(/^(?:Explanation|Giải thích)\s*[:\s]+/i, '').trim();
           }
         }
 
-        if (opts.length === 0 && /true\s*\/\s*false|\(T\/F\)/i.test(block)) {
+        if (opts.length === 0 && rawAnswerText && /(?:sắp xếp|reorder|arrange|order|\/)/i.test(block)) {
+          opts.push(rawAnswerText);
+          answerIndex = 0;
+        } else if (opts.length === 0 && /true\s*\/\s*false|\(T\/F\)/i.test(block)) {
           opts.push('True', 'False');
         }
 
@@ -1892,27 +2036,6 @@ export function buildReelCardsRuleBased(
         const finalOpts = opts.length > 0 ? opts : ['True', 'False'];
         const safeAnsIdx = Math.min(answerIndex, Math.max(0, finalOpts.length - 1));
         const letter = String.fromCharCode(65 + safeAnsIdx);
-        const optSpoken = finalOpts
-          .slice(0, 4)
-          .map((o, i) => `${String.fromCharCode(65 + i)}, ${o}`)
-          .join('. ');
-        const wordNumber =
-          ['one', 'two', 'three', 'four', 'five', 'six'][globalQuizCount - 1] ||
-          String(globalQuizCount);
-        const leadIn =
-          sectionQuizCount === 1
-            ? isMultiSection
-              ? `Now let's check ${sanitizeTtsSpeech(secHeadingLabel).replace(/[.!?]+$/, '')}! ... Question ${wordNumber}:`
-              : globalQuizCount === 1
-                ? "Now let's test your understanding! ... Question one:"
-                : `Now let's check the next part! ... Question ${wordNumber}:`
-            : `Question ${wordNumber}: ...`;
-        const questionSpeech = sanitizeTtsSpeech(
-          `${leadIn} ${question} ... ${optSpoken}. Take five seconds to think.`,
-        );
-        const answerSpeech = sanitizeTtsSpeech(
-          `Time is up! The correct answer is ${letter}, ${finalOpts[safeAnsIdx]}.${explanation ? ` ${explanation}` : ''}`,
-        );
 
         const snippetContext = pickConciseQuizExcerpt(
           readingSentences,
@@ -1921,7 +2044,7 @@ export function buildReelCardsRuleBased(
           readingChunk,
         );
 
-        cards.push({
+        const quizDraft: ReelCard = {
           id: makeCardId(cards.length),
           type: 'quiz',
           badge: `QUIZ #${globalQuizCount}`,
@@ -1933,26 +2056,33 @@ export function buildReelCardsRuleBased(
           thinkSec: 5,
           explanation: explanation || locale.defaultExplanation(letter, finalOpts[safeAnsIdx]),
           learningLang: detectedLang,
-          ttsText: questionSpeech,
-          ttsAnswerText: answerSpeech,
-          durationSec: Number(
-            (estimateCardSpeechDuration(questionSpeech) + 5 + estimateCardSpeechDuration(answerSpeech)).toFixed(2),
-          ),
-          visual: snippetContext
-            ? {
-                variant: 'css-browser-mockup',
-                title: isMultiSection ? secHeadingLabel : docTitle,
-                formula: locale.contextPassageTitle,
-                speechText: snippetContext,
-                sceneIcon: 'book',
-              }
-            : {
-                variant: 'bs-accordion-faq',
-                title: 'QUIZ CHALLENGE (5s)',
-                speechText: question,
-                sceneIcon: 'brain',
-              },
-        });
+          ttsText: question,
+        };
+        const { questionSpeech, answerSpeech } = getQuizCardSpeechParts(quizDraft, globalQuizCount);
+        quizDraft.ttsText = questionSpeech;
+        quizDraft.ttsAnswerText = answerSpeech;
+        quizDraft.explanationSpeech =
+          locale.code !== 'none'
+            ? sanitizeTtsSpeech(quizDraft.explanation || '')
+            : undefined;
+        quizDraft.durationSec = Number(
+          (estimateCardSpeechDuration(questionSpeech) + 5 + estimateCardSpeechDuration(answerSpeech)).toFixed(2),
+        );
+        quizDraft.visual = snippetContext
+          ? {
+              variant: 'css-browser-mockup',
+              title: isMultiSection ? secHeadingLabel : docTitle,
+              formula: locale.contextPassageTitle,
+              speechText: snippetContext,
+              sceneIcon: 'book',
+            }
+          : {
+              variant: 'bs-accordion-faq',
+              title: 'QUIZ CHALLENGE (5s)',
+              speechText: question,
+              sceneIcon: 'brain',
+            };
+        cards.push(quizDraft);
       }
     }
   }
@@ -1963,7 +2093,7 @@ export function buildReelCardsRuleBased(
     for (const s of sentences.slice(0, 10)) {
       const cleanSpoken = sanitizeTtsSpeech(s);
       if (!cleanSpoken) continue;
-      const notes = extractVocabAndGrammarNote(s, options?.targetLang);
+      const notes = extractVocabAndGrammarNote(s, options?.targetLang, detectedLang);
       const combinedNote = [notes.vocabNote, notes.grammarNote].filter(Boolean).join('\n') || undefined;
       cards.push({
         id: makeCardId(cards.length),
@@ -1974,7 +2104,7 @@ export function buildReelCardsRuleBased(
         translation: combinedNote,
         grammarNote: notes.grammarNote,
         explanationSpeech:
-          locale.code === 'vi' && combinedNote
+          locale.code !== 'none' && combinedNote
             ? sanitizeTtsSpeech(combinedNote)
             : undefined,
         learningLang: detectedLang,
@@ -1987,7 +2117,15 @@ export function buildReelCardsRuleBased(
   const outroSpeech =
     detectedLang === 'zh'
       ? `太棒了！今天我们学习了${spokenTitle}。记得每天大声练习。下节课见！`
-      : `Great job! Today you practiced ${spokenTitle}. Review the key vocabulary and practice reading aloud every day. See you in the next lesson!`;
+      : detectedLang === 'ja'
+        ? `お疲れさまでした！今日は「${spokenTitle}」を学びました。毎日声に出して復習しましょう！`
+        : detectedLang === 'ko'
+          ? `수고하셨어요! 오늘은 ${spokenTitle}에 대해 배웠습니다. 매일 소리 내어 복습해 보세요!`
+          : detectedLang === 'fr'
+            ? `Bravo ! Aujourd'hui vous avez pratiqué ${spokenTitle}. Révisez à voix haute chaque jour !`
+            : detectedLang === 'es'
+              ? `¡Excelente trabajo! Hoy practicaste ${spokenTitle}. ¡Repasa en voz alta cada día!`
+              : `Great job! Today you practiced ${spokenTitle}. Review the key vocabulary and practice reading aloud every day. See you in the next lesson!`;
   const outroExplanation =
     locale.code !== 'none' ? sanitizeTtsSpeech(locale.outroTranslation) : undefined;
   cards.push({
@@ -2059,7 +2197,12 @@ export function buildEnglishReelsWebAiPrompt(params: {
   includeQuiz?: 'auto' | 'always' | 'none';
 }): string {
   const locale = getReelLocaleStrings(params.targetLang, params.learningLanguage);
+  const selectedLearningLang = params.learningLanguage;
+  const selectedLangInfo = selectedLearningLang
+    ? LEARNING_LANGUAGE_OPTIONS.find((l) => l.id === selectedLearningLang)
+    : undefined;
   const includeQuiz = params.includeQuiz ?? 'auto';
+  const hasPastedSourceText = Boolean((params.sourceText || '').trim());
   const durationMinutes =
     typeof params.durationMinutes === 'number' &&
     Number.isFinite(params.durationMinutes) &&
@@ -2074,12 +2217,16 @@ export function buildEnglishReelsWebAiPrompt(params: {
       : undefined;
   const durationDirective = durationMinutes
     ? [
-        `- **THỜI LƯỢNG TỐI THIỂU (MỨC SÀN — CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN): ${durationMinutes} PHÚT (~${Math.round(durationMinutes * 60)} giây, tối thiểu ~${durationWordsEstimate} từ tiếng Latin / ~${durationCjkEstimate} ký tự CJK tổng cộng trong ttsText + explanationSpeech)**:`,
-        `  + **CẤM RÚT NGẮN XUỐNG ~2–3 PHÚT (8–15 THẺ NGẮN)**: Với yêu cầu ${durationMinutes} phút, bạn BẮT BUỘC khai thác toàn bộ độ sâu của nguồn${sourceChapters ? ` (hoặc tổ chức thành **${sourceChapters} phần/chủ điểm nối tiếp**) với đủ khối lượng câu thoại + phân tích sâu để đạt >= ${durationMinutes} phút` : ''}.`,
-        '  + **CHẤT LƯỢNG SÂU SẮC — CẤM LAN MAN — CẤM LẶP LẠI**: Không bao giờ kéo dài thời lượng bằng cách lặp lại ý cũ, tâng bốc rỗng, hay nói lan man ngoài trọng tâm! Mỗi thẻ `vocab`/`quiz` phải mang lại **giá trị tri thức mới**: giải thích TẠI SAO nghe tự nhiên (Sound More Natural), đối chiếu lỗi sai người học hay mắc, phân tích sắc thái ngữ cảnh/ngữ pháp & ví dụ hoàn chỉnh trong `explanationSpeech` và `translation`.',
-        `  + **TỰ KIỂM TRA & BÁO CÁO LÝ DO NẾU THIẾU (\`durationReport\`)**: Trước khi xuất JSON, tự cộng tổng số từ/ký tự của \`ttsText\` + \`explanationSpeech\` + \`ttsAnswerText\`. Nếu tổng còn thấp hơn mức sàn ${durationMinutes} phút, hãy bổ sung thêm thẻ phân tích/ví dụ đắt giá từ nguồn. Nếu nguồn quá ngắn hoặc do giới hạn độ dài đầu ra nên KHÔNG THỂ đạt đủ ${durationMinutes} phút mà không lan man/bịa thêm ý sáo rỗng, BẮT BUỘC ghi \`"metMinimum": false\` và giải thích rõ lý do vào \`"durationReport.shortfallReason"\`!`,
+        hasPastedSourceText
+          ? `- **THỜI LƯỢNG THAM KHẢO (${durationMinutes} PHÚT ~ ${Math.round(durationMinutes * 60)} giây — KHÔNG STRICT KHI NGƯỜI DÙNG ĐÃ DÁN NỘI DUNG)**: Với bài tổng hợp không giới hạn, mốc tham chiếu là >= ${durationMinutes} phút (CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN nếu có đủ chất liệu sâu); **NHƯNG vì người dùng ĐÃ DÁN NỘI DUNG CỤ THỂ ở \`# NỘI DUNG GỐC\`, số phút ${durationMinutes} phút này KHÔNG ÉP CỨNG (KHÔNG strict)** — tuyệt đối không bịa rỗng hay nhồi nhét cho đủ phút! Hãy ưu tiên tuyệt đối: (1) đáp án & giải thích có **chiều sâu thực chất**, (2) **AI tự nhận diện & tạo đúng các dạng Quiz** phù hợp từ nội dung dán vào.`
+          : `- **THỜI LƯỢNG TỐI THIỂU (MỨC SÀN — CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN): ${durationMinutes} PHÚT (~${Math.round(durationMinutes * 60)} giây, tối thiểu ~${durationWordsEstimate} từ tiếng Latin / ~${durationCjkEstimate} ký tự CJK tổng cộng trong ttsText + explanationSpeech)**:`,
+        hasPastedSourceText
+          ? `  + **CHIỀU SÂU QUAN TRỌNG HƠN SỐ PHÚT**: Nếu nội dung dán vào có sẵn các câu hỏi hoặc đoạn đọc ngắn/trung bình${sourceChapters ? ` (hoặc nhiều phần${sourceChapters > 1 ? ` ~${sourceChapters} phần` : ''})` : ''}, hãy giải quyết trọn vẹn mọi câu/đoạn đó với phân tích sâu sắc, rồi báo cáo thời lượng thực tế vào \`durationReport\`.`
+          : `  + **CẤM RÚT NGẮN XUỐNG ~2–3 PHÚT (8–15 THẺ NGẮN)**: Với yêu cầu ${durationMinutes} phút, bạn BẮT BUỘC khai thác toàn bộ độ sâu của nguồn${sourceChapters ? ` (hoặc tổ chức thành **${sourceChapters} phần/chủ điểm nối tiếp**) với đủ khối lượng câu thoại + phân tích sâu để đạt >= ${durationMinutes} phút` : ''}.`,
+        '  + **CHẤT LƯỢNG SÂU SẮC — CẤM LAN MAN — CẤM LẶP LẠI**: Không bao giờ kéo dài thời lượng bằng cách lặp lại ý cũ, tâng bốc rỗng, hay nói lan man ngoài trọng tâm! Mỗi thẻ `vocab`/`quiz` phải mang lại **giá trị tri thức mới**: giải thích TẠI SAO đáp án đúng và các đáp án khác sai, sắc thái tự nhiên (Sound More Natural), đối chiếu lỗi sai/bẫy dễ nhầm & phân tích ngữ cảnh/ngữ pháp có chiều sâu trong `explanationSpeech`, `explanation`, và `translation`.',
+        `  + **TỰ KIỂM TRA & BÁO CÁO VÀO \`durationReport\`**: Trước khi xuất JSON, tự ước tính tổng thời lượng đọc + khoảng nghỉ \`thinkSec\` (5s/câu quiz) của \`ttsText\` + \`explanationSpeech\` + \`ttsAnswerText\`, ghi rõ vào \`durationReport\`. Nếu nội dung người dùng dán vào tự nhiên ngắn hơn ${durationMinutes} phút (và không cần kéo giãn rỗng), ghi \`"metMinimum": false\` kèm giải thích gọn trong \`"durationReport.shortfallReason"\` — điều này hoàn toàn hợp lệ!`,
       ].join('\n')
-    : `- **ƯU TIÊN CHIỀU SÂU KIẾN THỨC & CHẤT LƯỢNG GIẢI THÍCH (TIÊU CHÍ BẮT BUỘC)**: Hãy để số lượng mục kiến thức quyết định thời lượng video — tuyệt đối KHÔNG cắt ngắn thành các câu cụt lủn, thiếu chủ vị hay giải thích sơ sài vô nghĩa; cấm lan man hay lặp ý.`;
+    : `- **ƯU TIÊN CHIỀU SÂU KIẾN THỨC, ĐÁP ÁN & GIẢI THÍCH CHUYÊN SÂU (KHÔNG ÉP CỨNG SỐ PHÚT)**: Để nội dung người dùng dán vào quyết định thời lượng video — giải thích có chiều sâu (bẫy ngữ pháp, sắc thái, lý do loại trừ từng đáp án), cấm lan man hay lặp ý.`;
   const cleanedUserTitle = (params.title || '').trim();
   const isStaleDefaultTitle =
     !cleanedUserTitle ||
@@ -2089,8 +2236,8 @@ export function buildEnglishReelsWebAiPrompt(params: {
 
   const modeInstruction =
     params.mode === 'auto'
-      ? 'Tự động nhận diện dạng bài phù hợp nhất trong 3 dạng: "reading", "quiz", hoặc "vocab" dựa trên nội dung thực tế (CHỈ đưa quiz nếu nguồn thực sự có phần câu hỏi/kiểm tra).'
-      : `Bắt buộc xử lý theo dạng bài: "${params.mode}".`;
+      ? 'TỰ ĐỘNG NHẬN DIỆN DẠNG BÀI & DẠNG QUIZ TỪ NỘI DUNG DÁN VÀO: Chọn "reading", "quiz", hoặc "vocab" (có thể kết hợp đọc đoạn văn trước → xen kẽ thẻ quiz ngay sau đoạn liên quan). Đặc biệt nhận diện đúng các bài tập: trắc nghiệm 4 đáp án A/B/C/D, sắp xếp từ thành câu hoàn chỉnh, đọc hiểu chọn đáp án, điền khuyết, True/False hoặc đối chiếu câu sai-đúng.'
+      : `Bắt buộc xử lý theo dạng bài: "${params.mode}" (nếu là quiz hoặc nguồn có bài tập, AI vẫn tự nhận diện chi tiết từng câu: 4 đáp án, sắp xếp từ, đọc hiểu chọn đáp án...).`;
 
   const quizPolicyBlock =
     includeQuiz === 'none'
@@ -2101,17 +2248,17 @@ export function buildEnglishReelsWebAiPrompt(params: {
         ]
       : includeQuiz === 'always'
         ? [
-            '3. **Thử thách Quiz tương tác (`type: "quiz"`)**:',
-            '   - Giữ số câu hỏi vừa phải (**2–3 câu** chất lượng cao, gắn sát nội dung vừa đọc).',
-            '   - Nếu nguồn có **nhiều bài / nhiều phần nhỏ**, BẮT BUỘC đặt câu Quiz kiểm tra phần nào **ngay sau phần đó** (Phần 1 → Quiz phần 1 → Lời dẫn chuyển tiếp → Phần 2 → Quiz phần 2). **TUYỆT ĐỐI KHÔNG** đọc dồn hết mấy bài rồi mới đổ đống Quiz ra cuối video!',
-            '   - Giữ câu hỏi (`"content"`) và phương án (`"options"`) súc tích, đủ nghĩa; nếu có bài đọc trước đó, trích **1–2 câu bằng chứng trực tiếp** vào `"contextExcerpt"`.',
-            '   - Đặt `"thinkSec": 5` cùng lời dẫn mở Quiz tự nhiên trong `"ttsText"` và công bố đáp án trong `"ttsAnswerText"`.',
+            '3. **Thử thách Quiz tương tác đa dạng (`type: "quiz"`) — BẮT BUỘC 5 GIÂY SUY NGHĨ TRƯỚC KHI ĐỌC ĐÁP ÁN & GIẢI THÍCH**:',
+            '   - Hỗ trợ đầy đủ & tự động tạo đúng các dạng Quiz: (a) **Trắc nghiệm 4 đáp án (A, B, C, D)** (`options` 4 phương án), (b) **Sắp xếp từ thành câu (`Word Ordering / Sentence Scramble`)** (đặt các từ/cụm xáo trộn dạng `word1 / word2 / ...` trong `content` hoặc `contextExcerpt`, và liệt kê các phương án ghép câu trong `options` với `answerIndex` là câu đúng), (c) **Đọc nội dung chọn đáp án (Reading Comprehension)** (trích 1–2 câu bằng chứng trực tiếp vào `"contextExcerpt"`), (d) True/False, điền từ, tìm lỗi sai.',
+            '   - Nếu nguồn có **nhiều đoạn đọc / nhiều phần nhỏ**, BẮT BUỘC đặt câu Quiz kiểm tra phần nào **ngay sau phần đó** (Phần 1 → Quiz phần 1 → Lời dẫn chuyển tiếp → Phần 2 → Quiz phần 2).',
+            '   - **LUẬT 5 GIÂY SUY NGHĨ TRƯỚC KHI ĐỌC ĐÁP ÁN & GIẢI THÍCH**: BẮT BUỘC đặt `"thinkSec": 5`. Hệ thống Audio sẽ phát `"ttsText"` (đọc câu hỏi + các đáp án + lời mời suy nghĩ 5 giây bằng đúng `learningLang`) → **TẠM DỪNG ĐẾM NGƯỢC ĐÚNG 5 GIÂY CHO NGƯỜI HỌC SUY NGHĨ** → SAU ĐÓ MỚI đọc đáp án đúng trong `"ttsAnswerText"` + phân tích **giải thích có chiều sâu** bằng ngôn ngữ giải thích trong `"explanationSpeech"` / `"explanation"` (nêu rõ vì sao đáp án đúng và tại sao từng phương án nhiễu sai / mẹo nhớ!).',
           ]
         : [
-            '3. **Thử thách Quiz tương tác (`type: "quiz"` — CHỈ DÙNG KHI NGUỒN CÓ CÂU HỎI / BÀI TẬP QUIZ)**:',
-            '   - **TUYỆT ĐỐI KHÔNG** tự ý gắn thêm thẻ quiz vào cuối video nếu nội dung gốc chỉ là từ vựng, hội thoại, ngữ pháp hoặc bài đọc thuần túy (KHÔNG phải bài cuối lúc nào cũng phải có quiz!).',
+            '3. **Thử thách Quiz tương tác (`type: "quiz"` — AI TỰ NHẬN DIỆN DẠNG QUIZ TỪ NỘI DUNG NGUỒN, BẮT BUỘC 5s SUY NGHĨ)**:',
+            '   - Nếu nguồn có câu hỏi, bài tập hoặc yêu cầu luyện tập (4 đáp án A/B/C/D, sắp xếp từ thành câu, đọc hiểu chọn đáp án, điền khuyết, sửa lỗi, True/False...), AI **tự nhận diện chính xác dạng Quiz** và tạo các thẻ `"type": "quiz"` tương ứng! Nếu nội dung gốc chỉ là từ vựng/bài đọc thuần túy không có bài kiểm tra thì không tự gắn quiz thừa ở cuối.',
+            '   - Hỗ trợ mọi dạng quiz: **Trắc nghiệm 4 đáp án (`options` gồm 4 lựa chọn A–D)**, **Sắp xếp từ (liệt kê các cụm từ xáo trộn ở `content`/`contextExcerpt` + các đáp án sắp xếp trong `options`)**, **Đọc nội dung chọn đáp án (`contextExcerpt` trích đoạn bằng chứng)**.',
             '   - Nếu nguồn có **nhiều phần / nhiều bài nhỏ** kèm câu hỏi tương ứng, phải ghép câu hỏi kiểm tra phần nào **ngay sau phần đó** kèm lời dẫn chuyển tiếp — **TUYỆT ĐỐI KHÔNG** đọc hết mấy bài dài rồi mới đưa quiz dồn ở cuối.',
-            '   - Khi có thẻ Quiz: đặt `"thinkSec": 5`, trích 1–2 câu bằng chứng trực tiếp vào `"contextExcerpt"` (nếu là bài đọc), đọc lời dẫn Quiz + phương án + `"Take five seconds to think."` trong `"ttsText"`, và công bố đáp án trong `"ttsAnswerText"`.',
+            '   - **LUẬT 5 GIÂY SUY NGHĨ TRƯỚC KHI ĐỌC ĐÁP ÁN & GIẢI THÍCH**: Mỗi thẻ Quiz BẮT BUỘC đặt `"thinkSec": 5`, `"ttsText"` đọc câu hỏi + các phương án + lời mời suy nghĩ 5 giây (hệ thống sẽ dừng đếm ngược 5s trước khi AI đọc đáp án), `"ttsAnswerText"` công bố đáp án bằng `learningLang`, và `"explanationSpeech"` + `"explanation"` giải thích thật **sâu sắc** bằng ngôn ngữ giải thích (tại sao đúng, loại trừ đáp án nhiễu, bẫy ngữ pháp).',
           ];
 
   const { variantsListText, sceneIconsListText } = getCatalogSummaryForPrompt();
@@ -2134,7 +2281,7 @@ export function buildEnglishReelsWebAiPrompt(params: {
       ? 'KHÔNG viết tiếng Việt hay bản dịch thừa trong `badge`, `translation`, `explanation`, `visual.subtitle`, `visual.labels` — toàn bộ text hiển thị trên thẻ phải viết bằng chính ngôn ngữ đang học ngắn gọn, rõ nghĩa.'
       : locale.code === 'learning'
         ? 'CHẾ ĐỘ GIẢI THÍCH BẰNG CHÍNH NGÔN NGỮ MUỐN HỌC (MONOLINGUAL IMMERSION): BẮT BUỘC viết toàn bộ `badge`, `translation`, `explanation`, `explanationSpeech`, `visual.subtitle`, `visual.labels` bằng **ĐÚNG NGÔN NGỮ ĐANG HỌC (`learningLang`)** mà bạn tự nhận diện từ `# NỘI DUNG GỐC` (giải thích nghĩa, sắc thái, đối chiếu cách dùng hoàn toàn bằng chính ngôn ngữ đó — TUYỆT ĐỐI KHÔNG dịch sang tiếng Việt hay ngôn ngữ thứ ba!).'
-        : `LUẬT SẮT CHỈ DÙNG ĐÚNG 2 NGÔN NGỮ (TUYỆT ĐỐI CẤM LẪN NGÔN NGỮ THỨ 3): Toàn bộ nội dung bài học CHỈ ĐƯỢC PHÉP xuất hiện đúng 2 ngôn ngữ: (1) Ngôn ngữ đang học (\`learningLang\` tự nhận diện từ # NỘI DUNG GỐC) cho câu mẫu/từ vựng/ttsText, và (2) Ngôn ngữ giải thích **${locale.targetLanguageLabel}** cho \`badge\`, \`title\` thẻ, \`translation\`, \`vocabNotes\`, \`grammarNote\`, \`explanation\`, \`explanationSpeech\`, \`visual.subtitle\`, \`visual.labels\`. Nếu \`learningLang\` KHÔNG PHẢI tiếng Anh và \`${locale.targetLanguageLabel}\` KHÔNG PHẢI tiếng Anh thì **TUYỆT ĐỐI CẤM** chèn bất kỳ câu, định nghĩa hay tiêu đề tiếng Anh nào vào bất kỳ trường nào!`;
+        : `LUẬT SẮT CHỈ DÙNG ĐÚNG 2 NGÔN NGỮ (TUYỆT ĐỐI CẤM LẪN NGÔN NGỮ THỨ 3): Toàn bộ nội dung bài học CHỈ ĐƯỢC PHÉP xuất hiện đúng 2 ngôn ngữ: (1) Ngôn ngữ đang học (\`learningLang\`${selectedLangInfo ? ` — ưu tiên "${selectedLearningLang}" / ${selectedLangInfo.label} nếu khớp nội dung` : ' — tự nhận diện từ # NỘI DUNG GỐC'}) cho câu mẫu/từ vựng/câu hỏi/đáp án/ttsText, và (2) Ngôn ngữ giải thích **${locale.targetLanguageLabel}** cho \`badge\`, \`title\` thẻ, \`translation\`, \`vocabNotes\`, \`grammarNote\`, \`explanation\`, \`explanationSpeech\`, \`visual.subtitle\`, \`visual.labels\`. Nếu \`learningLang\` KHÔNG PHẢI tiếng Anh và \`${locale.targetLanguageLabel}\` KHÔNG PHẢI tiếng Anh thì **TUYỆT ĐỐI CẤM** chèn bất kỳ câu, định nghĩa hay tiêu đề tiếng Anh nào vào bất kỳ trường nào!`;
 
   const isBilingualMode =
     locale.code !== 'none' &&
@@ -2163,13 +2310,13 @@ export function buildEnglishReelsWebAiPrompt(params: {
     '- **TÊN BÀI HỌC (`"title"`) PHẢI THẬT HAY, GỢI TÒ MÒ, VÀ PHẦN LEVEL PHẢI TRÙNG NGÔN NGỮ HỌC (`learningLang`)**: Đọc kỹ `# NỘI DUNG GỐC` bên dưới, viết `"title"` (ở JSON gốc và thẻ `intro`) theo cấu trúc **TÊN HOOK CUỐN HÚT TRƯỚC | LEVEL DÀNH CHO AI BẰNG ĐÚNG NGÔN NGỮ HỌC SAU**: **`"<Tiêu đề hook gợi tò mò / nút thắt cảm xúc> | <Level nói rõ dành cho ai bằng đúng learningLang>"`**:',
     '  + **CẤM đặt tên phẳng kiểu tên truyện / sách giáo khoa khô khan** (CẤM kiểu `"La bicicleta roja que esperaba a Mateo"`, `"Hotel Vocabulary"`, `"Lesson 1"`). Phải đặt theo kiểu câu hỏi gợi tò mò hoặc nút thắt cuốn hút như: `"Todo empezó con un pequeño favor… y terminó en un reencuentro inesperado | Para nivel básico (ESPAÑOL A2)"`, `"その誘い方、英語で自然に言える？ | For Intermediate Learners (ENGLISH B1)"`, `"One tiny mistake at the cafe changed everything… | For Elementary Learners (ENGLISH A2)"`, `"たった一言で空気が変わった夜… | 初中級者向け (日本語 N4)"`.',
     '  + **PHẦN LEVEL SAU DẤU `|` BẮT BUỘC TRÙNG VỚI NGÔN NGỮ HỌC (`learningLang`)** — tuyệt đối KHÔNG ghi tiếng Việt kiểu `"Cho người cơ bản (A2)"` khi bài học là tiếng Tây Ban Nha / Anh / Nhật / Trung / Hàn / Pháp!',
-    '- **CHUYỂN TIẾP PHẢI CÓ LỜI DẪN NÓI (KHÔNG CHUYỂN TRONG IM LẶNG)**: Khi chuyển từ Mở đầu → Bài 1, từ Phần/Bài 1 → Phần/Bài 2, từ Bài đọc → Quiz, hoặc trước Tổng kết, BẮT BUỘC phải có lời dẫn nói tự nhiên trong `ttsText` / `explanationSpeech` (VD: `"Now let\'s move on to the next part..."`, `"Chuyển sang phần tiếp theo..."`, `"Now let\'s check what we just learned!"`).',
+    '- **CHUYỂN TIẾP PHẢI CÓ LỜI DẪN NÓI (KHÔNG CHUYỂN TRONG IM LẶNG)**: Khi chuyển từ Mở đầu → Bài 1, từ Phần/Bài 1 → Phần/Bài 2, từ Bài đọc → Quiz, hoặc trước Tổng kết, BẮT BUỘC phải có lời dẫn nói tự nhiên trong `ttsText` / `explanationSpeech`.',
     '',
     '# CẤU TRÚC BÀI GIẢNG BẮT BUỘC (KHÔNG ĐƯỢC CHỈ XUẤT SUBTITLE TRƠN)',
     'Video bài học PHẢI sinh động, có lộ trình rõ ràng:',
     isBilingualMode
-      ? `1. **Mở đầu (\`type: "intro"\`) — CHẾ ĐỘ SONG NGỮ CHỈ ĐỌC NGÔN NGỮ GỐC**: Ở chế độ 2 thứ tiếng, phần mở đầu **CHỈ cần \`"explanationSpeech"\` bằng ${locale.targetLanguageLabel} (ngôn ngữ gốc)** và đặt \`"ttsText": ""\` (KHÔNG cần đọc lặp bằng ngôn ngữ học ở intro). Tuy nhiên, **tên chủ đề, từ vựng chính hoặc mẫu ngữ pháp được nhắc tới trong \`explanationSpeech\` vẫn PHẢI viết bằng đúng \`learningLang\` tự nhiên** (VD: \`"Chào mừng bạn đến với bài học về Hotel Check-in và mẫu câu lịch sự Could I have..."\`) để TTS đọc chuẩn tự nhiên. Chọn \`visual.variant: "bs-card-header"\` hoặc \`"css-roadmap-steps"\`.`
-      : '1. **Mở đầu (`type: "intro"`)**: Giới thiệu rõ **mục tiêu thực tế & đúng tên bài học** (VD: `"Welcome to today\'s lesson on <Exact Lesson Title>..."`). Chọn `visual.variant: "bs-card-header"` hoặc `"css-roadmap-steps"`.',
+      ? `1. **Mở đầu (\`type: "intro"\`) — CHẾ ĐỘ SONG NGỮ CHỈ ĐỌC NGÔN NGỮ GỐC**: Ở chế độ 2 thứ tiếng, phần mở đầu **CHỈ cần \`"explanationSpeech"\` bằng ${locale.targetLanguageLabel} (ngôn ngữ giải thích)** và đặt \`"ttsText": ""\` (KHÔNG cần đọc lặp bằng ngôn ngữ học ở intro). Tuy nhiên, **tên chủ đề, từ vựng chính hoặc mẫu ngữ pháp được nhắc tới trong \`explanationSpeech\` vẫn PHẢI viết bằng đúng \`learningLang\` tự nhiên** để TTS tách ngôn ngữ đọc chuẩn tự nhiên. Chọn \`visual.variant: "bs-card-header"\` hoặc \`"css-roadmap-steps"\`.`
+      : '1. **Mở đầu (`type: "intro"`)**: Giới thiệu rõ **mục tiêu thực tế & đúng tên bài học** bằng đúng ngôn ngữ mục tiêu. Chọn `visual.variant: "bs-card-header"` hoặc `"css-roadmap-steps"`.',
     '2. **Nội dung bài đọc / Từ vựng (`type: "vocab"`)**:',
     '   - **CẤM VIẾT CÁCH ĐỌC CẢ CÂU (NO FULL-SENTENCE HIRAGANA / FURIGANA / ROMAJI / PINYIN / IPA)**: Khi viết câu ngoại ngữ (đặc biệt tiếng Nhật), viết câu tự nhiên (漢字 + かな), TUYỆT ĐỐI KHÔNG viết lại cả câu bằng Hiragana, KHÔNG chèn furigana trong ngoặc `漢字(かんじ)` vào câu, KHÔNG nhồi `/IPA/`, Pinyin hay Romaji vào `ttsText` / `content` / `phonetic` (để `"phonetic": ""`).',
     '   - **GIẢI THÍCH TỪ VỰNG KHÓ & NGỮ PHÁP KHÓ THEO TRÌNH ĐỘ (`"vocabNotes"`, `"grammarNote"`, `"explanationSpeech"`)**: Nếu trong câu có **từ vựng khó hoặc ngữ pháp khó so với trình độ (`"level"`)**, BẮT BUỘC ghi rõ: (1) giải thích nghĩa, (2) cách dùng thực tế, (3) chú ý / bẫy dễ nhầm nếu có; **riêng nếu từ vựng khó là chữ Hán / Kanji thì BẮT BUỘC kèm cách đọc Hiragana của riêng từ Kanji khó đó** (VD: `雰囲気（ふんいき）: bầu không khí — ...`), tuyệt đối KHÔNG viết Hiragana cho cả câu!',
@@ -2177,7 +2324,7 @@ export function buildEnglishReelsWebAiPrompt(params: {
     '   - Nếu nguồn có nhiều phần nhỏ / nhiều mục kiến thức, tách từng mục trọn vẹn có lời dẫn chuyển phần tự nhiên (không gộp vội hay cắt cụt câu).',
     ...quizPolicyBlock,
     isBilingualMode
-      ? `4. **Tổng kết (\`type: "outro"\`) — CHẾ ĐỘ SONG NGỮ CHỈ ĐỌC NGÔN NGỮ GỐC**: Ở chế độ 2 thứ tiếng, phần tổng kết **CHỈ cần \`"explanationSpeech"\` bằng ${locale.targetLanguageLabel} (ngôn ngữ gốc)** và đặt \`"ttsText": ""\` (KHÔNG cần \`ttsText\` bằng ngôn ngữ học ở outro); nhưng nếu nhắc lại chủ đề, từ khóa hay ngữ pháp vừa học thì vẫn viết bằng đúng \`learningLang\` tự nhiên. **NẾU NGUỒN LÀ BÀI ĐỌC, CÂU CHUYỆN HOẶC HỘI THOẠI**: PHẢI tổng kết thật rõ hôm nay vừa đọc/nghe nội dung gì và người học **đã học được những gì** (ý chính, kỹ năng/tình huống thực tế, các từ vựng/ngữ pháp đắt giá vừa gặp). Dùng component \`"css-bento-stats"\` hoặc \`"bs-list-group"\`.`
+      ? `4. **Tổng kết (\`type: "outro"\`) — CHẾ ĐỘ SONG NGỮ CHỈ ĐỌC NGÔN NGỮ GỐC**: Ở chế độ 2 thứ tiếng, phần tổng kết **CHỈ cần \`"explanationSpeech"\` bằng ${locale.targetLanguageLabel} (ngôn ngữ giải thích)** và đặt \`"ttsText": ""\` (KHÔNG cần \`ttsText\` bằng ngôn ngữ học ở outro); nhưng nếu nhắc lại chủ đề, từ khóa hay ngữ pháp vừa học thì vẫn viết bằng đúng \`learningLang\` tự nhiên. **NẾU NGUỒN LÀ BÀI ĐỌC, CÂU CHUYỆN HOẶC HỘI THOẠI**: PHẢI tổng kết thật rõ hôm nay vừa đọc/nghe nội dung gì và người học **đã học được những gì** (ý chính, kỹ năng/tình huống thực tế, các từ vựng/ngữ pháp đắt giá vừa gặp). Dùng component \`"css-bento-stats"\` hoặc \`"bs-list-group"\`.`
       : '4. **Tổng kết (`type: "outro"`)**: Bắt buộc có lời đọc `"ttsText"` (và `"explanationSpeech"` nếu có giải thích) **tổng kết rõ nội dung vừa học & những kiến thức/mẫu câu trọng tâm đã rút ra** (đặc biệt khi là bài đọc đoạn văn hoặc hội thoại) qua component `"css-bento-stats"` hoặc `"bs-list-group"`.',
     '',
     TYPOGRAPHY_MOBILE_READABILITY_PROMPT_BLOCK,
@@ -2186,7 +2333,7 @@ export function buildEnglishReelsWebAiPrompt(params: {
     'Trên MỖI thẻ trong `cards`, hãy điền object `"visual"` để chọn & **tùy biến trực tiếp nội dung/nhãn** trên 50+ UI component Bootstrap 5 / Modern CSS / Vector sẵn có trong hệ thống:',
     variantsListText,
     `- Icon hợp lệ cho \`visual.sceneIcon\`: ${sceneIconsListText}`,
-    '- **Cách 1 — Tùy biến tham số trên component sẵn có**: Đặt `"variant"` đúng mã ở trên (VD `"bs-card-header"`, `"css-sticky-note"`, `"bs-badge-cluster"`, `"css-magnifying-word"`, `"bs-modal-quiz"`, `"css-flashcard-flip"`, `"css-grammar-equation"`, `"bs-alert-tip"`, `"bs-pricing-tier"`, `"css-bento-stats"`, `"hotel-desk"`, `"shopping-price"`...) kèm `"title"`, `"subtitle"`, `"labels"` (mảng 2–3 cụm callout rõ nghĩa), `"value"` (0..1), `"formula"`, `"highlightWord"`, `"sceneIcon"`.',
+    '- **Cách 1 — Tùy biến tham số trên component sẵn có**: Đặt `"variant"` đúng mã ở trên kèm `"title"`, `"subtitle"`, `"labels"` (mảng 2–3 cụm callout rõ nghĩa), `"value"` (0..1), `"formula"`, `"highlightWord"`, `"sceneIcon"`.',
     '- **Cách 2 — Tự thiết kế component UI mới hoàn toàn qua `visual.customPrimitives[]`**:',
     '  + Hệ tọa độ quanh tâm `(0, 0)`, vùng an toàn `x: -380..380`, `y: -145..145`.',
     '  + Các hình hỗ trợ: `rect`, `pill`, `circle`, `ellipse`, `line`/`arrow`, `polygon`, `icon`, `text` (mọi `text` BẮT BUỘC có `"fontSize"` >= 24, text chính 36–48).',
@@ -2197,11 +2344,14 @@ export function buildEnglishReelsWebAiPrompt(params: {
     '',
     '# NHIỆM VỤ XỬ LÝ NGUỒN DỮ LIỆU',
     params.sourceUrl ? `- URL nguồn: ${params.sourceUrl}` : '',
+    selectedLangInfo
+      ? `- Ngôn ngữ muốn học người tạo đã chọn: **${selectedLangInfo.label}** (\`learningLang: "${selectedLangInfo.id}"\` — tự đối chiếu lại với \`# NỘI DUNG GỐC\` nếu văn bản thuộc ngôn ngữ khác).`
+      : '',
     durationDirective,
     !isStaleDefaultTitle
       ? `- Tên bài học gợi ý (đối chiếu lại với nội dung nguồn nếu cần): ${cleanedUserTitle}`
       : '- Chưa có tên bài học cố định — BẮT BUỘC đặt `"title"` phản ánh chính xác 100% nội dung bài trong nguồn bên dưới.',
-    '1. Lọc bỏ tiêu đề khung bài tập thừa kiểu menu web hay `"English Reading Exercises for Beginner"` khỏi câu đọc, nhưng giữ chuyển tiếp có lời dẫn nói giữa các phần nội dung thật.',
+    '1. Lọc bỏ tiêu đề khung bài tập thừa kiểu menu web hay khung đề thi khỏi câu đọc, nhưng giữ chuyển tiếp có lời dẫn nói giữa các phần nội dung thật.',
     `2. ${modeInstruction}`,
     `3. ${targetLangConstraint}`,
     `4. ${exampleTimelinePromptHint}`,
@@ -2209,11 +2359,11 @@ export function buildEnglishReelsWebAiPrompt(params: {
     '# QUY TẮC VÀNG CHO GIỌNG ĐỌC TTS ("ttsText", "explanationSpeech", "ttsAnswerText", "learningLang")',
     '- **NHẬN DIỆN ĐÚNG NGÔN NGỮ NGUỒN (`"learningLang"`)**: Tự động phát hiện ngôn ngữ đang học trong `# NỘI DUNG GỐC` (`en` = Tiếng Anh, `es` = Tây Ban Nha, `fr` = Pháp, `ja` = Nhật, `zh` = Trung, `ko` = Hàn) và ghi rõ vào `"learningLang"`.',
     '- **PHÂN TÁCH NGÔN NGỮ CHUẨN XÁC CHO DUAL-TTS**:',
-    '  + Toàn bộ `"ttsText"` (ở các thẻ `vocab` / `quiz`) và `"ttsAnswerText"` PHẢI viết **100% THUẦN NGÔN NGỮ NGUỒN (`learningLang`)** — nếu nguồn là tiếng Tây Ban Nha / Pháp / Nhật / Trung / Hàn, lời dẫn chuyển phần và công bố đáp án trong `"ttsText"` / `"ttsAnswerText"` CŨNG PHẢI viết bằng đúng ngôn ngữ đó (TUYỆT ĐỐI KHÔNG chèn mẫu câu tiếng Anh kiểu `"Take five seconds to think"` khi bài học không phải tiếng Anh!).',
+    '  + Toàn bộ `"ttsText"` (ở các thẻ `vocab` / `quiz`) và `"ttsAnswerText"` PHẢI viết **100% THUẦN NGÔN NGỮ NGUỒN (`learningLang`)** — nếu nguồn là tiếng Tây Ban Nha / Pháp / Nhật / Trung / Hàn, lời dẫn chuyển phần và công bố đáp án trong `"ttsText"` / `"ttsAnswerText"` CŨNG PHẢI viết bằng đúng ngôn ngữ đó (TUYỆT ĐỐI KHÔNG chèn tiếng Anh vào bài không phải tiếng Anh!).',
     ...(isBilingualMode
       ? [
           `  + Khi đọc 2 thứ tiếng, thẻ \`"intro"\` và \`"outro"\` chỉ dùng \`"explanationSpeech"\` bằng **${locale.targetLanguageLabel}** (đặt \`"ttsText": ""\`).`,
-          `  + Trong toàn bộ \`"explanationSpeech"\` (kể cả khi chỉ bật đọc ngôn ngữ gốc hay ở \`intro\`/\`outro\`), hãy viết khung câu bằng **${locale.targetLanguageLabel}**, nhưng mọi **TỪ VỰNG mục tiêu, CHỦ ĐỀ bài học và MẪU NGỮ PHÁP** được nhắc tới **PHẢI viết trực tiếp bằng \`learningLang\` tự nhiên** (chữ viết gốc thật — KHÔNG dịch chay sang tiếng Việt, KHÔNG viết Pinyin/Romaji/phiên âm bồi) để hệ thống TTS song ngữ tự tách và đọc phần từ/chủ đề/ngữ pháp đó bằng giọng bản ngữ tự nhiên!`,
+          `  + Trong toàn bộ \`"explanationSpeech"\` (dùng ngôn ngữ giải thích **${locale.targetLanguageLabel}** làm mặc định — kể cả khi giải thích đáp án quiz), hãy viết khung câu bằng **${locale.targetLanguageLabel}**, nhưng mọi **TỪ VỰNG mục tiêu, ĐÁP ÁN, CHỦ ĐỀ bài học và MẪU NGỮ PHÁP** được nhắc tới **PHẢI viết trực tiếp bằng \`learningLang\` tự nhiên** (chữ viết gốc thật — KHÔNG dịch chay sang tiếng Việt, KHÔNG viết Pinyin/Romaji/phiên âm bồi) để hệ thống TTS tự tách ngôn ngữ và đọc các từ ngôn ngữ học đó bằng giọng bản ngữ chuẩn!`,
         ]
       : [
           `  + Toàn bộ \`"explanationSpeech"\` PHẢI viết **100% thuần ${locale.targetLanguageLabel}** để giọng giải thích đọc chuẩn.`,
@@ -2224,7 +2374,7 @@ export function buildEnglishReelsWebAiPrompt(params: {
     '- TUYỆT ĐỐI KHÔNG đưa ký tự `&` (viết thành `and` / `y` / `và`), IPA `/.../`, Pinyin/Romaji, emoji, URL, hay ký hiệu markdown vào `ttsText` / `explanationSpeech` / `ttsAnswerText`.',
     ...(includeQuiz !== 'none'
       ? [
-          '- Riêng thẻ `quiz` (nếu bài có quiz): `"ttsText"` đọc câu hỏi + phương án + lời mời suy nghĩ 5 giây bằng **đúng ngôn ngữ `learningLang`** và đặt `"thinkSec": 5`.',
+          '- Riêng thẻ `quiz` (nếu bài có quiz): `"thinkSec": 5`, `"ttsText"` đọc câu hỏi + phương án + lời mời suy nghĩ 5 giây bằng đúng ngôn ngữ `learningLang`; sau 5 giây chờ, `"ttsAnswerText"` đọc đáp án bằng `learningLang` và `"explanationSpeech"` đọc phân tích giải thích chuyên sâu bằng ngôn ngữ giải thích (giữ các từ/cụm của `learningLang` viết trực tiếp để phát âm chuẩn).',
         ]
       : []),
     '',
@@ -2236,7 +2386,7 @@ export function buildEnglishReelsWebAiPrompt(params: {
     ...(params.compositionId && params.compositionId !== 'ai-decide'
       ? [`  "compositionId": "${params.compositionId}",`]
       : []),
-    '  "learningLang": "<en | ja | zh | ko | fr | es — tự động nhận diện từ nội dung nguồn>",',
+    `  "learningLang": "${selectedLearningLang || '<en | ja | zh | ko | fr | es — tự động nhận diện từ nội dung nguồn>'}",`,
     '  "mode": "reading | quiz | vocab",',
     ...(durationMinutes
       ? [
@@ -2318,13 +2468,18 @@ export function buildEnglishReelsWebAiPrompt(params: {
           '      "contextExcerpt": "<1-2 câu bằng chứng trực tiếp từ bài bằng đúng learningLang>",',
           '      "content": "<Câu hỏi kiểm tra ngay phần vừa học bằng đúng learningLang>",',
           `      "translation": "<Nghĩa ngắn gọn câu hỏi bằng ${locale.targetLanguageLabel}>",`,
-          '      "options": ["<Phương án A bằng đúng learningLang>", "<Phương án B bằng đúng learningLang>", "<Phương án C bằng đúng learningLang>"],',
+          '      "options": ["<Phương án A bằng đúng learningLang>", "<Phương án B bằng đúng learningLang>", "<Phương án C bằng đúng learningLang>", "<Phương án D (nếu là trắc nghiệm 4 đáp án)>"],',
           '      "answerIndex": 1,',
           '      "thinkSec": 5,',
-          `      "explanation": ${JSON.stringify(locale.promptExampleExplanation)},`,
+          `      "explanation": "<Giải thích CHUYÊN SÂU bằng ${locale.targetLanguageLabel}: vì sao đáp án đúng & vì sao các phương án nhiễu sai / mẹo ngữ pháp>",`,
+          ...(locale.code !== 'none'
+            ? [
+                `      "explanationSpeech": "<Giải thích bằng ${locale.targetLanguageLabel} đọc sau 5 giây suy nghĩ & công bố đáp án — giữ các từ/cụm bằng learningLang để phát âm chuẩn>",`,
+              ]
+            : []),
           params.learningLanguage && params.learningLanguage !== 'en'
-            ? '      "ttsText": "<Lời dẫn quiz + đọc câu hỏi + phương án + lời mời nghĩ 5 giây viết 100% bằng đúng learningLang>",'
-            : '      "ttsText": "Now let\'s test what we just read! Question one: ... A, ... B, ... C, ... Take five seconds to think.",',
+            ? '      "ttsText": "<Lời dẫn quiz + đọc câu hỏi + các phương án + lời mời nghĩ 5 giây viết 100% bằng đúng learningLang>",'
+            : '      "ttsText": "Now let\'s test what we just read! Question one: ... A, ... B, ... C, ... D, ... Take five seconds to think.",',
           params.learningLanguage && params.learningLanguage !== 'en'
             ? '      "ttsAnswerText": "<Lời công bố hết giờ & đáp án đúng viết 100% bằng đúng learningLang>",'
             : '      "ttsAnswerText": "Time is up! The correct answer is B.",',
@@ -2915,6 +3070,12 @@ export function buildAiCreatorWebAiPrompt(params: {
     return [
       '    {',
       '      "type": "title",',
+      ...(isMultiSpeakerFormat
+        ? [
+            '      "speaker": "Narrator",',
+            '      "speakerRole": "Narrator",',
+          ]
+        : []),
       `      "kicker": ${JSON.stringify(introKicker)},`,
       `      "title": ${JSON.stringify(topicHint ? `${topicHint} | ${formatAudienceLevelLabel(chosenLevel, learningLang)}` : `${defaultSituationTitle} | ${formatAudienceLevelLabel(chosenLevel, learningLang)}`)},`,
       `      "speech": ${JSON.stringify(exIntroSpeech)},`,
@@ -2930,7 +3091,7 @@ export function buildAiCreatorWebAiPrompt(params: {
           ]
         : []),
       '      "visual": {',
-      '        "variant": "bs-card-header",',
+      `        "variant": ${JSON.stringify(isMultiSpeakerFormat ? 'avatar-speech' : 'bs-card-header')},`,
       `        "formula": ${JSON.stringify(`${chosenLevel} · ${explainSample('GIAO TIẾP THỰC TẾ', 'SPOKEN FLOW', '会話フロー')}`)},`,
       `        "title": ${JSON.stringify(visualTitleIntro)},`,
       `        "subtitle": ${JSON.stringify(explainSample('Nghe mạch nói tự nhiên · Tổng kết kiến thức cuối bài', 'Listen to natural flow · Key recap at end', '自然な会話を聞いて最後に要点整理'))},`,
@@ -3002,7 +3163,7 @@ export function buildAiCreatorWebAiPrompt(params: {
           ]
         : []),
       '      "visual": {',
-      `        "variant": ${JSON.stringify(isMultiSpeakerFormat ? 'css-chat-thread' : 'css-sticky-note')},`,
+      `        "variant": ${JSON.stringify(isMultiSpeakerFormat ? 'podcast-studio' : 'css-sticky-note')},`,
       `        "title": ${JSON.stringify(isMultiSpeakerFormat ? `${spkA.name} ↔ ${spkB.name}` : explainSample('Góc nhìn tình huống', 'Key Situational Insight', '場面のポイント'))},`,
       `        "labels": ${JSON.stringify(isMultiSpeakerFormat ? [`${spkA.name}: ${explainSample('Đề xuất giải pháp', 'Proposes idea', '提案')}`, `${spkB.name}: ${explainSample('Nêu lưu ý rủi ro', 'Adds risk guardrail', '注意点')}`] : [explainSample('Tình huống thực tế', 'Real situation', '実践場面'), explainSample('Cách ứng xử tự nhiên', 'Natural response', '自然な対応')])},`,
       '        "sceneIcon": "chat"',
@@ -3010,6 +3171,12 @@ export function buildAiCreatorWebAiPrompt(params: {
       '    },',
       '    {',
       '      "type": "vocab",',
+      ...(isMultiSpeakerFormat
+        ? [
+            '      "speaker": "Narrator",',
+            '      "speakerRole": "Narrator",',
+          ]
+        : []),
       `      "badge": ${JSON.stringify(explainSample('TỔNG KẾT BÀI HỌC', 'LESSON SUMMARY', 'まとめ'))},`,
       `      "title": ${JSON.stringify(explainSample('Hôm nay bạn vừa học được gì?', 'What did you learn today?', '今日のまとめ'))},`,
       `      "content": ${JSON.stringify(explainSample('Tóm tắt mạch hội thoại/tình huống + các kỹ năng giao tiếp & từ vựng trọng tâm vừa nắm được.', 'Summary of today’s conversation/scenario and practical takeaways.', '今日の会話の要点と実践表現のまとめ。'))},`,
@@ -3027,7 +3194,7 @@ export function buildAiCreatorWebAiPrompt(params: {
         : []),
       `      "translation": ${JSON.stringify(explainSample('Tổng kết nội dung chính & kiến thức ứng dụng thực tế', 'Key content recap & practical application', '要点整理'))},`,
       '      "visual": {',
-      '        "variant": "bs-list-group",',
+      `        "variant": ${JSON.stringify(isMultiSpeakerFormat ? 'avatar-speech' : 'bs-list-group')},`,
       `        "title": ${JSON.stringify(locale.outroTitle)},`,
       `        "labels": ${JSON.stringify(locale.code === 'vi' ? ['1. Nội dung chính vừa nghe', '2. Cách xử lý tình huống', '3. Từ/cụm đắt giá cần nhớ'] : locale.outroLabels)},`,
       '        "sceneIcon": "check"',
@@ -3103,7 +3270,7 @@ export function buildAiCreatorWebAiPrompt(params: {
     );
     if (isMultiSpeakerFormat || formatPref === 'auto') {
       lines.push(
-        '  + **MULTI-SPEAKER DIALOGUE / 2–3 NGƯỜI (`G`, `I`, `K` hoặc hội thoại trong `L`/`M`)**: Bắt buộc viết **cuộc hội thoại sống động qua lại giữa 2–3 nhân vật cụ thể** (VD: Ken & Yuki, hoặc Host A / Host B / Khách mời). Trên MỖI card thoại, BẮT BUỘC khai báo `"speaker": "<Tên người nói>"`, `"speakerGender": "male" | "female"`, `"speakerRole": "<Vai trò ngắn gọn>"` để hệ thống TTS của app **tự động đổi giọng Nam / Nữ riêng cho từng nhân vật** và hiển thị tên người đang nói! Giữ `"speech"` 100% là lời thoại thuần túy (KHÔNG viết `"Ken:"` vào đầu `"speech"`).',
+        '  + **MULTI-SPEAKER DIALOGUE / 2–3 NGƯỜI (`G`, `I`, `K` hoặc hội thoại trong `L`/`M`)**: Bắt buộc viết **cuộc hội thoại sống động qua lại giữa 2–3 nhân vật cụ thể** (VD: Ken & Yuki, hoặc Host A / Host B / Khách mời). Trên MỖI card thoại, BẮT BUỘC khai báo `"speaker": "<Tên người nói>"`, `"speakerGender": "male" | "female"`, `"speakerRole": "<Vai trò ngắn gọn>"` để hệ thống TTS của app **tự động đổi giọng Nam / Nữ riêng cho từng nhân vật** và hiển thị tên người đang nói! Riêng thẻ mở đầu (`type: "title"`) giới thiệu câu chuyện hôm nay nói về gì và thẻ tổng kết cuối bài (`TỔNG KẾT BÀI HỌC` / `type: "outro"`) hãy đặt `"speaker": "Narrator"` (KHÔNG dùng tên nhân vật hội thoại) để hệ thống tự ẩn icon nhân vật hội thoại và chỉ hiện người dẫn chuyện/nhân vật hoạt hình ở đầu & cuối bài! Giữ `"speech"` 100% là lời thoại thuần túy (KHÔNG viết `"Ken:"` vào đầu `"speech"`).',
       );
     }
     if (isShadowingFormat) {
@@ -3233,6 +3400,7 @@ export function buildAiCreatorWebAiPrompt(params: {
       : selectedExampleBlocks),
     '    {',
     '      "type": "outro",',
+    ...(isConversationalScriptMode ? ['      "speaker": "Narrator",', '      "speakerRole": "Narrator",'] : []),
     `      "title": ${JSON.stringify(locale.outroTitle)},`,
     `      "translation": ${JSON.stringify(locale.promptExampleOutroTranslation)},`,
     `      "speech": ${JSON.stringify(exOutroSpeech)},`,
@@ -3258,7 +3426,7 @@ export function buildAiCreatorWebAiPrompt(params: {
         ]
       : [
           '      "visual": {',
-          '        "variant": "css-bento-stats",',
+          `        "variant": ${JSON.stringify(isMultiSpeakerFormat ? 'avatar-speech' : 'css-bento-stats')},`,
           `        "title": ${JSON.stringify(locale.outroBadge)},`,
           `        "labels": ${JSON.stringify(locale.promptExampleOutroLabels)},`,
           '        "sceneIcon": "sparkles"',
@@ -5785,6 +5953,7 @@ export function reelCardsToLessonProject(
     enableLearningAudio?: boolean;
     enableExplanationAudio?: boolean;
     hiddenElementIds?: string[];
+    ttsRate?: number;
   },
 ): LessonProject {
   const safeCards =
@@ -5792,6 +5961,7 @@ export function reelCardsToLessonProject(
   const cues: TranscriptCue[] = [];
   const allowLearningAudio = options?.enableLearningAudio !== false;
   const allowExplanationAudio = options?.enableExplanationAudio !== false;
+  const previewSpeechRate = options?.ttsRate ?? 1.0;
   const cardWindows: Array<{
     start: number;
     end: number;
@@ -5837,13 +6007,13 @@ export function reelCardsToLessonProject(
 
       let pDur =
         timingOverride?.questionSec ??
-        (allowExplanationAudio ? estimateCardSpeechDuration(promptText) : 0);
-      const defaultRepDur = estimateCardSpeechDuration(answerText);
+        (allowExplanationAudio ? estimateCardSpeechDuration(promptText, previewSpeechRate) : 0);
+      const defaultRepDur = estimateCardSpeechDuration(answerText, previewSpeechRate);
       let repDurs = Array.from({ length: repeatCount }, (_, r) =>
         timingOverride?.repeatDurationsSec?.[r] ?? defaultRepDur,
       );
       let nuanceDur =
-        timingOverride?.nuanceSec ?? (nuanceText ? estimateCardSpeechDuration(nuanceText) : 0);
+        timingOverride?.nuanceSec ?? (nuanceText ? estimateCardSpeechDuration(nuanceText, previewSpeechRate) : 0);
       let thinkSec = rawThinkSec;
 
       if (!timingOverride && typeof durOverride === 'number' && Number.isFinite(durOverride) && durOverride > 1.2) {
@@ -5952,14 +6122,18 @@ export function reelCardsToLessonProject(
 
       let qDur =
         timingOverride?.questionSec ??
-        (allowLearningAudio ? estimateCardSpeechDuration(qSpeech) : 0);
+        (allowLearningAudio
+          ? estimateCardSpeechDuration(qSpeech, previewSpeechRate)
+          : allowExplanationAudio
+            ? estimateCardSpeechDuration(card.translation || qSpeech, previewSpeechRate)
+            : 0);
       let aDur =
         timingOverride?.answerSec ??
         (allowLearningAudio
           ? answerSpeech
-            ? estimateCardSpeechDuration(answerSpeech)
+            ? estimateCardSpeechDuration(answerSpeech, previewSpeechRate)
             : 2.6
-          : 2.4);
+          : 2.8);
 
       if (!timingOverride && typeof durOverride === 'number' && Number.isFinite(durOverride) && durOverride > 1) {
         // Scale question/answer around exact thinkSec if single total duration supplied
@@ -6025,7 +6199,7 @@ export function reelCardsToLessonProject(
           ? durOverride
           : card.durationSec && card.durationSec > 0.5
             ? card.durationSec
-            : estimateCardSpeechDuration(speech));
+            : estimateCardSpeechDuration(speech, previewSpeechRate));
 
       const end = Number((start + dur).toFixed(3));
       const cue: TranscriptCue = {
@@ -6297,15 +6471,50 @@ export function reelCardsToLessonProject(
 
   const elements: LessonProject['elements'] = [];
 
-  if (compId === 'cartoon-host') {
-    const cardActionSegments: CartoonActionSegment[] = safeCards.map((card, idx) => {
+  const isDialogueLesson = isDialogueLessonCards(safeCards, compId);
+  let firstDialogueIdx = -1;
+  let lastDialogueIdx = -1;
+  if (isDialogueLesson) {
+    safeCards.forEach((sc, sIdx) => {
+      if (isConversationSpeakerCard(sc)) {
+        if (firstDialogueIdx === -1) firstDialogueIdx = sIdx;
+        lastDialogueIdx = sIdx;
+      }
+    });
+  }
+
+  const speakerBadgeColors = [
+    { bg: '#DBEAFE', text: '#1D4ED8' },
+    { bg: '#F3E8FF', text: '#7E22CE' },
+    { bg: '#D1FAE5', text: '#047857' },
+  ];
+  const speakerRoster = (() => {
+    const roster: Array<{ name: string; role?: string; color: string }> = [];
+    for (const sc of safeCards) {
+      if (!isConversationSpeakerCard(sc)) continue;
+      const spName = sc.speaker?.trim();
+      if (spName && !roster.some((r) => r.name === spName)) {
+        const palette = speakerBadgeColors[roster.length % speakerBadgeColors.length];
+        roster.push({
+          name: spName,
+          role: sc.speakerRole,
+          color: palette.text,
+        });
+      }
+    }
+    return roster;
+  })();
+
+  const buildCartoonSegmentsForIndices = (indices: number[]): CartoonActionSegment[] =>
+    indices.map((idx) => {
+      const card = safeCards[idx];
       const win = cardWindows[idx];
       const badgeTxt = `${card.badge || ''} ${card.title || ''}`.toLowerCase();
       const inferredAction =
         card.cartoonAction ||
         (card.type === 'intro'
           ? 'wave-hello'
-          : card.type === 'outro'
+          : card.type === 'outro' || isDialogueSummaryCard(card)
             ? 'clap-jump'
             : card.type === 'quiz'
               ? 'thinking-chin'
@@ -6340,34 +6549,109 @@ export function reelCardsToLessonProject(
       };
     });
 
-    elements.push({
-      id: 'reel-cartoon-host-main',
-      type: 'illustration-prop',
-      label: 'Nhân vật Hoạt Hình Lip-Sync (@Gimmys)',
-      startTime: 0,
-      endTime: totalDuration,
-      enterAnimation: 'none',
-      exitAnimation: 'none',
-      layout: {
-        x: 540,
-        y: resolvedSubtitleConfig.position === 'top' ? 1140 : hasQuiz ? 1105 : 1085,
-        width: 820,
-        scale: hasQuiz ? 0.88 : 0.92,
-        zIndex: 12,
-      },
-      props: {
-        kind: 'illustration-prop',
-        variant: 'cartoon-host',
-        data: {
-          title: options?.title || safeCards[0]?.title || 'Language Lesson',
-          speechText: safeCards[0]?.content || '',
-          cartoonAction: cardActionSegments[0]?.actionId,
-          cartoonMood: cardActionSegments[0]?.mood,
-          cartoonAnimationSpec: cardActionSegments[0]?.spec,
-          cartoonActionSegments: cardActionSegments,
+  if (compId === 'cartoon-host') {
+    if (isDialogueLesson && firstDialogueIdx >= 0 && lastDialogueIdx >= firstDialogueIdx) {
+      // In dialogues, @Gimmys acts strictly as Narrator at Intro (before speakers enter) & Recap/Outro (after speakers exit)
+      const introIndices: number[] = [];
+      for (let i = 0; i < firstDialogueIdx; i++) introIndices.push(i);
+      const outroIndices: number[] = [];
+      for (let i = lastDialogueIdx + 1; i < safeCards.length; i++) outroIndices.push(i);
+
+      if (introIndices.length > 0 && cardWindows[firstDialogueIdx].start > 0.05) {
+        const introSegs = buildCartoonSegmentsForIndices(introIndices);
+        elements.push({
+          id: 'reel-cartoon-host-intro',
+          type: 'illustration-prop',
+          label: 'Người dẫn Intro (@Gimmys)',
+          startTime: 0,
+          endTime: Number(cardWindows[firstDialogueIdx].start.toFixed(3)),
+          enterAnimation: 'none',
+          exitAnimation: 'none',
+          layout: {
+            x: 540,
+            y: resolvedSubtitleConfig.position === 'top' ? 1140 : hasQuiz ? 1105 : 1085,
+            width: 820,
+            scale: hasQuiz ? 0.88 : 0.92,
+            zIndex: 12,
+          },
+          props: {
+            kind: 'illustration-prop',
+            variant: 'cartoon-host',
+            data: {
+              title: options?.title || safeCards[0]?.title || 'Language Lesson',
+              speechText: safeCards[0]?.content || '',
+              cartoonAction: introSegs[0]?.actionId,
+              cartoonMood: introSegs[0]?.mood,
+              cartoonAnimationSpec: introSegs[0]?.spec,
+              cartoonActionSegments: introSegs,
+            },
+          },
+        });
+      }
+
+      if (outroIndices.length > 0 && cardWindows[lastDialogueIdx].end < totalDuration - 0.05) {
+        const outroSegs = buildCartoonSegmentsForIndices(outroIndices);
+        const outroCard = safeCards[outroIndices[0]];
+        elements.push({
+          id: 'reel-cartoon-host-outro',
+          type: 'illustration-prop',
+          label: 'Người dẫn Tổng kết (@Gimmys)',
+          startTime: Number(cardWindows[lastDialogueIdx].end.toFixed(3)),
+          endTime: totalDuration,
+          enterAnimation: 'none',
+          exitAnimation: 'none',
+          layout: {
+            x: 540,
+            y: resolvedSubtitleConfig.position === 'top' ? 1140 : hasQuiz ? 1105 : 1085,
+            width: 820,
+            scale: hasQuiz ? 0.88 : 0.92,
+            zIndex: 12,
+          },
+          props: {
+            kind: 'illustration-prop',
+            variant: 'cartoon-host',
+            data: {
+              title: outroCard?.title || locale.outroTitle,
+              speechText: outroCard?.content || '',
+              cartoonAction: outroSegs[0]?.actionId,
+              cartoonMood: outroSegs[0]?.mood,
+              cartoonAnimationSpec: outroSegs[0]?.spec,
+              cartoonActionSegments: outroSegs,
+            },
+          },
+        });
+      }
+    } else {
+      const cardActionSegments = buildCartoonSegmentsForIndices(safeCards.map((_, i) => i));
+      elements.push({
+        id: 'reel-cartoon-host-main',
+        type: 'illustration-prop',
+        label: 'Nhân vật Hoạt Hình Lip-Sync (@Gimmys)',
+        startTime: 0,
+        endTime: totalDuration,
+        enterAnimation: 'none',
+        exitAnimation: 'none',
+        layout: {
+          x: 540,
+          y: resolvedSubtitleConfig.position === 'top' ? 1140 : hasQuiz ? 1105 : 1085,
+          width: 820,
+          scale: hasQuiz ? 0.88 : 0.92,
+          zIndex: 12,
         },
-      },
-    });
+        props: {
+          kind: 'illustration-prop',
+          variant: 'cartoon-host',
+          data: {
+            title: options?.title || safeCards[0]?.title || 'Language Lesson',
+            speechText: safeCards[0]?.content || '',
+            cartoonAction: cardActionSegments[0]?.actionId,
+            cartoonMood: cardActionSegments[0]?.mood,
+            cartoonAnimationSpec: cardActionSegments[0]?.spec,
+            cartoonActionSegments: cardActionSegments,
+          },
+        },
+      });
+    }
   }
 
   safeCards.forEach((card, idx) => {
@@ -6382,6 +6666,15 @@ export function reelCardsToLessonProject(
       primaryLearningLang,
     );
 
+    const isNarratorCard = isDialogueLesson
+      ? card.type === 'intro' ||
+        card.type === 'outro' ||
+        isDialogueSummaryCard(card) ||
+        isNarratorSpeakerName(card.speaker) ||
+        (firstDialogueIdx >= 0 && (idx < firstDialogueIdx || idx > lastDialogueIdx))
+      : false;
+    const isDialogueSpeakerPhase = isDialogueLesson && !isNarratorCard;
+
     const activeStepIdx =
       card.type === 'intro'
         ? 0
@@ -6393,10 +6686,13 @@ export function reelCardsToLessonProject(
               ? 2
               : 1;
     const isCartoonHost = compId === 'cartoon-host';
+    const isCartoonHostVisibleOnCard = isCartoonHost && (!isDialogueLesson || isNarratorCard);
     const hasNextCard = idx < cardWindows.length - 1;
     const hasPrevCard = idx > 0;
-    const cardEnterAnim = isCartoonHost ? ('fade-scale' as const) : ('pop-up' as const);
-    const pillEnterAnim = hasPrevCard ? ('none' as const) : cardEnterAnim;
+    const initialEnterAnim = isCartoonHostVisibleOnCard ? ('fade-scale' as const) : ('pop-up' as const);
+    const cardEnterAnim = hasPrevCard ? ('none' as const) : initialEnterAnim;
+    const propEnterAnim = hasPrevCard ? ('none' as const) : ('fade-scale' as const);
+    const pillEnterAnim = hasPrevCard ? ('none' as const) : initialEnterAnim;
     const pillExitAnim = hasNextCard ? ('none' as const) : ('fade-out' as const);
     const cardExitAnim = hasNextCard ? ('none' as const) : ('fade-out' as const);
     const stripEnd = hasNextCard ? cardWindows[idx + 1].start : end;
@@ -6454,7 +6750,7 @@ export function reelCardsToLessonProject(
             label: `Sub Lặp ${rIdx + 1} #${idx + 1}`,
             startTime: slot.start,
             endTime: slotEnd,
-            enterAnimation: rIdx === 0 ? 'fade-scale' : 'none',
+            enterAnimation: 'none',
             exitAnimation: hasMoreInSlot ? 'none' : 'fade-out',
             layout: { x: 540, y: karaokeCenterY, width: 920, scale: 1, zIndex: 36 },
             props: {
@@ -6648,7 +6944,7 @@ export function reelCardsToLessonProject(
             label: `Prompt Visual #${idx + 1}`,
             startTime: start,
             endTime: win.questionEnd,
-            enterAnimation: hasPrevCard ? 'fade-scale' : 'fade-scale',
+            enterAnimation: hasPrevCard ? 'none' : 'fade-scale',
             exitAnimation: win.thinkSec >= 1 || hasNextCard ? 'none' : 'fade-out',
             layout: { x: 540, y: 505, width: 840, scale: 0.92, zIndex: 9 },
             props: {
@@ -6672,7 +6968,7 @@ export function reelCardsToLessonProject(
         for (let s = 0; s < wholeSecs; s++) {
           const remain = wholeSecs - s;
           const t0 = Number((win.thinkStart + s * sliceDur).toFixed(3));
-          const t1 = Number((win.thinkStart + (s + 1) * sliceDur).toFixed(3));
+          const t1 = s === wholeSecs - 1 ? win.thinkEnd : Number((win.thinkStart + (s + 1) * sliceDur).toFixed(3));
           if (t1 - t0 <= 0.08) continue;
 
           elements.push({
@@ -6698,7 +6994,7 @@ export function reelCardsToLessonProject(
             label: `Timer ${remain}s`,
             startTime: t0,
             endTime: t1,
-            enterAnimation: s === 0 ? 'fade-scale' : 'none',
+            enterAnimation: 'none',
             exitAnimation: s < wholeSecs - 1 || end - win.answerStart > 0.1 || hasNextCard ? 'none' : 'fade-out',
             layout: {
               x: 540,
@@ -6869,7 +7165,7 @@ export function reelCardsToLessonProject(
           label: `Answer #${idx + 1}`,
           startTime: win.answerStart,
           endTime: end,
-          enterAnimation: 'fade-scale',
+          enterAnimation: 'none',
           exitAnimation: cardExitAnim,
           layout: {
             x: 540,
@@ -6960,7 +7256,7 @@ export function reelCardsToLessonProject(
         for (let s = 0; s < wholeSecs; s++) {
           const remain = wholeSecs - s;
           const t0 = Number((win.thinkStart + s * sliceDur).toFixed(3));
-          const t1 = Number((win.thinkStart + (s + 1) * sliceDur).toFixed(3));
+          const t1 = s === wholeSecs - 1 ? win.thinkEnd : Number((win.thinkStart + (s + 1) * sliceDur).toFixed(3));
           if (t1 - t0 <= 0.08) continue;
 
           elements.push({
@@ -6986,7 +7282,7 @@ export function reelCardsToLessonProject(
             label: `Timer ${remain}s`,
             startTime: t0,
             endTime: t1,
-            enterAnimation: s === 0 ? 'fade-scale' : 'none',
+            enterAnimation: 'none',
             exitAnimation: s < wholeSecs - 1 || end - win.answerStart > 0.15 || hasNextCard ? 'none' : 'fade-out',
             layout: {
               x: 540,
@@ -7040,7 +7336,7 @@ export function reelCardsToLessonProject(
             label: `Answer Card #${idx + 1}`,
             startTime: win.answerStart,
             endTime: end,
-            enterAnimation: 'fade-scale',
+            enterAnimation: 'none',
             exitAnimation: cardExitAnim,
             layout: { x: 540, y: 515, width: 840, scale: 0.96, zIndex: 11 },
             props: {
@@ -7066,7 +7362,7 @@ export function reelCardsToLessonProject(
           label: `${locale.contextPassageTitle} #${idx + 1}`,
           startTime: start,
           endTime: preRevealEnd,
-          enterAnimation: 'fade-scale',
+          enterAnimation: propEnterAnim,
           exitAnimation: end - win.answerStart > 0.15 || hasNextCard ? 'none' : 'fade-out',
           layout: {
             x: 540,
@@ -7093,7 +7389,7 @@ export function reelCardsToLessonProject(
           label: `Quiz Visual #${idx + 1}`,
           startTime: start,
           endTime: win.questionEnd,
-          enterAnimation: 'fade-scale',
+          enterAnimation: propEnterAnim,
           exitAnimation: win.thinkSec >= 1 || hasNextCard ? 'none' : 'fade-out',
           layout: { x: 540, y: 500, width: 840, scale: 0.96, zIndex: 9 },
           props: {
@@ -7141,7 +7437,7 @@ export function reelCardsToLessonProject(
           label: `Quiz Answer #${idx + 1}`,
           startTime: win.answerStart,
           endTime: end,
-          enterAnimation: 'fade-scale',
+          enterAnimation: 'none',
           exitAnimation: cardExitAnim,
           layout: {
             x: 540,
@@ -7171,7 +7467,7 @@ export function reelCardsToLessonProject(
         label: `Options #${idx + 1}`,
         startTime: start,
         endTime: end,
-        enterAnimation: isCartoonHost ? 'fade-scale' : 'slide-up',
+        enterAnimation: hasPrevCard ? 'none' : isCartoonHost ? 'fade-scale' : 'slide-up',
         exitAnimation: cardExitAnim,
         layout: {
           x: 540,
@@ -7291,7 +7587,7 @@ export function reelCardsToLessonProject(
         label: `Word Reveal #${idx + 1}: ${card.title.slice(0, 28)}`,
         startTime: start,
         endTime: end,
-        enterAnimation: 'fade-scale',
+        enterAnimation: propEnterAnim,
         exitAnimation: cardExitAnim,
         layout: { x: 540, y: 740, width: 900, scale: 1, zIndex: 20 },
         props: {
@@ -7337,7 +7633,7 @@ export function reelCardsToLessonProject(
         label: `3D Card #${idx + 1}`,
         startTime: start,
         endTime: end,
-        enterAnimation: 'fade-scale',
+        enterAnimation: propEnterAnim,
         exitAnimation: cardExitAnim,
         layout: { x: 540, y: 520, width: 860, height: 290, scale: 1, zIndex: 18 },
         props: {
@@ -7369,7 +7665,7 @@ export function reelCardsToLessonProject(
           label: `3D Steps #${idx + 1}`,
           startTime: start,
           endTime: end,
-          enterAnimation: 'fade-scale',
+          enterAnimation: propEnterAnim,
           exitAnimation: cardExitAnim,
           layout: { x: 540, y: 980, width: 860, height: 320, scale: 1, zIndex: 16 },
           props: {
@@ -7391,7 +7687,7 @@ export function reelCardsToLessonProject(
           label: `Note #${idx + 1}`,
           startTime: start,
           endTime: end,
-          enterAnimation: 'fade-scale',
+          enterAnimation: propEnterAnim,
           exitAnimation: cardExitAnim,
           layout: { x: 540, y: 960, width: 880, scale: 1, zIndex: 20 },
           props: {
@@ -7438,31 +7734,38 @@ export function reelCardsToLessonProject(
         });
       }
 
-      const speakerBadgeColors = [
-        { bg: '#DBEAFE', text: '#1D4ED8' },
-        { bg: '#F3E8FF', text: '#7E22CE' },
-        { bg: '#D1FAE5', text: '#047857' },
-      ];
       const speakerColorIdx = (() => {
-        if (!card.speaker) return -1;
-        const seenSpeakers: string[] = [];
-        for (const sc of safeCards) {
-          if (sc.speaker && !seenSpeakers.includes(sc.speaker)) {
-            seenSpeakers.push(sc.speaker);
-          }
-        }
-        return Math.max(0, seenSpeakers.indexOf(card.speaker));
+        if (!card.speaker || !isConversationSpeakerCard(card)) return -1;
+        return Math.max(
+          0,
+          speakerRoster.findIndex(
+            (r) => r.name.toLowerCase() === String(card.speaker || '').trim().toLowerCase(),
+          ),
+        );
       })();
       const speakerPalette =
         speakerColorIdx >= 0 ? speakerBadgeColors[speakerColorIdx % speakerBadgeColors.length] : null;
 
-      const pillLabel = card.speaker
-        ? card.indexLabel
-          ? `${card.indexLabel} · 🎙️ ${card.speaker}`
-          : `🎙️ ${card.speaker}`
-        : card.indexLabel && !card.badge.includes(card.indexLabel)
-          ? `${card.indexLabel} · ${card.badge}`
-          : card.badge || card.type.toUpperCase();
+      const narratorRoleText =
+        card.speaker && isNarratorSpeakerName(card.speaker)
+          ? card.speaker
+          : locale.code === 'vi'
+            ? 'Người dẫn'
+            : locale.code === 'ja'
+              ? 'ナレーター'
+              : 'Narrator';
+
+      const pillLabel = isNarratorCard
+        ? card.type === 'intro' || isDialogueSummaryCard(card)
+          ? `🎙️ ${narratorRoleText} · ${card.badge || card.type.toUpperCase()}`
+          : `🎙️ ${narratorRoleText}`
+        : card.speaker
+          ? card.indexLabel
+            ? `${card.indexLabel} · 🎙️ ${card.speaker}`
+            : `🎙️ ${card.speaker}`
+          : card.indexLabel && !card.badge.includes(card.indexLabel)
+            ? `${card.indexLabel} · ${card.badge}`
+            : card.badge || card.type.toUpperCase();
 
       elements.push({
         id: `reel-pill-${idx}`,
@@ -7494,22 +7797,6 @@ export function reelCardsToLessonProject(
                 : '#1D4ED8'),
         },
       });
-
-      const speakerRoster = (() => {
-        const roster: Array<{ name: string; role?: string; color: string }> = [];
-        for (const sc of safeCards) {
-          const spName = sc.speaker?.trim();
-          if (spName && !roster.some((r) => r.name === spName)) {
-            const palette = speakerBadgeColors[roster.length % speakerBadgeColors.length];
-            roster.push({
-              name: spName,
-              role: sc.speakerRole,
-              color: palette.text,
-            });
-          }
-        }
-        return roster;
-      })();
 
       if (compId === 'full-study-cards') {
         const showTitleHeading =
@@ -7545,7 +7832,7 @@ export function reelCardsToLessonProject(
           label: `Full Study #${idx + 1}: ${card.title.slice(0, 28)}`,
           startTime: start,
           endTime: end,
-          enterAnimation: 'fade-scale',
+          enterAnimation: propEnterAnim,
           exitAnimation: cardExitAnim,
           layout: {
             x: 540,
@@ -7556,9 +7843,11 @@ export function reelCardsToLessonProject(
           },
           props: {
             kind: 'sentence-card',
-            speakerLabel: card.speaker
-              ? `🎙️ ${card.speaker}${card.speakerRole ? ` · ${card.speakerRole}` : ''}`
-              : undefined,
+            speakerLabel: isNarratorCard
+              ? `🎙️ ${narratorRoleText}`
+              : card.speaker
+                ? `🎙️ ${card.speaker}${card.speakerRole ? ` · ${card.speakerRole}` : ''}`
+                : undefined,
             text: fullHeadText,
             subtext: fullSubText,
             sections: fullSections.length > 0 ? fullSections : undefined,
@@ -7573,72 +7862,110 @@ export function reelCardsToLessonProject(
         let resolvedPropVariant = visualSpec.variant;
         let resolvedPropData = visualSpec.data;
 
-        if (compId === 'podcast-duo' && card.type !== 'intro' && card.type !== 'outro') {
-          const studioNodes =
-            speakerRoster.length >= 2
-              ? speakerRoster.slice(0, 3).map((r, ri) => ({
-                  label: r.name,
-                  sublabel: r.role || `${locale.hostPrefix} ${ri + 1}`,
-                  color: r.color,
-                }))
-              : [
-                  { label: card.speaker || `${locale.hostPrefix} 1`, sublabel: card.speakerRole || `${locale.hostPrefix} 1`, color: '#3B82F6' },
-                  { label: `${locale.hostPrefix} 2`, sublabel: locale.coHostLabel, color: '#8B5CF6' },
-                ];
-          resolvedPropVariant = 'podcast-studio';
+        if (isNarratorCard) {
+          // Narrator phase at Intro / Recap / Outro: show ONLY Narrator icon (no conversation speaker cast!)
+          const isClosingSummary = card.type === 'outro' || isDialogueSummaryCard(card);
+          resolvedPropVariant = 'avatar-speech';
           resolvedPropData = {
             ...visualSpec.data,
             labels: undefined,
-            formula: card.speaker ? locale.podcastLiveLabel : locale.podcastStudioLabel,
+            nodes: undefined,
+            formula: isClosingSummary ? locale.outroBadge : locale.introBadgeDefault,
             title: card.title || card.badge,
-            reactionText: card.speaker || studioNodes[0]?.label,
-            highlightWord: locale.onMicLabel,
-            nodes: studioNodes,
-            sceneIcon: 'mic',
+            reactionText: `🎙️ ${narratorRoleText}`,
+            speechText:
+              isClosingSummary
+                ? card.content || card.translation || card.explanationSpeech || card.title
+                : card.translation || card.explanationSpeech || card.content || card.title,
+            highlightWord: card.title,
+            sceneIcon: isClosingSummary ? 'sparkles' : 'mic',
           };
-        } else if (compId === 'dialogue-stage' && card.type !== 'intro' && card.type !== 'outro') {
-          if (idx % 2 === 1) {
-            resolvedPropVariant = 'p168-story-dialogue';
-            resolvedPropData = {
-              ...visualSpec.data,
-              labels:
-                speakerRoster.length >= 2
-                  ? speakerRoster.slice(0, 3).map((r) => r.name)
-                  : [card.speaker || `${locale.speakerLabelDefault} 1`, locale.conversationLabel],
-              title: card.title || card.badge,
-              reactionText: card.speaker || locale.speakerLabelDefault,
-              speechText: card.content,
-              highlightWord: card.translation || card.title,
-              sceneIcon: 'chat',
-            };
+        } else if (
+          compId === 'podcast-duo' ||
+          compId === 'dialogue-stage' ||
+          (compId === 'cartoon-host' && isDialogueSpeakerPhase)
+        ) {
+          if (compId === 'dialogue-stage') {
+            if (idx % 2 === 1) {
+              resolvedPropVariant = 'p168-story-dialogue';
+              resolvedPropData = {
+                ...visualSpec.data,
+                labels:
+                  speakerRoster.length >= 2
+                    ? speakerRoster.slice(0, 3).map((r) => r.name)
+                    : [card.speaker || `${locale.speakerLabelDefault} 1`, locale.conversationLabel],
+                title: card.title || card.badge,
+                reactionText: card.speaker || locale.speakerLabelDefault,
+                speechText: card.content,
+                highlightWord: card.translation || card.title,
+                sceneIcon: 'chat',
+              };
+            } else {
+              const prevCard = idx > 0 ? safeCards[idx - 1] : undefined;
+              const prevLine = prevCard
+                ? prevCard.speaker
+                  ? `${prevCard.speaker}: ${prevCard.content}`
+                  : prevCard.content
+                : card.title;
+              const currLine = card.speaker ? `${card.speaker}: ${card.content}` : card.content;
+              resolvedPropVariant = 'css-chat-thread';
+              resolvedPropData = {
+                ...visualSpec.data,
+                nodes: undefined,
+                title:
+                  speakerRoster.length >= 2
+                    ? speakerRoster.slice(0, 2).map((r) => r.name).join(' ↔ ')
+                    : card.speaker || locale.conversationLabel,
+                labels: [prevLine, currLine],
+                speechText: card.content,
+                sceneIcon: 'chat',
+              };
+            }
           } else {
-            const prevCard = idx > 0 ? safeCards[idx - 1] : undefined;
-            resolvedPropVariant = 'css-chat-thread';
+            const studioNodes =
+              speakerRoster.length >= 2
+                ? speakerRoster.slice(0, 3).map((r, ri) => ({
+                    label: r.name,
+                    sublabel: r.role || `${locale.hostPrefix} ${ri + 1}`,
+                    color: r.color,
+                  }))
+                : [
+                    {
+                      label: card.speaker || `${locale.hostPrefix} 1`,
+                      sublabel: card.speakerRole || `${locale.hostPrefix} 1`,
+                      color: '#3B82F6',
+                    },
+                    { label: `${locale.hostPrefix} 2`, sublabel: locale.coHostLabel, color: '#8B5CF6' },
+                  ];
+            resolvedPropVariant = 'podcast-studio';
             resolvedPropData = {
               ...visualSpec.data,
-              title:
-                speakerRoster.length >= 2
-                  ? speakerRoster.slice(0, 2).map((r) => r.name).join(' ↔ ')
-                  : card.speaker || card.title,
-              labels: [
-                prevCard?.speaker ? `${prevCard.speaker}: ${prevCard.content}` : card.title,
-                card.speaker ? `${card.speaker}: ${card.content}` : card.content,
-              ],
-              sceneIcon: 'chat',
+              labels: undefined,
+              formula: card.speaker ? locale.podcastLiveLabel : locale.podcastStudioLabel,
+              title: card.title || card.badge,
+              reactionText: card.speaker || studioNodes[0]?.label,
+              highlightWord: locale.onMicLabel,
+              nodes: studioNodes,
+              sceneIcon: 'mic',
             };
           }
         }
 
-        if (compId !== 'cartoon-host') {
+        const shouldEmitProp =
+          compId !== 'cartoon-host' || (isDialogueLesson && !isNarratorCard);
+        const resolvedPropY = isCartoonHost && isDialogueSpeakerPhase ? 515 : activeProfile.illY;
+        const resolvedCardY = isCartoonHost && isDialogueSpeakerPhase ? 1015 : activeProfile.cardY;
+
+        if (shouldEmitProp) {
           elements.push({
             id: `reel-prop-${idx}`,
             type: 'illustration-prop',
             label: `Visual #${idx + 1}`,
             startTime: start,
             endTime: end,
-            enterAnimation: 'fade-scale',
+            enterAnimation: propEnterAnim,
             exitAnimation: cardExitAnim,
-            layout: { x: 540, y: activeProfile.illY, width: 860, scale: 0.96, zIndex: 10 },
+            layout: { x: 540, y: resolvedPropY, width: 860, scale: 0.96, zIndex: 10 },
             props: {
               kind: 'illustration-prop',
               variant: resolvedPropVariant,
@@ -7672,15 +7999,20 @@ export function reelCardsToLessonProject(
           exitAnimation: cardExitAnim,
           layout: {
             x: 540,
-            y: activeProfile.cardY,
+            y: resolvedCardY,
             width: 880,
-            scale: compId === 'cartoon-host' ? 0.94 : 1,
+            scale: isCartoonHostVisibleOnCard ? 0.94 : 1,
             zIndex: 20,
           },
           props: {
             kind: 'sentence-card',
-            speakerLabel:
-              compId === 'podcast-duo' || compId === 'dialogue-stage'
+            speakerLabel: isDialogueLesson
+              ? isNarratorCard
+                ? `🎙️ ${narratorRoleText}`
+                : card.speaker
+                  ? `🎙️ ${card.speaker}${card.speakerRole ? ` · ${card.speakerRole}` : ''}`
+                  : undefined
+              : compId === 'podcast-duo' || compId === 'dialogue-stage'
                 ? card.speaker
                   ? `🎙️ ${card.speaker}${card.speakerRole ? ` · ${card.speakerRole}` : ''}`
                   : undefined
@@ -7891,6 +8223,7 @@ export function buildSpeakerVoiceMap(
   }> = [];
 
   for (const card of cards) {
+    if (!isConversationSpeakerCard(card)) continue;
     const rawSpeaker = String(card.speaker || '').trim();
     if (!rawSpeaker) continue;
     const key = rawSpeaker.toLowerCase();

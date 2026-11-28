@@ -99,7 +99,7 @@ export function choreographFromTranscript(
       startTime: safeCues[0].start,
       endTime: Math.max(safeCues[0].start + 0.5, midpoint),
       enterAnimation: 'pop-up',
-      exitAnimation: 'shrink',
+      exitAnimation: safeCues.length >= 2 ? 'none' : 'fade-out',
       layout: { x: 540, y: 350, width: 340, scale: 1, zIndex: 12 },
       props: {
         kind: 'topic-pill',
@@ -116,7 +116,7 @@ export function choreographFromTranscript(
         label: 'Nhãn phần kết luận',
         startTime: midpoint,
         endTime: totalDuration,
-        enterAnimation: 'pop-up',
+        enterAnimation: 'none',
         exitAnimation: 'fade-out',
         layout: { x: 540, y: 350, width: 360, scale: 1, zIndex: 12 },
         props: {
@@ -140,9 +140,9 @@ export function choreographFromTranscript(
       const isPositive = /\b(polite|better|instead|good|try|use|may|could|natural)\b/i.test(cue.text);
 
       const resolvedVisual = resolveContextualVisualForCue(cue.text, cardText, 'dynamic-scene');
-      const illStart = idx === 0 ? 0 : Math.max(cue.start, lastIllEnd + 0.02);
+      const illStart = idx === 0 ? 0 : Math.max(cue.start, lastIllEnd >= 0 ? lastIllEnd : 0);
       const nextCueStart =
-        idx < safeCues.length - 1 ? Math.max(cue.end, safeCues[idx + 1].start - 0.02) : totalDuration;
+        idx < safeCues.length - 1 ? Math.max(cue.end, safeCues[idx + 1].start) : totalDuration;
       const illEnd = idx === safeCues.length - 1 ? totalDuration : nextCueStart;
 
       if (illEnd - illStart >= 0.35) {
@@ -150,10 +150,10 @@ export function choreographFromTranscript(
           id: `auto-prop-${idx + 1}`,
           type: 'illustration-prop',
           label: `Minh họa: ${resolvedVisual.variant}`,
-          startTime: Number(illStart.toFixed(2)),
-          endTime: Number(illEnd.toFixed(2)),
-          enterAnimation: 'fade-scale',
-          exitAnimation: 'fade-out',
+          startTime: Number(illStart.toFixed(3)),
+          endTime: Number(illEnd.toFixed(3)),
+          enterAnimation: idx === 0 ? 'fade-scale' : 'none',
+          exitAnimation: idx === safeCues.length - 1 ? 'fade-out' : 'none',
           layout: { x: 540, y: 635, width: 880, scale: 1, zIndex: 5 },
           props: {
             kind: 'illustration-prop',
@@ -164,14 +164,16 @@ export function choreographFromTranscript(
         lastIllEnd = illEnd;
       }
 
+      const cardEnd =
+        idx < safeCues.length - 1 ? Math.max(cue.end, safeCues[idx + 1].start) : cue.end;
       elements.push({
         id: `auto-card-${idx + 1}`,
         type: 'sentence-card',
         label: `Thẻ nổi #${idx + 1}: ${cardText.slice(0, 26)}`,
         startTime: cue.start,
-        endTime: cue.end,
-        enterAnimation: 'pop-up',
-        exitAnimation: idx === safeCues.length - 1 ? 'fade-out' : 'shrink',
+        endTime: cardEnd,
+        enterAnimation: idx === 0 ? 'pop-up' : 'none',
+        exitAnimation: idx === safeCues.length - 1 ? 'fade-out' : 'none',
         layout: { x: 540, y: 985, width: 830, scale: 1, zIndex: 20 },
         props: {
           kind: 'sentence-card',
@@ -189,9 +191,9 @@ export function choreographFromTranscript(
         type: 'karaoke-card',
         label: `Sub động #${idx + 1}`,
         startTime: cue.start,
-        endTime: cue.end,
-        enterAnimation: 'slide-up',
-        exitAnimation: 'fade-out',
+        endTime: cardEnd,
+        enterAnimation: idx === 0 ? 'slide-up' : 'none',
+        exitAnimation: idx === safeCues.length - 1 ? 'fade-out' : 'none',
         layout: { x: 540, y: 1495, width: 860, scale: 1, zIndex: 30 },
         props: {
           kind: 'karaoke-card',

@@ -46,6 +46,7 @@ export interface PersistedReelsModeSettings {
   splitAudioByRole?: boolean;
   explanationTtsVoice?: string;
   ttsRate?: number;
+  ttsRateManuallyEdited?: boolean;
   reelsAspectRatio?: ExportAspectRatioId;
   selectedTheme?: CanvasThemeId;
   selectedComposition?: LayoutCompositionId;
@@ -94,6 +95,7 @@ export interface PersistedStudioSettings {
   };
   reels?: PersistedReelsModeSettings & {
     reelCreationMode?: ReelCreationMode;
+    sourceLearningLang?: LearningLanguageId;
     sourceDurationMinutes?: number;
     creatorTopicHint?: string;
     creatorFormat?: CreatorFormatCategory;
@@ -332,6 +334,7 @@ export function resolveReelsModeSettings(
     splitAudioByRole: reels.splitAudioByRole,
     explanationTtsVoice: reels.explanationTtsVoice,
     ttsRate: reels.ttsRate,
+    ttsRateManuallyEdited: reels.ttsRateManuallyEdited,
     reelsAspectRatio: reels.reelsAspectRatio,
     selectedTheme: reels.selectedTheme,
     selectedComposition: reels.selectedComposition,

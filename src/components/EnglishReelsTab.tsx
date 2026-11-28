@@ -78,11 +78,16 @@ import {
   buildTranslationChallengePrompt,
   CREATOR_FORMAT_OPTIONS,
   CreatorFormatCategory,
+  DEFAULT_DIALOGUE_TTS_RATE,
+  DEFAULT_STANDARD_TTS_RATE,
   estimateCardSpeechDuration,
+  getDefaultTtsRateForFormat,
   getLevelsForLearningLanguage,
   getQuizCardSpeechParts,
   getReelLocaleStrings,
   inferLearningLangFromCards,
+  isDialogueCreatorFormat,
+  isDialogueLessonCards,
   LEARNING_LANGUAGE_OPTIONS,
   LearningLanguageId,
   parseEnglishReelsAiJson,
@@ -309,6 +314,24 @@ function formatTargetLangDisplay(
   return targetLang;
 }
 
+function resolveIsTtsRateManuallyEdited(
+  m: PersistedReelsModeSettings | undefined,
+  modeKey: ReelCreationMode,
+  creatorFmt?: CreatorFormatCategory,
+): boolean {
+  if (!m || typeof m.ttsRate !== 'number') return false;
+  if (typeof m.ttsRateManuallyEdited === 'boolean') return m.ttsRateManuallyEdited;
+  const expectedDefault =
+    modeKey === 'creator'
+      ? getDefaultTtsRateForFormat(creatorFmt)
+      : DEFAULT_STANDARD_TTS_RATE;
+  return (
+    Math.abs(m.ttsRate - expectedDefault) > 0.01 &&
+    Math.abs(m.ttsRate - DEFAULT_STANDARD_TTS_RATE) > 0.01 &&
+    Math.abs(m.ttsRate - DEFAULT_DIALOGUE_TTS_RATE) > 0.01
+  );
+}
+
 const DEFAULT_REELS_WATERMARK: WatermarkOutroConfig = {
   watermarkEnabled: false,
   watermarkText: '@EnglishReels',
@@ -365,6 +388,7 @@ interface ReelsModeWorkspaceSnapshot {
   splitAudioByRole: boolean;
   explanationTtsVoice: string;
   ttsRate: number;
+  ttsRateManuallyEdited: boolean;
   reelsAspectRatio: ExportAspectRatioId;
   selectedTheme: CanvasThemeId;
   selectedComposition: LayoutCompositionId;
@@ -402,11 +426,21 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     ),
   );
   const modeWorkspacesRef = useRef<Partial<Record<ReelCreationMode, ReelsModeWorkspaceSnapshot>>>({});
+  const ttsRateManuallyEditedRef = useRef<boolean>(
+    resolveIsTtsRateManuallyEdited(
+      initialModeSaved,
+      initialCreationMode,
+      initialReelsSaved?.creatorFormat,
+    ),
+  );
   const videoBgBlobUrlRef = useRef<string | null>(null);
   const createdAudioUrlsRef = useRef<Set<string>>(new Set());
 
   // ── 1. Creation Mode, URL Scraper & Content ───────────────────────────────
   const [reelCreationMode, setReelCreationMode] = useState<ReelCreationMode>(initialCreationMode);
+  const [sourceLearningLang, setSourceLearningLang] = useState<LearningLanguageId>(
+    () => initialReelsSaved?.sourceLearningLang || 'en',
+  );
   const [sourceDurationMinutes, setSourceDurationMinutes] = useState<number>(
     () => initialReelsSaved?.sourceDurationMinutes ?? 2,
   );
@@ -538,6 +572,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       title: initialReelsSaved?.lessonTitle || 'Hotel Check-in & Polite Requests',
       mode: initialModeSaved.mode || 'auto',
       targetLang: initialModeSaved.targetLang || 'Tiếng Việt',
+      learningLanguage: initialReelsSaved?.sourceLearningLang || 'en',
       includeQuiz: (initialModeSaved.includeQuizInPrompt || 'auto') !== 'none',
     }).cards;
   });
@@ -554,7 +589,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         ? initialReelsSaved?.creatorLearningLang || 'en'
         : initialCreationMode === 'translation'
           ? initialReelsSaved?.translationLearningLang || 'en'
-          : 'en';
+          : initialReelsSaved?.sourceLearningLang || 'en';
     const savedVoice = initialModeSaved.ttsVoice;
     if (
       savedVoice &&
@@ -579,13 +614,29 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         ? initialReelsSaved?.creatorLearningLang || 'en'
         : initialCreationMode === 'translation'
           ? initialReelsSaved?.translationLearningLang || 'en'
-          : 'en';
+          : initialReelsSaved?.sourceLearningLang || 'en';
     return (
       initialModeSaved.explanationTtsVoice ||
       pickExplanationDefaultVoice(initialModeSaved.targetLang || 'Tiếng Việt', savedLang)
     );
   });
-  const [ttsRate, setTtsRate] = useState(() => initialModeSaved.ttsRate ?? 1.0);
+  const [ttsRate, setTtsRate] = useState(() => {
+    const isManual = resolveIsTtsRateManuallyEdited(
+      initialModeSaved,
+      initialCreationMode,
+      initialReelsSaved?.creatorFormat,
+    );
+    if (isManual && typeof initialModeSaved.ttsRate === 'number') {
+      return initialModeSaved.ttsRate;
+    }
+    return initialCreationMode === 'creator'
+      ? getDefaultTtsRateForFormat(
+          initialReelsSaved?.creatorFormat,
+          initialStarter?.cards,
+          initialModeSaved.selectedComposition,
+        )
+      : DEFAULT_STANDARD_TTS_RATE;
+  });
   const [reelsAspectRatio, setReelsAspectRatio] = useState<ExportAspectRatioId>(
     () => initialModeSaved.reelsAspectRatio || '9:16',
   );
@@ -939,6 +990,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       if (r.creatorFormat) setCreatorFormat(r.creatorFormat);
       if (r.creatorLearningLang) setCreatorLearningLang(r.creatorLearningLang);
       if (r.creatorLevel) setCreatorLevel(r.creatorLevel);
+      if (r.sourceLearningLang) setSourceLearningLang(r.sourceLearningLang);
       if (typeof r.sourceDurationMinutes === 'number') {
         setSourceDurationMinutes(r.sourceDurationMinutes);
       }
@@ -969,7 +1021,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           ? r.creatorLearningLang || 'en'
           : hydratedMode === 'translation'
             ? r.translationLearningLang || 'en'
-            : 'en';
+            : r.sourceLearningLang || 'en';
       const nextLearningAudio = m.enableLearningAudio ?? true;
       const nextDualTts =
         !nextLearningAudio && m.enableDualTts === false ? true : (m.enableDualTts ?? true);
@@ -984,7 +1036,15 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         m.explanationTtsVoice ||
           pickExplanationDefaultVoice(m.targetLang || 'Tiếng Việt', hydratedLang),
       );
-      setTtsRate(typeof m.ttsRate === 'number' ? m.ttsRate : 1.0);
+      const isManualRate = resolveIsTtsRateManuallyEdited(m, hydratedMode, r.creatorFormat);
+      ttsRateManuallyEditedRef.current = isManualRate;
+      setTtsRate(
+        isManualRate && typeof m.ttsRate === 'number'
+          ? m.ttsRate
+          : hydratedMode === 'creator'
+            ? getDefaultTtsRateForFormat(r.creatorFormat, undefined, m.selectedComposition)
+            : DEFAULT_STANDARD_TTS_RATE,
+      );
       setReelsAspectRatio(m.reelsAspectRatio || '9:16');
       setSelectedTheme(m.selectedTheme || 'pastel-sunrise');
       setSelectedComposition(m.selectedComposition || 'story-scenes');
@@ -1060,6 +1120,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           title: r.lessonTitle,
           mode: m.mode || 'auto',
           targetLang: m.targetLang || 'Tiếng Việt',
+          learningLanguage: r.sourceLearningLang || 'en',
           includeQuiz: (m.includeQuizInPrompt || 'auto') !== 'none',
         });
         setCards(rebuilt.cards);
@@ -1071,12 +1132,14 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       skipNextPersistRef.current = true;
       hasCustomCardsRef.current = false;
       manualTitleEditedRef.current = false;
+      ttsRateManuallyEditedRef.current = false;
       modeWorkspacesRef.current = {};
       if (videoBgBlobUrlRef.current) {
         URL.revokeObjectURL(videoBgBlobUrlRef.current);
         videoBgBlobUrlRef.current = null;
       }
       setReelCreationMode('source');
+      setSourceLearningLang('en');
       setSourceDurationMinutes(2);
       setCreatorTopicHint('');
       setCreatorFormat('auto');
@@ -1176,6 +1239,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       splitAudioByRole,
       explanationTtsVoice,
       ttsRate,
+      ttsRateManuallyEdited: ttsRateManuallyEditedRef.current,
       reelsAspectRatio,
       selectedTheme,
       selectedComposition,
@@ -1199,6 +1263,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     updatePersistedSettings({
       reels: {
         reelCreationMode,
+        sourceLearningLang,
         sourceDurationMinutes,
         creatorTopicHint,
         creatorFormat,
@@ -1226,6 +1291,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     });
   }, [
     reelCreationMode,
+    sourceLearningLang,
     sourceDurationMinutes,
     creatorTopicHint,
     creatorFormat,
@@ -1372,10 +1438,18 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           ? creatorLearningLang
           : reelCreationMode === 'translation'
             ? translationLearningLang
-            : 'en';
+            : sourceLearningLang;
       setTtsVoice(pickVoiceIdForProviderAndLang(ttsProvider, desiredLang, availableVoices));
     }
-  }, [availableVoices, ttsVoice, ttsProvider, reelCreationMode, creatorLearningLang, translationLearningLang]);
+  }, [
+    availableVoices,
+    ttsVoice,
+    ttsProvider,
+    reelCreationMode,
+    sourceLearningLang,
+    creatorLearningLang,
+    translationLearningLang,
+  ]);
 
   const vectorCatalog = useMemo(() => getEffectiveVectorCatalog(), []);
 
@@ -1430,8 +1504,11 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       }
       return translationLearningLang;
     }
-    return inferred;
-  }, [reelCreationMode, creatorLearningLang, translationLearningLang, cards]);
+    if (sourceLearningLang !== 'en' && !hasNonEnScript && cards.length > 0) {
+      return 'en';
+    }
+    return sourceLearningLang;
+  }, [reelCreationMode, sourceLearningLang, creatorLearningLang, translationLearningLang, cards]);
 
   const cardPreviewLocale = useMemo(
     () => getReelLocaleStrings(targetLang, activeLearningLang),
@@ -1469,6 +1546,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       titleLayout: titleLayoutByAspect[reelsAspectRatio],
       enableLearningAudio,
       enableExplanationAudio: enableDualTts && targetLang !== 'none',
+      ttsRate,
       hiddenElementIds,
     });
     if (
@@ -1634,8 +1712,8 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
   const detectedLearningLangForDesc = useMemo(() => {
     if (reelCreationMode === 'creator') return creatorLearningLang;
     if (reelCreationMode === 'translation') return translationLearningLang;
-    return inferLearningLangFromCards(cards);
-  }, [reelCreationMode, creatorLearningLang, translationLearningLang, cards]);
+    return inferLearningLangFromCards(cards, sourceLearningLang);
+  }, [reelCreationMode, sourceLearningLang, creatorLearningLang, translationLearningLang, cards]);
 
   const videoDescription = useMemo(
     () =>
@@ -1760,6 +1838,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
               sourceUrl: urlInput.trim() || undefined,
               title: lessonTitle,
               mode,
+              learningLanguage: sourceLearningLang,
               targetLang,
               durationMinutes: sourceDurationMinutes,
               compositionId: selectedComposition,
@@ -1767,6 +1846,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
             }),
     [
       reelCreationMode,
+      sourceLearningLang,
       sourceDurationMinutes,
       translationTopicHint,
       translationCustomLines,
@@ -1804,8 +1884,13 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
   const activeCard = cards[safeActiveIdx] ?? null;
 
   const syncVoiceForDetectedLang = (lang: LearningLanguageId) => {
-    setCreatorLearningLang(lang);
-    setTranslationLearningLang(lang);
+    if (reelCreationMode === 'source') {
+      setSourceLearningLang(lang);
+    } else if (reelCreationMode === 'creator') {
+      setCreatorLearningLang(lang);
+    } else {
+      setTranslationLearningLang(lang);
+    }
     setTtsVoice((prevVoice) => {
       if (isMultilingualVoiceId(prevVoice)) return prevVoice;
       const currentLang = detectVoiceLangCode(prevVoice);
@@ -1850,11 +1935,12 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           title: result.title,
           mode: result.detectedMode || 'auto',
           targetLang,
+          learningLanguage: sourceLearningLang,
           includeQuiz: includeQuizInPrompt !== 'none',
         });
         setCards(built.cards);
         hasCustomCardsRef.current = true;
-        syncVoiceForDetectedLang(inferLearningLangFromCards(built.cards));
+        syncVoiceForDetectedLang(inferLearningLangFromCards(built.cards, sourceLearningLang));
         setActiveCardIdx(0);
         setHiddenElementIds([]);
         setSelectedPreviewElementId(null);
@@ -1917,6 +2003,15 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     if (typeof parsed.repeatCount === 'number') setTranslationRepeatCount(parsed.repeatCount);
     const detectedLang = parsed.learningLang || inferLearningLangFromCards(parsed.cards);
     syncVoiceForDetectedLang(detectedLang);
+    if (!ttsRateManuallyEditedRef.current) {
+      setTtsRate(
+        getDefaultTtsRateForFormat(
+          reelCreationMode === 'creator' ? creatorFormat : undefined,
+          parsed.cards,
+          nextComp || selectedComposition,
+        ),
+      );
+    }
     setSceneJsonOverride(parsed.sceneJson ?? null);
     setActiveCardIdx(0);
     setHiddenElementIds([]);
@@ -1942,6 +2037,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       title: useManualTitle ? lessonTitle : cleaned.title,
       mode,
       targetLang,
+      learningLanguage: sourceLearningLang,
       includeQuiz: includeQuizInPrompt !== 'none',
     });
     if (built.title && !useManualTitle) {
@@ -1950,7 +2046,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     }
     setCards(built.cards);
     hasCustomCardsRef.current = true;
-    syncVoiceForDetectedLang(inferLearningLangFromCards(built.cards));
+    syncVoiceForDetectedLang(inferLearningLangFromCards(built.cards, sourceLearningLang));
     setActiveCardIdx(0);
     setHiddenElementIds([]);
     setSelectedPreviewElementId(null);
@@ -1967,7 +2063,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         if (idx !== index) return c;
         const next = { ...c, ...patch };
         if (patch.ttsText !== undefined) {
-          next.durationSec = estimateCardSpeechDuration(patch.ttsText);
+          next.durationSec = estimateCardSpeechDuration(patch.ttsText, ttsRate);
         }
         return next;
       }),
@@ -2070,7 +2166,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         ? getLearningVoiceLangFallback(creatorLearningLang)
         : reelCreationMode === 'translation'
           ? getLearningVoiceLangFallback(translationLearningLang)
-          : 'en-US'
+          : getLearningVoiceLangFallback(sourceLearningLang)
       : rawVoiceLang;
   const explanationVoiceChoices = useMemo(() => {
     const allVoices = ttsProviders.flatMap((p) => {
@@ -2119,7 +2215,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           ? creatorLearningLang
           : reelCreationMode === 'translation'
             ? translationLearningLang
-            : undefined),
+            : sourceLearningLang),
     );
     if (isMultilingualVoiceId(ttsVoice)) {
       return {
@@ -2128,7 +2224,14 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       };
     }
     const currentVoiceLang = detectVoiceLangCode(ttsVoice);
-    if (currentVoiceLang === inferredLang || (inferredLang === 'en' && !card.learningLang && reelCreationMode === 'source' && !/[\u4e00-\u9faf\u3040-\u30ff\uac00-\ud7af]/.test(`${card.title} ${card.content} ${card.ttsText}`))) {
+    if (
+      currentVoiceLang === inferredLang ||
+      (inferredLang === 'en' &&
+        !card.learningLang &&
+        reelCreationMode === 'source' &&
+        sourceLearningLang === 'en' &&
+        !/[\u4e00-\u9faf\u3040-\u30ff\uac00-\ud7af]/.test(`${card.title} ${card.content} ${card.ttsText}`))
+    ) {
       return { voice: ttsVoice, lang: selectedVoiceLang };
     }
     const matchedVoice = pickVoiceIdForProviderAndLang(
@@ -2253,6 +2356,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       splitAudioByRole,
       explanationTtsVoice,
       ttsRate,
+      ttsRateManuallyEdited: ttsRateManuallyEditedRef.current,
       reelsAspectRatio,
       selectedTheme,
       selectedComposition,
@@ -2308,6 +2412,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       setEnableDualTts(saved.enableDualTts);
       setSplitAudioByRole(saved.splitAudioByRole);
       setExplanationTtsVoice(saved.explanationTtsVoice);
+      ttsRateManuallyEditedRef.current = Boolean(saved.ttsRateManuallyEdited);
       setTtsRate(saved.ttsRate);
       setReelsAspectRatio(saved.reelsAspectRatio);
       setSelectedTheme(saved.selectedTheme);
@@ -2339,7 +2444,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         ? creatorLearningLang
         : nextMode === 'translation'
           ? translationLearningLang
-          : 'en';
+          : sourceLearningLang;
     const nextModeLearningAudio = persistedNext.enableLearningAudio ?? true;
     const nextModeDualTts =
       !nextModeLearningAudio && persistedNext.enableDualTts === false
@@ -2356,7 +2461,15 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       persistedNext.explanationTtsVoice ||
         pickExplanationDefaultVoice(nextTargetLang, nextModeLearningLang),
     );
-    setTtsRate(typeof persistedNext.ttsRate === 'number' ? persistedNext.ttsRate : 1.0);
+    const isManualNextRate = resolveIsTtsRateManuallyEdited(persistedNext, nextMode, creatorFormat);
+    ttsRateManuallyEditedRef.current = isManualNextRate;
+    setTtsRate(
+      isManualNextRate && typeof persistedNext.ttsRate === 'number'
+        ? persistedNext.ttsRate
+        : nextMode === 'creator'
+          ? getDefaultTtsRateForFormat(creatorFormat, undefined, nextComp)
+          : DEFAULT_STANDARD_TTS_RATE,
+    );
     setReelsAspectRatio(persistedNext.reelsAspectRatio || '9:16');
     setSelectedTheme(persistedNext.selectedTheme || 'pastel-sunrise');
     setSelectedComposition(nextComp);
@@ -2416,13 +2529,15 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       setLessonTitle('Hotel Check-in & Polite Requests');
       setMode(persistedNext.mode || 'auto');
       setTtsVoice(
-        persistedNext.ttsVoice || pickVoiceIdForProviderAndLang(nextProvider, 'en', availableVoices),
+        persistedNext.ttsVoice ||
+          pickVoiceIdForProviderAndLang(nextProvider, sourceLearningLang, availableVoices),
       );
       setCards(
         buildReelCardsRuleBased(SAMPLE_ARTICLE_TEXT, {
           title: 'Hotel Check-in & Polite Requests',
           mode: persistedNext.mode || 'auto',
           targetLang: nextTargetLang,
+          learningLanguage: sourceLearningLang,
           includeQuiz: nextIncludeQuiz !== 'none',
         }).cards,
       );
@@ -2553,10 +2668,22 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
             pauseAfterSec: thinkSec,
             voice: resolvedCardVoice,
             lang: cardTarget.lang,
-            autoSplit: roleSeparated
+            autoSplit: allowExplAudio
               ? shouldAutoSplitForTts(cleanQ, cardTarget.lang, explVoiceLang)
-              : undefined,
+              : false,
           });
+        } else if (!allowLearningAudio && allowExplAudio) {
+          const explQ = sanitizeTtsSpeech(activeCard.translation || questionSpeech || activeCard.content);
+          if (explQ) {
+            segments.push({
+              id: `${activeCard.id}-q`,
+              text: explQ,
+              pauseAfterSec: thinkSec,
+              voice: explanationTtsVoice,
+              lang: explVoiceLang,
+              autoSplit: shouldAutoSplitForTts(explQ, explVoiceLang, cardTarget.lang),
+            });
+          }
         }
         if (allowLearningAudio && answerSpeech) {
           const cleanA = stripParenthesizedPinyinIfCjk(answerSpeech, cardTarget.lang);
@@ -2566,12 +2693,16 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
             pauseAfterSec: 0,
             voice: resolvedCardVoice,
             lang: cardTarget.lang,
-            autoSplit: roleSeparated
+            autoSplit: allowExplAudio
               ? shouldAutoSplitForTts(cleanA, cardTarget.lang, explVoiceLang)
-              : undefined,
+              : false,
           });
         }
-        const explSpeech = resolveCardExplanationSpeech(activeCard);
+        const explSpeech =
+          resolveCardExplanationSpeech(activeCard) ||
+          (!allowLearningAudio && allowExplAudio
+            ? sanitizeTtsSpeech(activeCard.explanation || answerSpeech)
+            : '');
         if (
           allowExplAudio &&
           explSpeech &&
@@ -2751,19 +2882,20 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         ? creatorLearningLang
         : reelCreationMode === 'translation'
           ? translationLearningLang
-          : undefined,
+          : sourceLearningLang,
     );
     const defaultVoiceLang = detectVoiceLangCode(ttsVoice);
     const lessonVoice =
       isMultilingualVoiceId(ttsVoice) ||
       defaultVoiceLang === inferredLessonLang ||
-      (inferredLessonLang === 'en' && reelCreationMode === 'source')
+      (inferredLessonLang === 'en' && reelCreationMode === 'source' && sourceLearningLang === 'en')
         ? ttsVoice
         : pickVoiceIdForProviderAndLang(ttsProvider, inferredLessonLang, availableVoices);
     const lessonVoiceLang =
       isMultilingualVoiceId(ttsVoice)
         ? getLearningVoiceLangFallback(inferredLessonLang)
-        : defaultVoiceLang === inferredLessonLang || (inferredLessonLang === 'en' && reelCreationMode === 'source')
+        : defaultVoiceLang === inferredLessonLang ||
+            (inferredLessonLang === 'en' && reelCreationMode === 'source' && sourceLearningLang === 'en')
           ? selectedVoiceLang
           : getLearningVoiceLangFallback(inferredLessonLang);
 
@@ -2884,6 +3016,19 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
               ? shouldAutoSplitForTts(cleanQ, cardTarget.lang, explVoiceLang)
               : false,
           });
+        } else if (allowExplAudio) {
+          const explQ = sanitizeTtsSpeech(c.translation || cleanQ);
+          if (explQ) {
+            qIdx = segments.length;
+            segments.push({
+              id: `${c.id}-q`,
+              text: explQ,
+              pauseAfterSec: thinkSec,
+              voice: explanationTtsVoice,
+              lang: explVoiceLang,
+              autoSplit: shouldAutoSplitForTts(explQ, explVoiceLang, cardTarget.lang),
+            });
+          }
         }
         let aIdx: number | null = null;
         if (allowLearningAudio && answerSpeech) {
@@ -2901,19 +3046,24 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           });
         }
         let explIdx: number | null = null;
+        const effectiveQuizExpl =
+          explSpeech ||
+          (!allowLearningAudio && allowExplAudio
+            ? sanitizeTtsSpeech(c.explanation || answerSpeech || '')
+            : '');
         if (
           allowExplAudio &&
-          explSpeech &&
-          (!allowLearningAudio || explSpeech.toLowerCase() !== (answerSpeech || '').toLowerCase())
+          effectiveQuizExpl &&
+          (!allowLearningAudio || effectiveQuizExpl.toLowerCase() !== (answerSpeech || '').toLowerCase())
         ) {
           explIdx = segments.length;
           segments.push({
             id: `${c.id}-expl`,
-            text: explSpeech,
+            text: effectiveQuizExpl,
             pauseAfterSec: 0,
             voice: explanationTtsVoice,
             lang: explVoiceLang,
-            autoSplit: shouldAutoSplitForTts(explSpeech, explVoiceLang, cardTarget.lang),
+            autoSplit: shouldAutoSplitForTts(effectiveQuizExpl, explVoiceLang, cardTarget.lang),
           });
         }
         cardMapping.push({
@@ -3232,12 +3382,13 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       titleLayout: titleLayoutByAspect[reelsAspectRatio],
       enableLearningAudio: allowLearningAudio,
       enableExplanationAudio: allowExplAudio,
+      ttsRate,
       hiddenElementIds,
     });
 
-    // Map per-segment WordBoundary cues cleanly onto proj.cues (handles single, Dual-TTS & multi-repeat translation)
+    // Map exact audio cues (word boundaries for Edge or speed-adjusted segments for Google/Polly/ElevenLabs) onto proj.cues
     let syncedProj: LessonProject = proj;
-    if (data.hasWordBoundaries && Array.isArray(data.cues) && data.cues.length > 0) {
+    if (Array.isArray(data.cues) && data.cues.length > 0) {
       let projCueCursor = 0;
       const mappedWordsByProjCue: Array<Array<{ word: string; start: number; end: number }>> = [];
       for (const m of cardMapping) {
@@ -3281,9 +3432,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       syncedProj = resyncProjectTimingToCues(proj, mergedCues, { resyncVisuals: false });
     }
     const nextSyncedCues =
-      data.hasWordBoundaries && Array.isArray(data.cues) && data.cues.length > 0
-        ? syncedProj.cues
-        : null;
+      Array.isArray(data.cues) && data.cues.length > 0 ? syncedProj.cues : null;
 
     let finalAudioFile: File = rawAudioFile;
     const introSec = getEffectiveIntroSeconds(syncedProj);
@@ -3988,6 +4137,8 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                         title: ex.title,
                         mode: ex.mode,
                         targetLang,
+                        learningLanguage: sourceLearningLang,
+                        includeQuiz: includeQuizInPrompt !== 'none',
                       });
                       setCards(built.cards);
                       setActiveCardIdx(0);
@@ -4013,13 +4164,14 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           <section className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
             {reelCreationMode === 'source' ? (
               <>
-                <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
-                  <div className="sm:col-span-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  <div>
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                       Tên bài học
                     </label>
                     <input
                       type="text"
+                      aria-label="Tên bài học Từ Bài / Link"
                       value={lessonTitle}
                       onChange={(e) => {
                         setLessonTitle(e.target.value);
@@ -4029,17 +4181,73 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                     />
                   </div>
                   <div>
+                    <label
+                      htmlFor="source-learning-lang"
+                      className="block text-[11px] font-semibold text-slate-700 mb-1"
+                    >
+                      Ngôn ngữ muốn học
+                    </label>
+                    <select
+                      id="source-learning-lang"
+                      aria-label="Ngôn ngữ muốn học Từ Bài / Link"
+                      value={sourceLearningLang}
+                      onChange={(e) => {
+                        const nextLang = e.target.value as LearningLanguageId;
+                        setSourceLearningLang(nextLang);
+                        if (!isMultilingualVoiceId(ttsVoice)) {
+                          setTtsVoice(
+                            pickVoiceIdForProviderAndLang(ttsProvider, nextLang, availableVoices),
+                          );
+                        }
+                        if (targetLang === 'learning') {
+                          setExplanationTtsVoice(
+                            pickExplanationDefaultVoice('learning', nextLang),
+                          );
+                        }
+                        if (!pastedAiJson.trim() && !sceneJsonOverride) {
+                          const isDefaultSample =
+                            !hasCustomCardsRef.current ||
+                            rawText.trim() === SAMPLE_ARTICLE_TEXT.trim();
+                          if (isDefaultSample && nextLang !== 'en') {
+                            const starter = buildStarterLessonForLanguage(nextLang, targetLang);
+                            setLessonTitle(starter.title);
+                            setCards(starter.cards);
+                          } else {
+                            const cleaned = cleanReadingWorksheetInput(rawText, lessonTitle);
+                            const built = buildReelCardsRuleBased(rawText, {
+                              title: cleaned.title || lessonTitle,
+                              mode,
+                              targetLang,
+                              learningLanguage: nextLang,
+                              includeQuiz: includeQuizInPrompt !== 'none',
+                            });
+                            setCards(built.cards);
+                          }
+                          invalidateSynthesizedAudio();
+                        }
+                      }}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg"
+                    >
+                      {LEARNING_LANGUAGE_OPTIONS.map((lang) => (
+                        <option key={lang.id} value={lang.id}>
+                          {lang.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                       Dạng bài nhận diện
                     </label>
                     <select
+                      aria-label="Dạng bài nhận diện"
                       value={mode}
                       onChange={(e) => setMode(e.target.value as ReelMode)}
                       className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg"
                     >
                       <option value="auto">Tự động (Reading / Quiz / Vocab)</option>
                       <option value="reading">Reading (Đoạn đọc)</option>
-                      <option value="quiz">Quiz (True/False &amp; Comprehension)</option>
+                      <option value="quiz">Quiz (Trắc nghiệm / Sắp xếp từ / Đọc hiểu)</option>
                       <option value="vocab">Vocabulary (Từ vựng &amp; IPA)</option>
                     </select>
                   </div>
@@ -4050,19 +4258,23 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                     <select
                       aria-label="Thời lượng render mục tiêu cho Prompt Từ Nguồn"
                       value={String(sourceDurationMinutes)}
-                      onChange={(e) => setSourceDurationMinutes(Number(e.target.value) || 2)}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setSourceDurationMinutes(Number.isFinite(val) ? val : 2);
+                      }}
                       className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg tabular-nums"
                     >
+                      <option value="0">Linh hoạt theo bài (Không ép phút)</option>
                       <option value="0.5">0.5 phút (30s)</option>
                       <option value="1">1 phút</option>
-                      <option value="2">2 phút</option>
-                      <option value="3">3 phút</option>
-                      <option value="5">5 phút</option>
-                      <option value="10">10 phút</option>
-                      <option value="15">15 phút</option>
-                      <option value="20">20 phút</option>
-                      <option value="25">25 phút</option>
-                      <option value="30">30 phút</option>
+                      <option value="2">2 phút (tham khảo)</option>
+                      <option value="3">3 phút (tham khảo)</option>
+                      <option value="5">5 phút (tham khảo)</option>
+                      <option value="10">10 phút (tham khảo)</option>
+                      <option value="15">15 phút (tham khảo)</option>
+                      <option value="20">20 phút (tham khảo)</option>
+                      <option value="25">25 phút (tham khảo)</option>
+                      <option value="30">30 phút (tham khảo)</option>
                     </select>
                   </div>
                   <div>
@@ -4077,17 +4289,17 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                       }
                       className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg"
                     >
-                      <option value="auto">Chỉ tạo Quiz nếu bài có câu hỏi</option>
+                      <option value="auto">AI tự nhận diện &amp; tạo Quiz phù hợp</option>
                       <option value="none">Không thêm Quiz (chỉ bài học)</option>
                       <option value="always">Luôn kèm Quiz 5s cuối mỗi phần</option>
                     </select>
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Bản dịch mục tiêu
+                      Ngôn ngữ giải thích
                     </label>
                     <select
-                      aria-label="Bản dịch mục tiêu"
+                      aria-label="Ngôn ngữ giải thích"
                       value={targetLang}
                       onChange={(e) => {
                         const nextLang = e.target.value;
@@ -4105,6 +4317,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                             title: cleaned.title || lessonTitle,
                             mode,
                             targetLang: nextLang,
+                            learningLanguage: sourceLearningLang,
                             includeQuiz: includeQuizInPrompt !== 'none',
                           });
                           setCards(built.cards);
@@ -4113,13 +4326,13 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                       }}
                       className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg"
                     >
-                      <option value="Tiếng Việt">Dịch sang Tiếng Việt</option>
-                      <option value="learning">Giải thích bằng ngôn ngữ muốn học</option>
-                      <option value="English">Giải thích bằng English</option>
-                      <option value="日本語">Dịch sang Tiếng Nhật</option>
-                      <option value="zh">Dịch sang 中文</option>
-                      <option value="ko">Dịch sang 한국어</option>
-                      <option value="none">Không cần bản dịch</option>
+                      <option value="Tiếng Việt">Tiếng Việt</option>
+                      <option value="learning">Bằng chính ngôn ngữ muốn học</option>
+                      <option value="English">English</option>
+                      <option value="日本語">Tiếng Nhật (日本語)</option>
+                      <option value="zh">Tiếng Trung (中文)</option>
+                      <option value="ko">Tiếng Hàn (한국어)</option>
+                      <option value="none">Không cần giải thích</option>
                     </select>
                   </div>
                 </div>
@@ -4583,7 +4796,18 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                     <select
                       aria-label="Định dạng nội dung AI Creator"
                       value={creatorFormat}
-                      onChange={(e) => setCreatorFormat(e.target.value as CreatorFormatCategory)}
+                      onChange={(e) => {
+                        const nextFmt = e.target.value as CreatorFormatCategory;
+                        setCreatorFormat(nextFmt);
+                        if (!ttsRateManuallyEditedRef.current) {
+                          const nextRate = isDialogueCreatorFormat(nextFmt)
+                            ? DEFAULT_DIALOGUE_TTS_RATE
+                            : nextFmt === 'auto'
+                              ? getDefaultTtsRateForFormat(nextFmt, cards, selectedComposition)
+                              : DEFAULT_STANDARD_TTS_RATE;
+                          setTtsRate(nextRate);
+                        }
+                      }}
                       className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg"
                     >
                       {CREATOR_FORMAT_OPTIONS.map((f) => (
@@ -5569,17 +5793,25 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                 const selectedPreviewElement = selectedPreviewElementId
                   ? previewProject.elements.find((el) => el.id === selectedPreviewElementId) ?? null
                   : null;
+                const resolvedTitleBox = resolveLessonTitleBox(previewProject, reelsAspectRatio, videoTime);
                 const resolvedPreviewLayouts = resolveElementLayoutForAspect(
                   previewProject.elements,
                   previewLessonTime,
                   reelsAspectRatio,
                   previewProject.subtitleConfig,
                   previewProject.compositionId,
+                  resolvedTitleBox
+                    ? {
+                        x: resolvedTitleBox.x,
+                        y: resolvedTitleBox.y,
+                        width: resolvedTitleBox.width,
+                        height: resolvedTitleBox.height,
+                      }
+                    : null,
                 );
                 const selectedCanvasLayout = selectedPreviewElementId
                   ? resolvedPreviewLayouts.get(selectedPreviewElementId) ?? null
                   : null;
-                const resolvedTitleBox = resolveLessonTitleBox(previewProject, reelsAspectRatio, videoTime);
 
                 const applyReelsReflowFromPin = (
                   pinnedId: string,
@@ -6916,6 +7148,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                   Giọng đọc ({ttsRate.toFixed(2)}x)
                 </label>
                 <select
+                  aria-label="Giọng đọc chính TTS"
                   value={ttsVoice}
                   onChange={(e) => setTtsVoice(e.target.value)}
                   className="w-full px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg"
@@ -6938,17 +7171,26 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
               />
             )}
 
-            <div>
+            <div className="space-y-1">
               <input
                 type="range"
                 aria-label="Tốc độ đọc TTS"
-                min={0.8}
+                min={0.65}
                 max={1.3}
                 step={0.05}
                 value={ttsRate}
-                onChange={(e) => setTtsRate(Number(e.target.value))}
+                onChange={(e) => {
+                  ttsRateManuallyEditedRef.current = true;
+                  setTtsRate(Number(e.target.value));
+                  invalidateSynthesizedAudio();
+                }}
                 className="w-full accent-indigo-600 h-1.5"
               />
+              <div className="flex items-center justify-between text-[10px] text-slate-500">
+                <span>Chậm rõ (0.65x)</span>
+                <span>Tự động khớp từng chữ Karaoke Sub</span>
+                <span>Nhanh (1.30x)</span>
+              </div>
             </div>
 
             {/* Dual-TTS & Per-Language Audio On/Off Controls */}
