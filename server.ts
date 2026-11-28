@@ -1690,11 +1690,15 @@ async function startServer(): Promise<void> {
             { id: 'vi-VN-HoaiMyNeural', label: 'Hoài My (Tiếng Việt Nữ)', lang: 'vi-VN' },
             { id: 'vi-VN-NamMinhNeural', label: 'Nam Minh (Tiếng Việt Nam)', lang: 'vi-VN' },
             { id: 'ja-JP-NanamiNeural', label: 'Nanami (日本語 Nữ)', lang: 'ja-JP' },
+            { id: 'ja-JP-KeitaNeural', label: 'Keita (日本語 Nam)', lang: 'ja-JP' },
             { id: 'zh-CN-XiaoxiaoNeural', label: 'Xiaoxiao (中文 Nữ)', lang: 'zh-CN' },
             { id: 'zh-CN-YunxiNeural', label: 'Yunxi (中文 Nam)', lang: 'zh-CN' },
             { id: 'ko-KR-SunHiNeural', label: 'SunHi (한국어 Nữ)', lang: 'ko-KR' },
+            { id: 'ko-KR-InJoonNeural', label: 'InJoon (한국어 Nam)', lang: 'ko-KR' },
             { id: 'fr-FR-DeniseNeural', label: 'Denise (Français Nữ)', lang: 'fr-FR' },
+            { id: 'fr-FR-HenriNeural', label: 'Henri (Français Nam)', lang: 'fr-FR' },
             { id: 'es-ES-ElviraNeural', label: 'Elvira (Español Nữ)', lang: 'es-ES' },
+            { id: 'es-ES-AlvaroNeural', label: 'Alvaro (Español Nam)', lang: 'es-ES' },
           ],
         },
         {
@@ -3320,13 +3324,14 @@ async function startServer(): Promise<void> {
           : `around ${wordCount} ${langMeta.name} words`;
 
       const furiganaWarning =
-        langMeta.code === 'ja'
-          ? 'Do NOT add romaji or inline furigana parentheses inside the Japanese sentences — keep natural Japanese Kanji + Kana only.'
+        (langMeta.code === 'ja'
+          ? 'Write natural Japanese (Kanji + Kana) ONLY in "title" and "text". NEVER rewrite entire sentences in Hiragana, NEVER insert inline furigana parentheses 漢字(かんじ) or romaji inside sentences.'
           : langMeta.code === 'zh'
-            ? 'Write natural Simplified Chinese (简体中文) ONLY — do NOT add inline Pinyin inside the reading text.'
+            ? 'Write natural Simplified Chinese (简体中文) ONLY in "title" and "text" — NEVER insert full-sentence Pinyin inside the reading text.'
             : langMeta.code === 'ko'
-              ? 'Write natural Korean (한국어) ONLY — do NOT add romanization inside the reading text.'
-              : `Write natural ${langMeta.name} ONLY.`;
+              ? 'Write natural Korean (한국어) ONLY in "title" and "text" — NEVER insert full-sentence romanization inside the reading text.'
+              : `Write natural ${langMeta.name} ONLY in "title" and "text" — NEVER insert full-sentence IPA or phonetic transcriptions inside the reading text.`) +
+        ` Additionally, if any sentence uses vocabulary or grammar that is difficult for proficiency level "${level}", include an optional "studyNotes" array (outside "text") containing explanation, how to use it, and cautions if any — and ONLY for difficult Kanji words, provide the Hiragana reading of that individual Kanji word (never full-sentence Hiragana). Also conclude the passage naturally with a clear closing takeaway sentence inside "text" AND include a "lessonSummary" object summarizing what the learner actually learned (main theme/takeaway, key expressions learned, practical situational insights).`;
 
       const rawFormat =
         typeof req.body?.formatPreference === 'string'

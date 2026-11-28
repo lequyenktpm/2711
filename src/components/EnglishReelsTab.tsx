@@ -68,9 +68,11 @@ import {
   buildAiCreatorWebAiPrompt,
   buildEnglishReelsWebAiPrompt,
   buildReelCardsRuleBased,
+  buildSpeakerVoiceMap,
   buildStarterLessonForLanguage,
   buildTranslationCardsFromInput,
   buildTranslationChallengePrompt,
+  CREATOR_FORMAT_OPTIONS,
   CreatorFormatCategory,
   estimateCardSpeechDuration,
   getLevelsForLearningLanguage,
@@ -2333,6 +2335,13 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       const allowLearningAudio = enableLearningAudio;
       const roleSeparated = splitAudioByRole && allowExplAudio;
       const cardTarget = resolveCardTargetVoice(activeCard);
+      const speakerVoiceMap = buildSpeakerVoiceMap(cards, {
+        defaultVoice: cardTarget.voice,
+        defaultLang: cardTarget.lang,
+        provider: ttsProvider,
+        availableVoices,
+      });
+      const resolvedCardVoice = speakerVoiceMap.get(activeCard.id) || cardTarget.voice;
       const segments: Array<{
         id: string;
         text: string;
@@ -2374,7 +2383,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
               id: `${activeCard.id}-r${r}`,
               text: answerSpeech,
               pauseAfterSec: r < cardReps - 1 ? 0.55 : allowExplAudio && nuanceTip ? 0.25 : 0.35,
-              voice: cardTarget.voice,
+              voice: resolvedCardVoice,
               lang: cardTarget.lang,
               autoSplit: shouldAutoSplitForTts(answerSpeech, cardTarget.lang, explVoiceLang),
             });
@@ -2398,7 +2407,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
             id: `${activeCard.id}-q`,
             text: cleanQ,
             pauseAfterSec: thinkSec,
-            voice: cardTarget.voice,
+            voice: resolvedCardVoice,
             lang: cardTarget.lang,
             autoSplit: roleSeparated
               ? shouldAutoSplitForTts(cleanQ, cardTarget.lang, explVoiceLang)
@@ -2411,7 +2420,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
             id: `${activeCard.id}-a`,
             text: cleanA,
             pauseAfterSec: 0,
-            voice: cardTarget.voice,
+            voice: resolvedCardVoice,
             lang: cardTarget.lang,
             autoSplit: roleSeparated
               ? shouldAutoSplitForTts(cleanA, cardTarget.lang, explVoiceLang)
@@ -2461,7 +2470,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           segments.push({
             id: activeCard.id,
             text: cleanSpeech,
-            voice: cardTarget.voice,
+            voice: resolvedCardVoice,
             lang: cardTarget.lang,
             autoSplit: shouldAutoSplitForTts(cleanSpeech, cardTarget.lang, explVoiceLang),
           });
@@ -2477,7 +2486,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           segments.push({
             id: activeCard.id,
             text: cleanSpeech,
-            voice: cardTarget.voice,
+            voice: resolvedCardVoice,
             lang: cardTarget.lang,
             autoSplit: canSplitTarget
               ? shouldAutoSplitForTts(cleanSpeech, cardTarget.lang, explVoiceLang)
@@ -2509,19 +2518,22 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       const data = await synthesizeAudioWithProgressJob(
         {
           provider: ttsProvider,
-          voice: allowLearningAudio ? cardTarget.voice : explanationTtsVoice,
+          voice: allowLearningAudio ? resolvedCardVoice : explanationTtsVoice,
           lang: allowLearningAudio ? cardTarget.lang : explVoiceLang,
           secondaryVoice: allowLearningAudio
             ? (allowExplAudio ? explanationTtsVoice : undefined)
-            : cardTarget.voice,
+            : resolvedCardVoice,
           secondaryLang: allowLearningAudio
             ? (allowExplAudio ? explVoiceLang : undefined)
             : cardTarget.lang,
           autoSplitLanguages:
             (allowExplAudio || allowLearningAudio) && segments.some((s) => s.autoSplit === true),
-          singleVoiceMultilingual: isMultilingualVoiceId(
-            allowLearningAudio ? cardTarget.voice : explanationTtsVoice,
-          ),
+          singleVoiceMultilingual:
+            speakerVoiceMap.size > 0
+              ? false
+              : isMultilingualVoiceId(
+                  allowLearningAudio ? resolvedCardVoice : explanationTtsVoice,
+                ),
           rate: ttsRate,
           segments,
         },
@@ -2611,6 +2623,13 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           ? selectedVoiceLang
           : getLearningVoiceLangFallback(inferredLessonLang);
 
+    const speakerVoiceMap = buildSpeakerVoiceMap(cards, {
+      defaultVoice: lessonVoice,
+      defaultLang: lessonVoiceLang,
+      provider: ttsOverride?.provider || ttsProvider,
+      availableVoices,
+    });
+
     const segments: Array<{
       id: string;
       text: string;
@@ -2636,6 +2655,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       const c = cards[i];
       const explSpeech = resolveCardExplanationSpeech(c);
       const cardTarget = resolveCardTargetVoice(c);
+      const cardVoice = speakerVoiceMap.get(c.id) || cardTarget.voice;
       if (c.type === 'translation') {
         const promptSpeech =
           sanitizeTtsSpeech(c.sourcePrompt || c.translation || c.title) || 'Hãy dịch câu sau.';
@@ -2673,7 +2693,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
               id: `${c.id}-r${r}`,
               text: answerSpeech,
               pauseAfterSec: r < cardReps - 1 ? 0.55 : nuanceTip ? 0.25 : 0.35,
-              voice: cardTarget.voice,
+              voice: cardVoice,
               lang: cardTarget.lang,
               autoSplit: shouldAutoSplitForTts(answerSpeech, cardTarget.lang, explVoiceLang),
             });
@@ -2714,7 +2734,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
             id: `${c.id}-q`,
             text: cleanQ,
             pauseAfterSec: thinkSec,
-            voice: cardTarget.voice,
+            voice: cardVoice,
             lang: cardTarget.lang,
             autoSplit: canSplitTarget
               ? shouldAutoSplitForTts(cleanQ, cardTarget.lang, explVoiceLang)
@@ -2729,7 +2749,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
             id: `${c.id}-a`,
             text: cleanA,
             pauseAfterSec: 0,
-            voice: cardTarget.voice,
+            voice: cardVoice,
             lang: cardTarget.lang,
             autoSplit: canSplitTarget
               ? shouldAutoSplitForTts(cleanA, cardTarget.lang, explVoiceLang)
@@ -2799,7 +2819,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
             id: c.id,
             text: cleanSpeech,
             pauseAfterSec: 0,
-            voice: cardTarget.voice,
+            voice: cardVoice,
             lang: cardTarget.lang,
             autoSplit: canSplitTarget
               ? shouldAutoSplitForTts(cleanSpeech, cardTarget.lang, explVoiceLang)
@@ -2865,11 +2885,13 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     setTtsStageLabel(
       !allowLearningAudio
         ? 'Đang tạo audio chỉ đọc ngôn ngữ giải thích...'
-        : !allowExplAudio
-          ? 'Đang tạo audio chỉ đọc ngôn ngữ muốn học...'
-          : roleSeparated
-            ? 'Đang tạo giọng đọc tách vai (tự xử lý từ xen kẽ nếu có)...'
-            : 'Đang tạo giọng đọc bài học (Dual-TTS tách ngôn ngữ)...',
+        : speakerVoiceMap.size > 0
+          ? 'Đang tạo giọng đọc hội thoại nhiều nhân vật...'
+          : !allowExplAudio
+            ? 'Đang tạo audio chỉ đọc ngôn ngữ muốn học...'
+            : roleSeparated
+              ? 'Đang tạo giọng đọc tách vai (tự xử lý từ xen kẽ nếu có)...'
+              : 'Đang tạo giọng đọc bài học (Dual-TTS tách ngôn ngữ)...',
     );
     const effectiveProvider = ttsOverride?.provider || ttsProvider;
     const data = await synthesizeAudioWithProgressJob(
@@ -2886,9 +2908,12 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           : lessonVoiceLang,
         autoSplitLanguages:
           (allowExplAudio || allowLearningAudio) && segments.some((s) => s.autoSplit === true),
-        singleVoiceMultilingual: isMultilingualVoiceId(
-          allowLearningAudio ? lessonVoice : explanationTtsVoice,
-        ),
+        singleVoiceMultilingual:
+          speakerVoiceMap.size > 0
+            ? false
+            : isMultilingualVoiceId(
+                allowLearningAudio ? lessonVoice : explanationTtsVoice,
+              ),
         rate: ttsRate,
         segments,
       },
@@ -4368,7 +4393,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Định dạng nội dung (A–G)
+                      Định dạng nội dung (A–N)
                     </label>
                     <select
                       aria-label="Định dạng nội dung AI Creator"
@@ -4376,14 +4401,11 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                       onChange={(e) => setCreatorFormat(e.target.value as CreatorFormatCategory)}
                       className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg"
                     >
-                      <option value="auto">Tự động luân phiên (Khuyên dùng)</option>
-                      <option value="vocab">A. Vocabulary Lists (Từ vựng nâng cấp)</option>
-                      <option value="phrases">B. Natural Phrases (Cụm tự nhiên bản xứ)</option>
-                      <option value="phrasal_verbs">C. Phrasal Verbs (Cụm động từ / Mẫu câu)</option>
-                      <option value="mistakes">D. Common Mistakes (Lỗi sai thường gặp)</option>
-                      <option value="grammar">E. Grammar in Context (Ngữ pháp ngữ cảnh)</option>
-                      <option value="comparisons">F. Vocabulary Comparisons (So sánh từ)</option>
-                      <option value="real_life">G. Real-life Conversations (Giao tiếp đời sống)</option>
+                      {CREATOR_FORMAT_OPTIONS.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>

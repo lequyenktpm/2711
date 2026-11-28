@@ -2657,7 +2657,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
         {batchSubTab === 'creator' && (
           <div className="sm:col-span-4">
             <label className="block text-[10px] font-semibold text-slate-700 mb-0.5">
-              Dạng bài (A–E)
+              Dạng bài (A–N)
             </label>
             <select
               value={promptGenCreatorFormat}

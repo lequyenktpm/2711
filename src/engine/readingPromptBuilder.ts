@@ -93,7 +93,8 @@ const READING_LANG_META: Record<ReadingLearningLang, ReadingLangMeta> = {
     unit: 'words',
     ratePerMin: 125,
     badgeSystem: 'CEFR',
-    noPronunciationNote: 'Chỉ viết tiếng Anh tự nhiên, không chèn phiên âm IPA vào đoạn đọc.',
+    noPronunciationNote:
+      'Chỉ viết tiếng Anh tự nhiên, TUYỆT ĐỐI KHÔNG viết phiên âm IPA hay cách đọc cho cả câu vào trong đoạn đọc.',
     exampleTitle: 'It started with one tiny favor… and ended with an unexpected reunion',
     exampleText: 'Sentence one goes here.\\nSentence two goes here.\\nSentence three continues the story.',
   },
@@ -104,7 +105,7 @@ const READING_LANG_META: Record<ReadingLearningLang, ReadingLangMeta> = {
     ratePerMin: 185,
     badgeSystem: 'JLPT',
     noPronunciationNote:
-      'Chỉ viết tiếng Nhật tự nhiên (Kanji + Hiragana/Katakana), TUYỆT ĐỐI KHÔNG chèn phiên âm Romaji hay Furigana trong ngoặc vào câu đọc để audio & bàn tay chỉ chữ khớp 100%.',
+      'Chỉ viết tiếng Nhật tự nhiên (Kanji + Hiragana/Katakana) trong `title` và `text`. TUYỆT ĐỐI KHÔNG viết lại cả câu bằng Hiragana, KHÔNG chèn phiên âm Romaji hay Furigana trong ngoặc `漢字(かんじ)` vào câu đọc để audio & bàn tay chỉ chữ khớp 100%.',
     exampleTitle: 'たった一言の優しさから始まった、思いがけない再会…',
     exampleText: '朝早く起きると、一日の時間が長く感じられます。\\n静かな部屋で温かいお茶を飲みます。\\nそれから今日やることを三つだけ書きます。',
   },
@@ -115,7 +116,7 @@ const READING_LANG_META: Record<ReadingLearningLang, ReadingLangMeta> = {
     ratePerMin: 180,
     badgeSystem: 'HSK',
     noPronunciationNote:
-      'Chỉ viết chữ Hán giản thể (简体中文) tự nhiên, TUYỆT ĐỐI KHÔNG chèn Pinyin vào trong dòng đọc để TTS đọc mượt và con trỏ chỉ đúng từng chữ.',
+      'Chỉ viết chữ Hán giản thể (简体中文) tự nhiên, TUYỆT ĐỐI KHÔNG chèn Pinyin cho cả câu vào trong dòng đọc để TTS đọc mượt và con trỏ chỉ đúng từng chữ.',
     exampleTitle: '本来只是顺手帮了个小忙，结局却让人完全没想到…',
     exampleText: '每天早上我都会早起十分钟。\\n打开窗户呼吸新鲜空气，感觉非常舒服。\\n喝一杯温水以后，我开始计划今天的安排。',
   },
@@ -126,7 +127,7 @@ const READING_LANG_META: Record<ReadingLearningLang, ReadingLangMeta> = {
     ratePerMin: 95,
     badgeSystem: 'TOPIK',
     noPronunciationNote:
-      'Chỉ viết Hangul (한국어) tự nhiên tách từ chuẩn bằng dấu cách, TUYỆT ĐỐI KHÔNG chèn phiên âm Romanization vào câu đọc.',
+      'Chỉ viết Hangul (한국어) tự nhiên tách từ chuẩn bằng dấu cách, TUYỆT ĐỐI KHÔNG chèn phiên âm Romanization cho cả câu vào câu đọc.',
     exampleTitle: '사소한 부탁 하나로 시작된 뜻밖의 재회…',
     exampleText: '매일 아침 일찍 일어나면 하루가 훨씬 여유로워집니다.\\n창문을 열고 따뜻한 물 한 잔을 천천히 마십니다.\\n그리고 오늘 꼭 해야 할 일 세 가지를 적어 봅니다.',
   },
@@ -136,7 +137,7 @@ const READING_LANG_META: Record<ReadingLearningLang, ReadingLangMeta> = {
     unit: 'words',
     ratePerMin: 120,
     badgeSystem: 'CEFR',
-    noPronunciationNote: 'Chỉ viết tiếng Pháp tự nhiên, không chèn phiên âm vào câu đọc.',
+    noPronunciationNote: 'Chỉ viết tiếng Pháp tự nhiên, TUYỆT ĐỐI KHÔNG chèn phiên âm cả câu vào câu đọc.',
     exampleTitle: 'Tout a commencé par un petit service… et s’est terminé par des retrouvailles inattendues',
     exampleText: 'Chaque matin, je me réveille dix minutes plus tôt.\\nJ’ouvre la fenêtre et je bois un grand verre d’eau.',
   },
@@ -146,7 +147,7 @@ const READING_LANG_META: Record<ReadingLearningLang, ReadingLangMeta> = {
     unit: 'words',
     ratePerMin: 125,
     badgeSystem: 'CEFR',
-    noPronunciationNote: 'Chỉ viết tiếng Tây Ban Nha tự nhiên, không chèn phiên âm vào câu đọc.',
+    noPronunciationNote: 'Chỉ viết tiếng Tây Ban Nha tự nhiên, TUYỆT ĐỐI KHÔNG chèn phiên âm cả câu vào câu đọc.',
     exampleTitle: 'Todo empezó con un pequeño favor… y terminó en un reencuentro inesperado',
     exampleText: 'Cada mañana me levanto diez minutos antes.\\nAbro la ventana y tomo un vaso de agua fresca.',
   },
@@ -437,6 +438,12 @@ ${volumeArchitectureBlock ? `${volumeArchitectureBlock}\n` : ''}- **KỶ LUẬT 
   + Nếu \`estimatedMinutes < ${effectiveMinutes}\`, hãy viết thêm các hồi/tình tiết mới giàu giá trị trước khi xuất.
   + Nếu do giới hạn độ dài output của AI trong 1 lượt trả lời hoặc nguồn đầu vào quá ít không thể mở rộng mà không bị lan man/lặp lại khiến kết quả vẫn **chưa đạt tối thiểu ${effectiveMinutes} phút**, BẮT BUỘC đặt \`"metMinimum": false\` trong \`"durationReport"\` và giải thích rõ lý do cụ thể vào \`"shortfallReason"\` (tuyệt đối không âm thầm xuất bài 3 phút mà không báo lý do!).
 - ${meta.noPronunciationNote}
+- **KHÔNG TẠO CÁCH ĐỌC CẢ CÂU & CHÚ THÍCH TỪ/NGỮ PHÁP KHÓ SO VỚI TRÌNH ĐỘ "${level}"**:
+  + TUYỆT ĐỐI KHÔNG viết lại cả câu bằng Hiragana, KHÔNG chèn Furigana \`漢字(かんじ)\`, Romaji, Pinyin hay IPA vào trong \`"text"\` hoặc \`"title"\`.
+  + Nếu trong đoạn đọc có **từ vựng khó** hoặc **ngữ pháp khó** vượt hoặc tiệm cận trình độ **${level}**, hãy ghi riêng vào mảng \`"studyNotes"\` bên dưới (không nhồi vào \`"text"\`) gồm: giải thích nghĩa, cách dùng, và chú ý nếu có; **riêng từ vựng khó là chữ Kanji thì ghi kèm Hiragana của CHÍNH TỪ KANJI ĐÓ** (VD: \`"雰囲気（ふんいき）: bầu không khí — cách dùng & chú ý..."\`), tuyệt đối không phiên âm Hiragana cho cả câu! Nếu câu nào hoàn toàn vừa tầm \`${level}\` thì bỏ qua, không cần nhồi chú thích dư thừa.
+- **TỔNG KẾT NỘI DUNG & KIẾN THỨC ĐÃ HỌC Ở CUỐI BÀI**:
+  + Ở các câu kết của \`"text"\` (bằng **100% ${meta.nativeName}**), hãy kết bài tự nhiên bằng 1–2 câu đúc kết thông điệp / tình huống vừa đọc.
+  + Đồng thời điền trường \`"lessonSummary"\` trong JSON để tổng kết rõ **hôm nay người học đã học được những gì** (nội dung cốt lõi vừa đọc, các cách diễn đạt / từ vựng / ngữ pháp đắt giá và góc nhìn thực tế áp dụng).
 - TUYỆT ĐỐI KHÔNG đưa các dòng nhãn bài tập ("Practice Reading...", "Exercise 1", "Part 1") hoặc tiêu đề markdown \`##\` vào trường \`text\`. Chỉ giữ các câu đọc hoàn chỉnh.
 - Mỗi câu viết trên **1 dòng riêng** (ngăn cách bằng \\n), KHÔNG đánh số thứ tự, KHÔNG gắn timestamp, KHÔNG markdown (\`**\`, \`*\`), KHÔNG emoji, để app đọc TTS & chạy con trỏ chỉ chữ chính xác từng từ.
 
@@ -452,6 +459,22 @@ ${volumeArchitectureBlock ? `${volumeArchitectureBlock}\n` : ''}- **KỶ LUẬT 
   "topicBadge": "${meta.badgeSystem} ${level} · READING",
   "level": "${level}",
   "text": "${meta.exampleText}",
+  "lessonSummary": {
+    "coreMessage": "<Tóm tắt nội dung chính vừa đọc/nghe trong 1–2 câu>",
+    "keyTakeaways": [
+      "<Kiến thức / kỹ năng tình huống / mẫu câu quan trọng 1 rút ra từ bài>",
+      "<Kiến thức / điểm ngữ pháp hoặc sắc thái tự nhiên 2 rút ra từ bài>"
+    ]
+  },
+  "studyNotes": [
+    {
+      "item": "<Chỉ liệt kê nếu có từ/ngữ pháp khó với trình độ ${level}; nếu là từ Kanji khó thì ghi 'Kanji（hiragana）'>",
+      "hiragana": "<Cách đọc Hiragana CHỈ của riêng từ Kanji khó đó (nếu không phải Kanji thì để '')>",
+      "explanation": "<Giải thích nghĩa ngắn gọn>",
+      "usage": "<Cách dùng tự nhiên trong câu/ngữ cảnh>",
+      "caution": "<Chú ý tránh nhầm lẫn nếu có, hoặc ''>"
+    }
+  ],
   "durationReport": {
     "targetMinutes": ${effectiveMinutes},
     "estimatedMinutes": ${effectiveMinutes},

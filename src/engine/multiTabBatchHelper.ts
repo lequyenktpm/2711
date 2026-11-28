@@ -2,6 +2,7 @@ import { buildSceneGenerationPrompt, PromptVideoStyle } from './aiPromptBuilder'
 import { getReadingUiStrings, ReadingUiStrings } from './eduStudioEffects';
 import {
   buildAiCreatorWebAiPrompt,
+  buildSpeakerVoiceMap,
   buildTranslationChallengePrompt,
   CreatorFormatCategory,
   getQuizCardSpeechParts,
@@ -355,6 +356,11 @@ export function buildBatchTtsSegmentsForReelCards(
   const lessonVoiceLang = opts.targetVoiceLangOverride || defaultTarget.voiceLang;
   const explVoice = opts.explVoice || 'vi-VN-HoaiMyNeural';
   const explLang = opts.explLang || 'vi-VN';
+  const speakerVoiceMap = buildSpeakerVoiceMap(cards, {
+    defaultVoice: lessonVoice,
+    defaultLang: lessonVoiceLang,
+    provider: 'edge',
+  });
 
   const segments: BatchTtsSegmentSpec[] = [];
   const cardMapping: BatchCardSegmentMapping[] = [];
@@ -363,6 +369,7 @@ export function buildBatchTtsSegmentsForReelCards(
   for (let i = 0; i < cards.length; i++) {
     const c = cards[i];
     const explSpeech = sanitizeBatchSpeechText(c.explanationSpeech);
+    const cardVoice = speakerVoiceMap.get(c.id) || lessonVoice;
 
     if (c.type === 'translation') {
       const promptSpeech =
@@ -399,7 +406,7 @@ export function buildBatchTtsSegmentsForReelCards(
           id: `${c.id}-r${r}`,
           text: answerSpeech,
           pauseAfterSec: r < cardReps - 1 ? 0.55 : nuanceTip ? 0.25 : 0.35,
-          voice: lessonVoice,
+          voice: cardVoice,
           lang: lessonVoiceLang,
           autoSplit: shouldAutoSplitBatchSpeech(answerSpeech, lessonVoiceLang, explLang),
         });
@@ -435,7 +442,7 @@ export function buildBatchTtsSegmentsForReelCards(
         id: `${c.id}-q`,
         text: cleanQ,
         pauseAfterSec: thinkSec,
-        voice: lessonVoice,
+        voice: cardVoice,
         lang: lessonVoiceLang,
         autoSplit: opts.enableDualTts
           ? shouldAutoSplitBatchSpeech(cleanQ, lessonVoiceLang, explLang)
@@ -449,7 +456,7 @@ export function buildBatchTtsSegmentsForReelCards(
           id: `${c.id}-a`,
           text: cleanA,
           pauseAfterSec: 0,
-          voice: lessonVoice,
+          voice: cardVoice,
           lang: lessonVoiceLang,
           autoSplit: opts.enableDualTts
             ? shouldAutoSplitBatchSpeech(cleanA, lessonVoiceLang, explLang)
@@ -501,7 +508,7 @@ export function buildBatchTtsSegmentsForReelCards(
         id: c.id,
         text: cleanSpeech,
         pauseAfterSec: 0,
-        voice: lessonVoice,
+        voice: cardVoice,
         lang: lessonVoiceLang,
         autoSplit: opts.enableDualTts
           ? shouldAutoSplitBatchSpeech(cleanSpeech, lessonVoiceLang, explLang)

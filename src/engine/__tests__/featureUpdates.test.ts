@@ -12,18 +12,22 @@ import {
   buildAiCreatorWebAiPrompt,
   buildEnglishReelsWebAiPrompt,
   buildReelCardsRuleBased,
+  buildSpeakerVoiceMap,
   buildTranslationChallengePrompt,
+  CREATOR_FORMAT_OPTIONS,
   parseEnglishReelsAiJson,
   recommendCreatorItemCount,
   recommendTranslationItemCount,
   reelCardsToLessonProject,
 } from '../englishReelsEngine';
+import { buildSceneGenerationPrompt } from '../aiPromptBuilder';
 import {
   detectActiveStageOverlaps,
   reflowElementsAvoidingOverlap,
 } from '../layoutSolver';
 import {
   buildBatchPromptZipName,
+  buildBatchTtsSegmentsForReelCards,
   generateBatchPromptsForTopics,
   getBatchPromptSubfolder,
 } from '../multiTabBatchHelper';
@@ -656,6 +660,284 @@ test('leveled | topic filename puts catchy title first and target-language audie
   assert.match(readingPromptEs, /Todo empezó con un pequeño favor… y terminó en un reencuentro inesperado/);
   assert.match(readingPromptEs, /KHÔNG ĐẶT TÊN TRUYỆN PHẲNG/);
 });
+
+test('expanded A-N creator formats and level-calibrated Kanji-only Hiragana / no-full-sentence reading rules across prompts', () => {
+  const formatIds = CREATOR_FORMAT_OPTIONS.map((o) => o.id);
+  for (const requiredId of [
+    'shadowing_solo',
+    'shadowing_dialogue',
+    'podcast_solo',
+    'podcast_duo',
+    'trending_social',
+    'workplace_tech',
+    'news_storytelling',
+  ] as const) {
+    assert.ok(formatIds.includes(requiredId), `Missing CREATOR_FORMAT_OPTIONS id: ${requiredId}`);
+  }
+
+  const parsedPodcastDuo = parseEnglishReelsAiJson(
+    JSON.stringify({
+      title: 'なぜ会議でみんな黙る？ | 中級者向け (日本語 N3)',
+      level: 'N3',
+      mode: 'podcast_duo',
+      cards: [
+        {
+          type: 'vocab',
+          title: '雰囲気を読む',
+          content: '会議の雰囲気を読んで発言する。',
+          phonetic: '',
+          vocabNotes: '雰囲気（ふんいき）: bầu không khí — dùng để chỉ không khí chung; chú ý dễ đọc nhầm chữ 雰.',
+          grammarNote: '〜て発言する: nhìn nhận tình huống rồi mới phát biểu.',
+          ttsText: '会議の雰囲気を読んで発言する。',
+        },
+      ],
+    }),
+    { targetLang: 'Tiếng Việt' },
+  );
+  assert.ok(parsedPodcastDuo);
+  assert.equal(parsedPodcastDuo.mode, 'vocab');
+  assert.equal(parsedPodcastDuo.creatorSubMode, 'podcast_duo');
+  assert.equal(parsedPodcastDuo.cards[0]?.phonetic, undefined);
+  assert.match(parsedPodcastDuo.cards[0]?.vocabNotes || '', /雰囲気（ふんいき）/);
+
+  const reelsPromptJa = buildEnglishReelsWebAiPrompt({
+    sourceText: '会議の雰囲気を読んで発言する。',
+    mode: 'vocab',
+    learningLanguage: 'ja',
+    targetLang: 'Tiếng Việt',
+  });
+  assert.match(reelsPromptJa, /CẤM VIẾT CÁCH ĐỌC CẢ CÂU/);
+  assert.match(reelsPromptJa, /Hiragana của riêng từ Kanji khó đó/i);
+
+  const creatorPromptPodcast = buildAiCreatorWebAiPrompt({
+    topicHint: 'Podcast hai người bàn về AI tại công sở Nhật',
+    formatPreference: 'podcast_duo',
+    learningLanguage: 'ja',
+    level: 'N3',
+    durationMinutes: 3,
+    targetLang: 'Tiếng Việt',
+  });
+  assert.match(creatorPromptPodcast, /K\. Podcast 2 người/);
+  assert.match(creatorPromptPodcast, /Tuyệt đối KHÔNG viết lại cả câu bằng Hiragana/);
+  assert.match(creatorPromptPodcast, /Hiragana của riêng từ Kanji khó đó/i);
+
+  const translationPromptJa = buildTranslationChallengePrompt({
+    topicHint: 'Đi ăn quán',
+    learningLanguage: 'ja',
+    level: 'N4',
+    durationMinutes: 2,
+    targetLang: 'Tiếng Việt',
+  });
+  assert.match(translationPromptJa, /KHÔNG viết Hiragana cho cả câu/);
+  assert.match(translationPromptJa, /giải thích, cách dùng và chú ý/);
+
+  const readingPromptJa = buildReadingWebAiPrompt({
+    mode: 'topic',
+    topic: '朝の習慣',
+    learningLanguage: 'ja',
+    level: 'N4',
+    durationMinutes: 2,
+  });
+  assert.match(readingPromptJa, /TUYỆT ĐỐI KHÔNG viết lại cả câu bằng Hiragana/);
+  assert.match(readingPromptJa, /studyNotes/);
+  assert.match(readingPromptJa, /Hiragana của CHÍNH TỪ KANJI ĐÓ/);
+
+  const scenePromptJa = buildSceneGenerationPrompt(
+    [
+      {
+        id: 'cue_1',
+        start: 0,
+        end: 3.5,
+        text: '会議の雰囲気を読んで発言する。',
+        words: [],
+      },
+    ],
+    {
+      learningLanguage: 'ja',
+      level: 'N3',
+    },
+  );
+  assert.match(scenePromptJa, /CẤM TẠO CÁCH ĐỌC CẢ CÂU/);
+  assert.match(scenePromptJa, /Hiragana của CHÍNH TỪ KANJI ĐÓ/);
+});
+
+test('strict A-F vs G-N prompt separation, mandatory end-of-lesson summary, and 2-3 speaker TTS/visuals', () => {
+  // 1. Creator prompts strictly separate A-F vocab teaching from G-N dialogue/podcast/workplace scripts
+  const vocabCreatorPrompt = buildAiCreatorWebAiPrompt({
+    topicHint: 'Từ vựng công sở',
+    formatPreference: 'vocab',
+    learningLanguage: 'en',
+    level: 'B1',
+    durationMinutes: 2,
+    targetLang: 'Tiếng Việt',
+  });
+  const vocabSection6 = vocabCreatorPrompt.split('## 6. STRICT JSON OUTPUT FORMAT')[1] || '';
+  assert.match(vocabSection6, /"type": "vocab"/);
+  assert.doesNotMatch(vocabSection6, /"type": "dialogue"/);
+
+  const shadowingDialoguePrompt = buildAiCreatorWebAiPrompt({
+    topicHint: 'Shadowing họp dự án AI',
+    formatPreference: 'shadowing_dialogue',
+    learningLanguage: 'ja',
+    level: 'N3',
+    durationMinutes: 3,
+    targetLang: 'Tiếng Việt',
+  });
+  assert.match(shadowingDialoguePrompt, /"type": "dialogue"/);
+  assert.match(shadowingDialoguePrompt, /"speaker":/);
+  assert.match(shadowingDialoguePrompt, /"speakerGender":/);
+  assert.match(shadowingDialoguePrompt, /TỔNG KẾT BÀI HỌC/);
+  assert.doesNotMatch(shadowingDialoguePrompt, /"word": "break down"/);
+
+  const workplacePrompt = buildAiCreatorWebAiPrompt({
+    topicHint: 'Ứng xử khi sếp yêu cầu dùng AI trong công việc',
+    formatPreference: 'workplace_tech',
+    learningLanguage: 'en',
+    level: 'B2',
+    durationMinutes: 3,
+    targetLang: 'Tiếng Việt',
+  });
+  assert.match(workplacePrompt, /SITUATIONAL KNOWLEDGE STRICT RULE.*Công sở.*AI\/Tech/i);
+  assert.match(workplacePrompt, /tình huống thực tế cụ thể/i);
+  assert.match(workplacePrompt, /TỔNG KẾT BÀI HỌC/);
+
+  // Reading and Reels prompts require end-of-lesson summary of what was learned
+  const readingSummaryPrompt = buildReadingWebAiPrompt({
+    mode: 'topic',
+    topic: 'AI at Work',
+    learningLanguage: 'en',
+    level: 'B1',
+    durationMinutes: 2,
+  });
+  assert.match(readingSummaryPrompt, /"lessonSummary"/);
+  assert.match(readingSummaryPrompt, /keyTakeaways/);
+
+  const reelsSummaryPrompt = buildEnglishReelsWebAiPrompt({
+    sourceText: 'A short dialogue about using AI tools safely at work.',
+    mode: 'reading',
+    learningLanguage: 'en',
+    targetLang: 'Tiếng Việt',
+  });
+  assert.match(reelsSummaryPrompt, /tổng kết.*đã học được những gì/i);
+
+  // 2. Parse multi-speaker dialogue JSON (3 speakers: Yuki, Ken, Maya)
+  const dialogueJson = JSON.stringify({
+    title: '会議でAIをどう使う？ | 中級者向け (日本語 N3)',
+    level: 'N3',
+    mode: 'podcast_duo',
+    cards: [
+      {
+        type: 'intro',
+        badge: 'PODCAST · N3',
+        title: 'Hội thoại AI tại công sở Nhật',
+        content: 'Nghe & shadowing tình huống thảo luận dùng AI trong cuộc họp.',
+        explanationSpeech: 'Hôm nay chúng ta nghe hội thoại công sở về cách dùng AI hợp lý trong cuộc họp.',
+      },
+      {
+        type: 'dialogue',
+        speaker: 'Yuki',
+        speakerGender: 'female',
+        speakerRole: 'PM',
+        title: '会議の議事録、AIに任せてもいいですか？',
+        content: '会議の議事録、AIに任せてもいいですか？',
+        translation: 'Tôi giao biên bản cuộc họp cho AI làm có được không?',
+        ttsText: '会議の議事録、AIに任せてもいいですか？',
+        explanationSpeech: 'Yuki hỏi xem có thể nhờ AI ghi biên bản cuộc họp không.',
+        vocabNotes: '議事録（ぎじろく）: biên bản cuộc họp — danh từ hành chính hay gặp.',
+      },
+      {
+        type: 'dialogue',
+        speaker: 'Ken',
+        speakerGender: 'male',
+        speakerRole: 'Tech Lead',
+        title: '機密情報が入っていなければ大丈夫ですよ。',
+        content: '機密情報が入っていなければ大丈夫ですよ。',
+        translation: 'Miễn là không có thông tin mật thì ổn thôi.',
+        ttsText: '機密情報が入っていなければ大丈夫ですよ。',
+        explanationSpeech: 'Ken lưu ý nguyên tắc bảo mật trước khi đưa dữ liệu vào AI.',
+      },
+      {
+        type: 'dialogue',
+        speaker: 'Maya',
+        speakerGender: 'female',
+        speakerRole: 'QA',
+        title: '最後に人間が内容を確認しましょう。',
+        content: '最後に人間が内容を確認しましょう。',
+        translation: 'Cuối cùng con người vẫn nên kiểm tra lại nội dung nhé.',
+        ttsText: '最後に人間が内容を確認しましょう。',
+        explanationSpeech: 'Maya nhắc bước kiểm chứng lại kết quả của AI.',
+      },
+      {
+        type: 'outro',
+        badge: 'TỔNG KẾT BÀI HỌC',
+        title: 'Tổng kết: Dùng AI an toàn ở công sở',
+        content: '1) Lọc thông tin mật; 2) Con người kiểm tra cuối; 3) Từ khóa: 議事録・機密情報.',
+        explanationSpeech: 'Tổng kết hôm nay: không đưa thông tin mật vào AI và luôn kiểm tra lại biên bản.',
+      },
+    ],
+  });
+
+  const parsedDialogue = parseEnglishReelsAiJson(dialogueJson, { targetLang: 'Tiếng Việt' });
+  assert.ok(parsedDialogue);
+  assert.equal(parsedDialogue.cards.length, 5);
+  assert.equal(parsedDialogue.cards[1]?.speaker, 'Yuki');
+  assert.equal(parsedDialogue.cards[1]?.speakerGender, 'female');
+  assert.equal(parsedDialogue.cards[1]?.speakerRole, 'PM');
+  assert.equal(parsedDialogue.cards[2]?.speaker, 'Ken');
+  assert.equal(parsedDialogue.cards[2]?.speakerGender, 'male');
+  assert.equal(parsedDialogue.cards[3]?.speaker, 'Maya');
+
+  // 3. Multi-speaker TTS voice assignment across 3 speakers in JA & EN
+  const jaVoices = buildSpeakerVoiceMap(parsedDialogue.cards, {
+    defaultVoice: 'ja-JP-NanamiNeural',
+    defaultLang: 'ja-JP',
+    provider: 'edge',
+  });
+  assert.equal(jaVoices.get(parsedDialogue.cards[1].id), 'ja-JP-NanamiNeural');
+  assert.equal(jaVoices.get(parsedDialogue.cards[2].id), 'ja-JP-KeitaNeural');
+  const mayaVoice = jaVoices.get(parsedDialogue.cards[3].id);
+  assert.ok(mayaVoice && mayaVoice !== 'ja-JP-NanamiNeural' && mayaVoice !== 'ja-JP-KeitaNeural',
+    `Expected 3rd distinct JA voice for Maya, got ${mayaVoice}`);
+
+  // Batch TTS helper propagates distinct speaker voices into segments
+  const batchTts = buildBatchTtsSegmentsForReelCards(parsedDialogue.cards, {
+    learningLanguage: 'ja',
+    enableDualTts: true,
+  });
+  const segYuki = batchTts.segments.find((s) => s.id === parsedDialogue.cards[1].id);
+  const segKen = batchTts.segments.find((s) => s.id === parsedDialogue.cards[2].id);
+  assert.equal(segYuki?.voice, 'ja-JP-NanamiNeural');
+  assert.equal(segKen?.voice, 'ja-JP-KeitaNeural');
+
+  // 4. Preview project uses color-coded speaker pills and dialogue/audio components
+  const dialogueProject = reelCardsToLessonProject(parsedDialogue.cards, {
+    title: parsedDialogue.title,
+    compositionId: 'avatar-dialogue',
+    targetLang: 'Tiếng Việt',
+  });
+  const pill1 = dialogueProject.elements.find((e) => e.id === 'reel-pill-1');
+  const pill2 = dialogueProject.elements.find((e) => e.id === 'reel-pill-2');
+  assert.equal(pill1?.props.kind, 'topic-pill');
+  assert.match(String(pill1?.props.kind === 'topic-pill' ? pill1.props.text : ''), /🎙️ Yuki/);
+  assert.match(String(pill2?.props.kind === 'topic-pill' ? pill2.props.text : ''), /🎙️ Ken/);
+  assert.notEqual(
+    pill1?.props.kind === 'topic-pill' ? pill1.props.bgColor : '',
+    pill2?.props.kind === 'topic-pill' ? pill2.props.bgColor : '',
+  );
+
+  const prop1 = dialogueProject.elements.find((e) => e.id === 'reel-prop-1');
+  assert.equal(prop1?.props.kind, 'illustration-prop');
+  if (prop1?.props.kind === 'illustration-prop') {
+    assert.ok(
+      ['p168-story-dialogue', 'css-chat-thread', 'ear-listen', 'speech-bubble', 'avatar-speech'].includes(
+        prop1.props.variant,
+      ),
+      `Expected dialogue/audio variant, got ${prop1.props.variant}`,
+    );
+  }
+});
+
+
 
 
 

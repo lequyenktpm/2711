@@ -298,6 +298,10 @@ ${variantsListText}
 
 ${TYPOGRAPHY_MOBILE_READABILITY_PROMPT_BLOCK}
 
+# QUY TẮC CÂU NGOẠI NGỮ & GIẢI THÍCH TỪ VỰNG / NGỮ PHÁP KHÓ (TRÌNH ĐỘ: ${options?.level || 'B1'})
+1. **CẤM TẠO CÁCH ĐỌC CẢ CÂU**: Khi viết câu ngoại ngữ (đặc biệt tiếng Nhật), viết câu tự nhiên (漢字 + かな). **TUYỆT ĐỐI KHÔNG** viết lại cả câu bằng Hiragana, KHÔNG chèn Furigana \`漢字(かんじ)\` cho cả câu, KHÔNG nhồi Romaji/Pinyin/IPA vào \`content\` hoặc \`subtext\` theo kiểu phiên âm nguyên câu.
+2. **TỪ VỰNG / NGỮ PHÁP KHÓ SO VỚI TRÌNH ĐỘ (${options?.level || 'B1'})**: Nếu một câu có **từ vựng khó** hoặc **ngữ pháp khó** so với trình độ **${options?.level || 'B1'}**, hãy ghi **giải thích ngắn gọn + cách dùng + chú ý nếu có** vào \`subtext\` hoặc element \`role: "note"\` / \`"definition"\`. **Riêng nếu từ vựng khó là chữ Kanji thì ghi kèm cách đọc Hiragana của CHÍNH TỪ KANJI ĐÓ** (VD: \`雰囲気（ふんいき）: bầu không khí — cách dùng & chú ý...\`), không viết Hiragana cho cả câu.
+
 # LUẬT CHỐNG ĐỤNG HÀNG & ĐA DẠNG THỊ GIÁC
 1. **KHÔNG lặp nguyên mẫu**: Không dùng trùng \`variant\` hoặc \`dynamicScene.layout\` ở 2 scene/nhịp liên tiếp.
 2. **Phối hợp ít nhất 3–4 họ thị giác trong 1 video**: Họ đối chiếu @englishpracticing168 (\`contrast-pair-cards\`, \`trio-icon-cards\`, \`phrase-icon-split\`, \`dialogue-upgrade\`), Họ **BOOTSTRAP 5 / MODERN CSS** (\`css-sticky-note\`, \`bs-badge-cluster\`, \`css-magnifying-word\`, \`bs-modal-quiz\`, \`bs-card-header\`, \`css-bento-stats\`...), Họ sơ đồ/3D (\`staircase_3d\`, \`object\` + \`connector\`), và \`customPrimitives\`.

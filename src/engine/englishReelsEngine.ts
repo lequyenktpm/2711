@@ -56,7 +56,14 @@ export type CreatorFormatCategory =
   | 'mistakes'
   | 'grammar'
   | 'comparisons'
-  | 'real_life';
+  | 'real_life'
+  | 'shadowing_solo'
+  | 'shadowing_dialogue'
+  | 'podcast_solo'
+  | 'podcast_duo'
+  | 'trending_social'
+  | 'workplace_tech'
+  | 'news_storytelling';
 
 export const CREATOR_FORMAT_OPTIONS: Array<{
   id: CreatorFormatCategory;
@@ -70,6 +77,13 @@ export const CREATOR_FORMAT_OPTIONS: Array<{
   { id: 'grammar', label: 'E. Grammar in Context (Ngữ pháp ngữ cảnh)' },
   { id: 'comparisons', label: 'F. Vocabulary Comparisons (So sánh từ)' },
   { id: 'real_life', label: 'G. Real-life Conversations (Giao tiếp đời sống)' },
+  { id: 'shadowing_solo', label: 'H. Shadowing 1 người (Solo Shadowing / Nhại ngữ điệu)' },
+  { id: 'shadowing_dialogue', label: 'I. Shadowing nhiều người (Hội thoại 2–3 người)' },
+  { id: 'podcast_solo', label: 'J. Podcast 1 người (Solo Deep-Dive / Kể chuyện)' },
+  { id: 'podcast_duo', label: 'K. Podcast 2 người (Talkshow 2 Host tung hứng)' },
+  { id: 'trending_social', label: 'L. Chủ đề Hot & Trend hiện nay (MXH / Gen Z / Viral)' },
+  { id: 'workplace_tech', label: 'M. Công sở, Phỏng vấn & AI / Tech (Kỷ nguyên mới)' },
+  { id: 'news_storytelling', label: 'N. Tin tức nóng, Tâm lý & Đời sống thực tế' },
 ];
 
 export interface LearningLanguageOption {
@@ -224,6 +238,7 @@ export interface ReelCardVisualConfig {
   highlightWord?: string;
   sceneIcon?: IllustrationSceneIcon;
   speechText?: string;
+  reactionText?: string;
   checklist?: Array<{ text: string; highlight?: string; ok?: boolean }>;
   upgrades?: Array<{ prompt: string; upgrade: string; badgeColor?: string }>;
   boxes?: Array<{ title: string; subtitle?: string; icon: 'dot' | 'surface' | 'cube' | 'check' | 'cross' | 'letter'; accent?: string }>;
@@ -237,6 +252,9 @@ export interface ReelCard {
   badge: string;
   indexLabel?: string;
   kicker?: string;
+  speaker?: string;
+  speakerGender?: 'male' | 'female';
+  speakerRole?: string;
   title: string;
   content: string;
   sourcePrompt?: string;
@@ -1240,6 +1258,38 @@ function defaultVisualForCard(
     };
   }
 
+  if (card.speaker?.trim()) {
+    const dialoguePool: IllustrationVariant[] = [
+      'p168-story-dialogue',
+      'css-chat-thread',
+      'ear-listen',
+      'speech-bubble',
+      'avatar-speech',
+    ];
+    const chosen = pickNonRepeatingVariant(
+      dialoguePool[idx % dialoguePool.length],
+      prevVariant,
+      idx,
+    );
+    const shortTurnLine = card.content.length > 72 ? `${card.content.slice(0, 69)}…` : card.content;
+    const shortMeaning =
+      card.translation && card.translation.length > 56
+        ? `${card.translation.slice(0, 53)}…`
+        : card.translation || 'Natural conversation';
+    return {
+      variant: chosen,
+      title: card.speakerRole ? `${card.speaker} · ${card.speakerRole}` : card.speaker,
+      subtitle: shortMeaning,
+      reactionText: card.speaker,
+      speechText: card.content,
+      labels: [
+        `${card.speaker}: ${shortTurnLine}`,
+        shortMeaning,
+      ],
+      sceneIcon: chosen === 'ear-listen' || chosen === 'speech-bubble' ? 'mic' : 'chat',
+    };
+  }
+
   const combined = `${card.title} ${card.content} ${card.translation || ''}`.toLowerCase();
   const hasContrastCue =
     /\bvs\.?\b|\binstead of\b|\bdon't say\b|\bstop saying\b|->|→|\bwhereas\b|\bcompare\b/i.test(
@@ -1983,13 +2033,14 @@ export function buildEnglishReelsWebAiPrompt(params: {
       ? `1. **Mở đầu (\`type: "intro"\`) — CHẾ ĐỘ SONG NGỮ CHỈ ĐỌC NGÔN NGỮ GỐC**: Ở chế độ 2 thứ tiếng, phần mở đầu **CHỈ cần \`"explanationSpeech"\` bằng ${locale.targetLanguageLabel} (ngôn ngữ gốc)** và đặt \`"ttsText": ""\` (KHÔNG cần đọc lặp bằng ngôn ngữ học ở intro). Tuy nhiên, **tên chủ đề, từ vựng chính hoặc mẫu ngữ pháp được nhắc tới trong \`explanationSpeech\` vẫn PHẢI viết bằng đúng \`learningLang\` tự nhiên** (VD: \`"Chào mừng bạn đến với bài học về Hotel Check-in và mẫu câu lịch sự Could I have..."\`) để TTS đọc chuẩn tự nhiên. Chọn \`visual.variant: "bs-card-header"\` hoặc \`"css-roadmap-steps"\`.`
       : '1. **Mở đầu (`type: "intro"`)**: Giới thiệu rõ **mục tiêu thực tế & đúng tên bài học** (VD: `"Welcome to today\'s lesson on <Exact Lesson Title>..."`). Chọn `visual.variant: "bs-card-header"` hoặc `"css-roadmap-steps"`.',
     '2. **Nội dung bài đọc / Từ vựng (`type: "vocab"`)**:',
-    '   - **KHÔNG** nhồi nhét phiên âm `/IPA/` vào `ttsText` (tránh TTS đọc sai).',
-    `   - Ở trường \`"translation"\` và \`"explanationSpeech"\`, giải thích ĐẦY ĐỦ, SÂU SẮC ý nghĩa từ khó, sắc thái ngữ cảnh & cấu trúc ngữ pháp bằng **${locale.targetLanguageLabel}** (tránh câu cụt vô nghĩa; riêng **từ vựng mục tiêu, chủ đề và mẫu ngữ pháp** được nhắc tới trong \`explanationSpeech\` phải viết bằng đúng \`learningLang\` tự nhiên).`,
+    '   - **CẤM VIẾT CÁCH ĐỌC CẢ CÂU (NO FULL-SENTENCE HIRAGANA / FURIGANA / ROMAJI / PINYIN / IPA)**: Khi viết câu ngoại ngữ (đặc biệt tiếng Nhật), viết câu tự nhiên (漢字 + かな), TUYỆT ĐỐI KHÔNG viết lại cả câu bằng Hiragana, KHÔNG chèn furigana trong ngoặc `漢字(かんじ)` vào câu, KHÔNG nhồi `/IPA/`, Pinyin hay Romaji vào `ttsText` / `content` / `phonetic` (để `"phonetic": ""`).',
+    '   - **GIẢI THÍCH TỪ VỰNG KHÓ & NGỮ PHÁP KHÓ THEO TRÌNH ĐỘ (`"vocabNotes"`, `"grammarNote"`, `"explanationSpeech"`)**: Nếu trong câu có **từ vựng khó hoặc ngữ pháp khó so với trình độ (`"level"`)**, BẮT BUỘC ghi rõ: (1) giải thích nghĩa, (2) cách dùng thực tế, (3) chú ý / bẫy dễ nhầm nếu có; **riêng nếu từ vựng khó là chữ Hán / Kanji thì BẮT BUỘC kèm cách đọc Hiragana của riêng từ Kanji khó đó** (VD: `雰囲気（ふんいき）: bầu không khí — ...`), tuyệt đối KHÔNG viết Hiragana cho cả câu!',
+    `   - Ở trường \`"translation"\`, \`"vocabNotes"\`, \`"grammarNote"\` và \`"explanationSpeech"\`, giải thích ĐẦY ĐỦ, SÂU SẮC ý nghĩa từ khó, sắc thái ngữ cảnh & cấu trúc ngữ pháp bằng **${locale.targetLanguageLabel}** (tránh câu cụt vô nghĩa; riêng **từ vựng mục tiêu, chủ đề và mẫu ngữ pháp** được nhắc tới trong \`explanationSpeech\` phải viết bằng đúng \`learningLang\` tự nhiên).`,
     '   - Nếu nguồn có nhiều phần nhỏ / nhiều mục kiến thức, tách từng mục trọn vẹn có lời dẫn chuyển phần tự nhiên (không gộp vội hay cắt cụt câu).',
     ...quizPolicyBlock,
     isBilingualMode
-      ? `4. **Tổng kết (\`type: "outro"\`) — CHẾ ĐỘ SONG NGỮ CHỈ ĐỌC NGÔN NGỮ GỐC**: Ở chế độ 2 thứ tiếng, phần tổng kết **CHỈ cần \`"explanationSpeech"\` bằng ${locale.targetLanguageLabel} (ngôn ngữ gốc)** và đặt \`"ttsText": ""\` (KHÔNG cần \`ttsText\` bằng ngôn ngữ học ở outro); nhưng nếu nhắc lại chủ đề, từ khóa hay ngữ pháp vừa học thì vẫn viết bằng đúng \`learningLang\` tự nhiên. Dùng component \`"css-bento-stats"\` hoặc \`"bs-list-group"\`.`
-      : '4. **Tổng kết (`type: "outro"`)**: Bắt buộc có lời đọc `"ttsText"` (và `"explanationSpeech"` nếu có giải thích) tổng kết đúng bài vừa học qua component `"css-bento-stats"` hoặc `"bs-list-group"`.',
+      ? `4. **Tổng kết (\`type: "outro"\`) — CHẾ ĐỘ SONG NGỮ CHỈ ĐỌC NGÔN NGỮ GỐC**: Ở chế độ 2 thứ tiếng, phần tổng kết **CHỈ cần \`"explanationSpeech"\` bằng ${locale.targetLanguageLabel} (ngôn ngữ gốc)** và đặt \`"ttsText": ""\` (KHÔNG cần \`ttsText\` bằng ngôn ngữ học ở outro); nhưng nếu nhắc lại chủ đề, từ khóa hay ngữ pháp vừa học thì vẫn viết bằng đúng \`learningLang\` tự nhiên. **NẾU NGUỒN LÀ BÀI ĐỌC, CÂU CHUYỆN HOẶC HỘI THOẠI**: PHẢI tổng kết thật rõ hôm nay vừa đọc/nghe nội dung gì và người học **đã học được những gì** (ý chính, kỹ năng/tình huống thực tế, các từ vựng/ngữ pháp đắt giá vừa gặp). Dùng component \`"css-bento-stats"\` hoặc \`"bs-list-group"\`.`
+      : '4. **Tổng kết (`type: "outro"`)**: Bắt buộc có lời đọc `"ttsText"` (và `"explanationSpeech"` nếu có giải thích) **tổng kết rõ nội dung vừa học & những kiến thức/mẫu câu trọng tâm đã rút ra** (đặc biệt khi là bài đọc đoạn văn hoặc hội thoại) qua component `"css-bento-stats"` hoặc `"bs-list-group"`.',
     '',
     TYPOGRAPHY_MOBILE_READABILITY_PROMPT_BLOCK,
     '',
@@ -2093,7 +2144,10 @@ export function buildEnglishReelsWebAiPrompt(params: {
     '      "type": "vocab",',
     `      "badge": ${JSON.stringify(`${locale.readingBadgePrefix} #1`)},`,
     '      "title": "<Tiêu đề ngắn cho mục / câu 1>",',
-    '      "content": "<Câu hoặc từ vựng thực tế trích từ nguồn>",',
+    '      "content": "<Câu hoặc từ vựng thực tế trích từ nguồn — viết tự nhiên, KHÔNG viết lại cả câu bằng Hiragana/Furigana>",',
+    '      "phonetic": "",',
+    '      "vocabNotes": "<Nếu có từ khó so với level: giải thích + cách dùng + chú ý (nếu từ khó là Kanji thì kèm Hiragana riêng từ đó, VD: 雰囲気（ふんいき）)>",',
+    '      "grammarNote": "<Nếu có ngữ pháp khó so với level: công thức + cách dùng + chú ý nếu có>",',
     `      "translation": ${JSON.stringify(locale.promptExampleVocabTranslation)},`,
     '      "ttsText": "<Câu hoặc từ vựng tự nhiên để đọc>",',
     ...(params.compositionId === 'cartoon-host'
@@ -2242,7 +2296,7 @@ export function buildAiCreatorWebAiPrompt(params: {
       : '9:16 Vertical Short (1080×1920 — TikTok / Reels / Shorts)';
 
   const formatLabels: Record<CreatorFormatCategory, string> = {
-    auto: 'Tự chọn dạng cuốn hút nhất trong 7 nhóm A–G bên dưới (KHÔNG mặc định bài đọc comprehension)',
+    auto: 'Tự chọn dạng cuốn hút nhất trong 14 nhóm A–N bên dưới (KHÔNG mặc định bài đọc comprehension)',
     vocab: 'A. Vocabulary Lists (từ vựng nâng cấp / từ hay dùng để nói tự nhiên, sang hơn)',
     phrases: 'B. Natural Phrases (ngưng nói câu sách giáo khoa, thay bằng cụm tự nhiên của người bản xứ)',
     phrasal_verbs: 'C. Phrasal Verbs / Verb Patterns (cụm động từ & mẫu động từ thực tế kèm ngữ cảnh dễ nhớ)',
@@ -2250,8 +2304,31 @@ export function buildAiCreatorWebAiPrompt(params: {
     grammar: 'E. Grammar in Context (phân biệt cấu trúc dễ nhầm trực quan qua tình huống)',
     comparisons: 'F. Vocabulary Comparisons (đối chiếu 2–3 từ gần nghĩa)',
     real_life: 'G. Real-life Conversations (mẫu câu giao tiếp thực tế tại quán cafe, sân bay, công sở, du lịch)',
+    shadowing_solo: 'H. Shadowing 1 người (Solo Shadowing Drill — chuỗi câu nối tiếp giàu nhịp điệu, ngắt nghỉ tự nhiên để người học nói đuổi theo 1 giọng đọc bản xứ)',
+    shadowing_dialogue: 'I. Shadowing nhiều người (2–3 Speakers Shadowing Dialogue — hội thoại qua lại giữa 2–3 nhân vật như A/B/C, ghi rõ vai người nói ở `kicker`/`title`/`visual.labels`, còn `speech` là câu thoại thuần tự nhiên để luyện phản xạ & nhại ngữ điệu)',
+    podcast_solo: 'J. Podcast 1 người (Solo Storytelling / Deep-Dive Podcast — độc thoại chia sẻ góc nhìn sâu sắc, giọng kể ấm áp, mạch lạc, tự nhiên)',
+    podcast_duo: 'K. Podcast 2 người (Two-Host Podcast — talkshow đối thoại tung hứng giữa Host A & Host B: đặt câu hỏi, phản hồi tự nhiên, mở rộng góc nhìn; ghi rõ tên/vai Host ở `kicker`/`title`/`visual.labels`, giữ `speech` thuần lời thoại)',
+    trending_social: 'L. Chủ đề Hot & Trend hiện nay (MXH, TikTok/Threads, AI trong đời sống, digital detox, Gen Z/pop culture, cách nói viral hiện đại)',
+    workplace_tech: 'M. Công sở, Phỏng vấn & AI / Tech (họp team, remote work, phỏng vấn việc làm, đàm phán khéo, chủ đề công nghệ & AI hiện đại)',
+    news_storytelling: 'N. Tin tức nóng, Tâm lý & Đời sống thực tế (câu chuyện thời sự, tâm lý học hành vi, sức khỏe tinh thần, tài chính cá nhân, du lịch trải nghiệm)',
   };
   const chosenFormatInstruction = formatLabels[params.formatPreference ?? 'auto'];
+
+  const formatPref: CreatorFormatCategory = params.formatPreference ?? 'auto';
+  const isMultiSpeakerFormat =
+    formatPref === 'real_life' ||
+    formatPref === 'shadowing_dialogue' ||
+    formatPref === 'podcast_duo';
+  const isShadowingFormat =
+    formatPref === 'shadowing_solo' || formatPref === 'shadowing_dialogue';
+  const isPodcastFormat =
+    formatPref === 'podcast_solo' || formatPref === 'podcast_duo';
+  const isSituationalKnowledgeFormat =
+    formatPref === 'trending_social' ||
+    formatPref === 'workplace_tech' ||
+    formatPref === 'news_storytelling';
+  const isConversationalScriptMode =
+    isMultiSpeakerFormat || isShadowingFormat || isPodcastFormat || isSituationalKnowledgeFormat;
 
   const explainLangName =
     locale.code === 'none' ? langOption.nativeName : locale.targetLanguageLabel;
@@ -2261,7 +2338,7 @@ export function buildAiCreatorWebAiPrompt(params: {
   const translationRule =
     locale.code === 'none'
       ? `Write short, crisp ${langOption.nativeName} explanations in \`meaning\` and keep \`translation\` concise in ${langOption.nativeName}.`
-      : `Write \`meaning\` / \`translation\` / \`visual.subtitle\` / \`visual.labels\` clearly in **${locale.targetLanguageLabel}** tailored for level **${chosenLevel}**.`;
+      : `Write \`meaning\` / \`translation\` / \`vocabNotes\` / \`grammarNote\` / \`visual.subtitle\` / \`visual.labels\` clearly in **${locale.targetLanguageLabel}** tailored for level **${chosenLevel}**.`;
 
   const compHint =
     params.compositionId === 'cartoon-host'
@@ -2275,12 +2352,22 @@ export function buildAiCreatorWebAiPrompt(params: {
 
   const scriptPurityHint =
     learningLang === 'zh'
-      ? 'Put **100% pure Simplified Chinese Hanzi (汉字)** inside `"speech"` (NO Pinyin inside `"speech"`; put Pinyin inside `"phonetic"` only!).'
+      ? 'Put **100% pure Simplified Chinese Hanzi (汉字)** inside `"speech"` and `"example"` (NEVER rewrite the whole sentence in Pinyin, and leave `"phonetic": ""` empty! Put Pinyin ONLY on a specific difficult word inside `"vocabNotes"` if needed).'
       : learningLang === 'ja'
-        ? 'Put **100% pure natural Japanese (漢字 + かな)** inside `"speech"` (put Romaji/furigana inside `"phonetic"` only!).'
+        ? 'Put **100% pure natural Japanese (漢字 + かな)** inside `"speech"` and `"example"` (**NEVER** rewrite the full sentence in Hiragana, **NEVER** insert inline Furigana parentheses like `漢字(かんじ)` inside sentences, and leave `"phonetic": ""` empty!).'
         : learningLang === 'ko'
-          ? 'Put **100% pure Korean Hangul (한국어)** inside `"speech"` (put Romanization inside `"phonetic"` only!).'
-          : `Put **100% pure ${langOption.nativeName}** inside \`"speech"\`.`;
+          ? 'Put **100% pure Korean Hangul (한국어)** inside `"speech"` and `"example"` (NEVER rewrite the full sentence in Romanization, and leave `"phonetic": ""` empty!).'
+          : `Put **100% pure ${langOption.nativeName}** inside \`"speech"\` and \`"example"\` (NEVER put full-sentence phonetic/IPA, leave \`"phonetic": ""\` empty!).`;
+
+  const difficultVocabGrammarRule = [
+    `- **NO FULL-SENTENCE READING + TARGETED DIFFICULT VOCAB/GRAMMAR RULE (CALIBRATED TO LEVEL ${chosenLevel})**:`,
+    `  + **KHÔNG tạo cách đọc của cả câu**: Tuyệt đối KHÔNG viết lại cả câu bằng Hiragana, Furigana, Romaji, Pinyin hay IPA (luôn để \`"phonetic": ""\` rỗng). Câu tiếng Nhật viết tự nhiên bằng Kanji + Kana bình thường.`,
+    `  + **GIẢI THÍCH TỪ VỰNG KHÓ & NGỮ PHÁP KHÓ SO VỚI TRÌNH ĐỘ ${chosenLevel}**: Khi trong câu có **từ vựng khó** hoặc **ngữ pháp khó** đối với trình độ **${chosenLevel}**, BẮT BUỘC bổ sung:`,
+    `    1) Giải thích nghĩa rõ ràng (\`"vocabNotes"\` / \`"grammarNote"\` / \`"meaning"\` / \`"explanationSpeech"\`)`,
+    `    2) Cách dùng thực tế trong giao tiếp (\`cách dùng\`)`,
+    `    3) Chú ý / lỗi dễ nhầm nếu có (\`chú ý nếu có\`)`,
+    `    4) **Quy tắc Kanji → Hiragana**: Nếu từ vựng khó là chữ Kanji (tiếng Nhật), BẮT BUỘC ghi kèm cách đọc **Hiragana của riêng từ Kanji khó đó** trong \`"vocabNotes"\` / \`"meaning"\` (VD: \`雰囲気（ふんいき）: bầu không khí — cách dùng & chú ý...\`), KHÔNG viết Hiragana cho cả câu!`,
+  ].join('\n');
 
   const bilingualEmbeddedLearningRule = isBilingualTwoLang
     ? [
@@ -2392,10 +2479,12 @@ export function buildAiCreatorWebAiPrompt(params: {
           '      "type": "vocab",',
           `      "indexLabel": "01 / ${countPadded}",`,
           '      "word": "不好意思",',
-          '      "phonetic": "bù hǎo yì si",',
+          '      "phonetic": "",',
+          '      "vocabNotes": "不好意思 (bù hǎo yì si): ngại quá / xin lỗi nhẹ — dùng mở lời nhờ vả hoặc hỏi đường; chú ý không dùng cho lỗi nghiêm trọng.",',
+          '      "grammarNote": "",',
           `      "meaning": ${JSON.stringify(explainSample('Xin lỗi / Ngại quá (lịch sự khi làm phiền hoặc nhờ vả)', 'Excuse me / Sorry to bother you politely', '用来礼貌地打扰别人、问路或轻声道歉'))},`,
           '      "example": "不好意思，请问洗手间在哪里？",',
-          '      "speech": "不好意思。不好意思，请问洗手间在哪里？",',
+          '      "speech": "不好意思，请问洗手间在哪里？",',
           ...(includeExplanationSpeech
             ? [
                 `      "explanationSpeech": ${JSON.stringify(
@@ -2412,7 +2501,7 @@ export function buildAiCreatorWebAiPrompt(params: {
           '        "variant": "css-magnifying-word",',
           '        "title": "不好意思",',
           `        "subtitle": ${JSON.stringify(explainSample('Mở lời lịch sự trong giao tiếp', 'Polite opener in daily Mandarin', '日常礼貌开场白'))},`,
-          `        "labels": ${JSON.stringify([explainSample('bù hǎo yì si', 'bù hǎo yì si', '礼貌开场'), explainSample('Mở lời lịch sự', 'Polite opener', '日常高频')])},`,
+          `        "labels": ${JSON.stringify([explainSample('Mở lời lịch sự', 'Polite opener', '礼貌开场'), explainSample('Tránh dùng cho lỗi nặng', 'Not for serious apologies', '日常高频')])},`,
           '        "highlightWord": "不好意思",',
           '        "sceneIcon": "chat"',
           '      }',
@@ -2429,7 +2518,7 @@ export function buildAiCreatorWebAiPrompt(params: {
               ? [
                   `      "explanationSpeech": ${JSON.stringify(
                     explainSample(
-                      `Chào mừng bạn đến với bài học tiếng Nhật trình độ ${chosenLevel}, cùng luyện các mẫu câu lịch sự như お願いします dễ nhớ nhất.`,
+                      `Chào mừng bạn đến với bài học tiếng Nhật trình độ ${chosenLevel}, cùng luyện các mẫu câu tự nhiên dùng ngay trong đời sống.`,
                       `Welcome to this ${chosenLevel} Japanese lesson with practical expressions.`,
                       `JLPT ${chosenLevel} の日常会話でそのまま使える自然な日本語表現を一緒に学びましょう。`,
                     ),
@@ -2447,28 +2536,30 @@ export function buildAiCreatorWebAiPrompt(params: {
             '    {',
             '      "type": "vocab",',
             `      "indexLabel": "01 / ${countPadded}",`,
-            '      "word": "お願いします",',
-            '      "phonetic": "おねがいします · onegaishimasu",',
-            `      "meaning": ${JSON.stringify(explainSample('Làm ơn / Xin vui lòng (nhờ vả lịch sự)', 'Please / Requesting politely', '注文やお願いをするときの丁寧な表現'))},`,
-            '      "example": "お水をお願いします。",',
-            '      "speech": "お願いします。お水をお願いします。",',
+            '      "word": "お水をお願いします",',
+            '      "phonetic": "",',
+            '      "vocabNotes": "お水（おみず）: nước uống lịch sự — thêm tiền tố お cho trang trọng khi gọi món; chú ý không nói trống không 水をください với người lạ.",',
+            '      "grammarNote": "Danh từ + をお願いします: dùng khi gọi món, nhờ vả hoặc yêu cầu dịch vụ lịch sự.",',
+            `      "meaning": ${JSON.stringify(explainSample('Làm ơn cho tôi nước uống (lịch sự)', 'Water, please (polite request)', '注文やお願いをするときの丁寧な表現'))},`,
+            '      "example": "すみません、お水をお願いします。",',
+            '      "speech": "すみません、お水をお願いします。",',
             ...(includeExplanationSpeech
               ? [
                   `      "explanationSpeech": ${JSON.stringify(
                     explainSample(
-                      'Hãy dùng cụm お願いします để nhờ vả hoặc gọi món một cách lịch sự. Ví dụ câu お水をお願いします có nghĩa là cho tôi một cốc nước ạ.',
-                      'Use お願いします whenever ordering food or asking a favor. The example お水をお願いします means water, please.',
+                      'Cụm お願いします dùng để gọi món hoặc nhờ vả lịch sự trong quán ăn. Từ お水 đọc là おみず, thêm お phía trước giúp câu nói nhã nhặn hơn, tránh nói cộc lốc khi giao tiếp với nhân viên.',
+                      'Use お願いします whenever ordering food or asking a favor politely.',
                       'お店で注文するときや誰かにお願いするときに使う便利な丁寧表現です。直接命令するよりずっと自然に聞こえます。',
                     ),
                   )},`,
                 ]
               : []),
-            `      "translation": ${JSON.stringify(explainSample('Làm ơn / Xin vui lòng (lịch sự)', 'Please (polite request)', '丁寧な依頼・注文の表現'))},`,
+            `      "translation": ${JSON.stringify(explainSample('Xin lỗi, cho tôi gọi nước nhé (lịch sự)', 'Excuse me, water please', '丁寧な依頼・注文の表現'))},`,
             '      "visual": {',
             '        "variant": "css-magnifying-word",',
             '        "title": "お願いします",',
             `        "subtitle": ${JSON.stringify(explainSample('Gọi món & nhờ vả lịch sự', 'Polite orders & requests', '注文・依頼の定番'))},`,
-            `        "labels": ${JSON.stringify([explainSample('onegaishimasu', 'onegaishimasu', '丁寧表現'), explainSample('Lịch sự hàng ngày', 'Daily politeness', '日常会話')])},`,
+            `        "labels": ${JSON.stringify([explainSample('お水（おみず）', 'お水（おみず）', '丁寧表現'), explainSample('Lịch sự khi gọi món', 'Polite restaurant order', '日常会話')])},`,
             '        "highlightWord": "お願いします",',
             '        "sceneIcon": "cup"',
             '      }',
@@ -2504,10 +2595,12 @@ export function buildAiCreatorWebAiPrompt(params: {
               '      "type": "vocab",',
               `      "indexLabel": "01 / ${countPadded}",`,
               '      "word": "잠시만요",',
-              '      "phonetic": "jam-si-man-yo",',
+              '      "phonetic": "",',
+              '      "vocabNotes": "잠시만요: xin chờ chút / cho tôi gọi nhân viên — lịch sự khi gọi phục vụ hoặc xin nhường đường.",',
+              '      "grammarNote": "",',
               `      "meaning": ${JSON.stringify(explainSample('Xin lỗi chờ chút / Cho tôi đi nhờ chút', 'Excuse me / Just a moment', '직원을 부르거나 잠시 양해를 구할 때 쓰는 공손한 말'))},`,
               '      "example": "잠시만요, 메뉴판 좀 주시겠어요?",',
-              '      "speech": "잠시만요. 잠시만요, 메뉴판 좀 주시겠어요?",',
+              '      "speech": "잠시만요, 메뉴판 좀 주시겠어요?",',
               ...(includeExplanationSpeech
                 ? [
                     `      "explanationSpeech": ${JSON.stringify(
@@ -2524,7 +2617,7 @@ export function buildAiCreatorWebAiPrompt(params: {
               '        "variant": "css-magnifying-word",',
               '        "title": "잠시만요",',
               `        "subtitle": ${JSON.stringify(explainSample('Gọi phục vụ & xin nhường đường', 'Polite opener at cafes', '식당 · 카페 필수 표현'))},`,
-              `        "labels": ${JSON.stringify([explainSample('jam-si-man-yo', 'jam-si-man-yo', '공손한 호칭'), explainSample('Lịch sự tự nhiên', 'Polite & natural', '실전 회화')])},`,
+              `        "labels": ${JSON.stringify([explainSample('Gọi nhân viên', 'Call server politely', '공손한 호칭'), explainSample('Lịch sự tự nhiên', 'Polite & natural', '실전 회화')])},`,
               '        "highlightWord": "잠시만요",',
               '        "sceneIcon": "chat"',
               '      }',
@@ -2585,6 +2678,198 @@ export function buildAiCreatorWebAiPrompt(params: {
               '    },',
             ];
 
+  const dialogueExampleBlocks = (() => {
+    const spkA =
+      learningLang === 'ja'
+        ? { name: 'Ken', gender: 'male', role: 'Trưởng nhóm' }
+        : learningLang === 'zh'
+          ? { name: 'Minh', gender: 'male', role: 'Kỹ sư AI' }
+          : learningLang === 'ko'
+            ? { name: 'Minho', gender: 'male', role: 'Host A' }
+            : { name: 'Alex', gender: 'male', role: 'Team Lead' };
+    const spkB =
+      learningLang === 'ja'
+        ? { name: 'Yuki', gender: 'female', role: 'Đồng nghiệp' }
+        : learningLang === 'zh'
+          ? { name: 'Linh', gender: 'female', role: 'Quản lý dự án' }
+          : learningLang === 'ko'
+            ? { name: 'Jiwon', gender: 'female', role: 'Host B' }
+            : { name: 'Maya', gender: 'female', role: 'Product Designer' };
+
+    const sampleTurn1Speech = isMultiSpeakerFormat
+      ? learningLang === 'ja'
+        ? 'このAIツールを会議に導入したら、議事録の時間かなり減らせそうだよね。'
+        : learningLang === 'zh'
+          ? '如果我们把这套AI工具用到团队会议里，整理纪要的时间能省下一大半。'
+          : learningLang === 'ko'
+            ? '이번 회의에 AI 도구를 도입하면 회의록 정리 시간을 훨씬 줄일 수 있을 것 같아요.'
+            : learningLang === 'fr'
+              ? 'Si on utilise cet outil IA en réunion, on va gagner énormément de temps sur les comptes rendus.'
+              : learningLang === 'es'
+                ? 'Si usamos esta herramienta de IA en las reuniones, vamos a ahorrar muchísimo tiempo con las actas.'
+                : 'If we bring this AI assistant into our sprint reviews, we could cut meeting notes in half.'
+      : learningLang === 'ja'
+        ? '朝の通勤中にAIニュースを聞くようになってから、会議での提案が一気に通りやすくなりました。'
+        : learningLang === 'zh'
+          ? '自从我开始在通勤时听科技播客，开会提方案时明显更有底气了。'
+          : learningLang === 'ko'
+            ? '출근길마다 최신 AI 소식을 듣기 시작한 뒤로 회의에서 의견을 내기가 훨씬 수월해졌어요.'
+            : learningLang === 'fr'
+              ? 'Depuis que j’écoute des actualités tech le matin, mes propositions passent beaucoup mieux en réunion.'
+              : learningLang === 'es'
+                ? 'Desde que escucho tendencias tech por la mañana, mis ideas tienen mucha más fuerza en las reuniones.'
+                : 'Since I started following real workplace AI workflows every morning, pitching ideas to clients feels effortless.';
+
+    const sampleTurn2Speech = isMultiSpeakerFormat
+      ? learningLang === 'ja'
+        ? '確かに！ただ、機密データの扱いだけは事前にルールを決めておかないと危険かも。'
+        : learningLang === 'zh'
+          ? '确实！不过在正式推广之前，我们得先把客户隐私数据的使用规范定下来。'
+          : learningLang === 'ko'
+            ? '맞아요! 다만 고객 민감 정보는 어디까지 입력할지 기준부터 정해 두는 게 안전하겠어요.'
+            : learningLang === 'fr'
+              ? 'Carrément ! Mais il faut d’abord fixer une règle claire pour ne jamais exposer de données sensibles.'
+              : learningLang === 'es'
+                ? '¡Totalmente! Eso sí, primero debemos definir reglas claras para proteger los datos confidenciales.'
+                : 'True, though before rolling it out, we need clear guardrails so confidential client data never leaks.'
+      : learningLang === 'ja'
+        ? '一番大事なのはツールの名前を覚えることではなく、自分の判断軸を持って質問を投げる力です。'
+        : learningLang === 'zh'
+          ? '真正拉开差距的不是你会多少工具，而是你能不能在关键场合问出对的问题。'
+          : learningLang === 'ko'
+            ? '진짜 중요한 건 도구 이름만 외우는 게 아니라, 상황에 맞는 정확한 질문을 던지는 감각이에요.'
+            : learningLang === 'fr'
+              ? 'Le vrai secret, ce n’est pas de connaître tous les outils, mais de savoir poser la bonne question au bon moment.'
+              : learningLang === 'es'
+                ? 'Lo clave no es memorizar herramientas, sino saber hacer la pregunta correcta en el momento preciso.'
+                : 'What actually sets top performers apart is not knowing tool buzzwords—it is framing clear constraints before you ask.';
+
+    return [
+      '    {',
+      '      "type": "title",',
+      `      "kicker": ${JSON.stringify(isMultiSpeakerFormat ? 'REAL CONVERSATION · MULTI-SPEAKER' : isPodcastFormat ? 'SPOKEN PODCAST EPISODE' : isShadowingFormat ? 'NATURAL SHADOWING FLOW' : 'REAL SITUATION & INSIGHT')},`,
+      `      "title": ${JSON.stringify(topicHint ? `${topicHint} | ${chosenLevel}` : `Real Situation Episode | ${chosenLevel}`)},`,
+      `      "speech": ${JSON.stringify(exIntroSpeech)},`,
+      ...(includeExplanationSpeech
+        ? [
+            `      "explanationSpeech": ${JSON.stringify(
+              explainSample(
+                `Chào mừng bạn đến với tình huống thực tế trình độ ${chosenLevel}. Hãy lắng nghe mạch hội thoại/bài nói tự nhiên và chú ý cách ứng xử thực tế nhé!`,
+                `Welcome to this natural ${chosenLevel} spoken scenario. Follow the full conversation flow and key situational insights!`,
+                `Chào mừng bạn đến với tình huống ${chosenLevel}.`,
+              ),
+            )},`,
+          ]
+        : []),
+      '      "visual": {',
+      '        "variant": "bs-card-header",',
+      `        "formula": "${chosenLevel} · SPOKEN FLOW",`,
+      `        "title": ${JSON.stringify(isMultiSpeakerFormat ? '2–3 Speakers Conversation' : 'Natural Spoken Flow')},`,
+      '        "subtitle": "Nghe mạch nói tự nhiên · Tổng kết kiến thức cuối bài",',
+      '        "sceneIcon": "mic"',
+      '      }',
+      '    },',
+      '    {',
+      '      "type": "dialogue",',
+      `      "indexLabel": "01 / ${countPadded}",`,
+      ...(isMultiSpeakerFormat
+        ? [
+            `      "speaker": ${JSON.stringify(spkA.name)},`,
+            `      "speakerGender": ${JSON.stringify(spkA.gender)},`,
+            `      "speakerRole": ${JSON.stringify(spkA.role)},`,
+          ]
+        : ['      "kicker": "TURN 01 · OPENING SITUATION",']),
+      '      "phonetic": "",',
+      `      "title": ${JSON.stringify(isMultiSpeakerFormat ? `${spkA.name} mở vấn đề` : 'Mở đầu tình huống thực tế')},`,
+      `      "content": ${JSON.stringify(sampleTurn1Speech)},`,
+      `      "speech": ${JSON.stringify(sampleTurn1Speech)},`,
+      `      "translation": ${JSON.stringify(explainSample('Bản dịch tự nhiên của câu nói này sang tiếng Việt.', 'Natural meaning of this spoken line.', 'Natural meaning of this spoken line.'))},`,
+      `      "vocabNotes": ${JSON.stringify(learningLang === 'ja' ? '導入（どうにゅう）: triển khai, áp dụng vào thực tế — dùng trong bối cảnh công việc/hệ thống; chú ý Kanji chữ 導 dễ đọc nhầm.' : '(Chỉ điền nếu trong câu có từ vựng khó so với level, kèm giải thích + cách dùng + chú ý; để "" nếu câu đơn giản)')},`,
+      '      "grammarNote": "",',
+      ...(includeExplanationSpeech
+        ? [
+            `      "explanationSpeech": ${JSON.stringify(
+              explainSample(
+                'Câu mở đầu tình huống đưa ra đề xuất thực tế một cách tự nhiên trước đồng nghiệp.',
+                'This opening turn frames a realistic workplace proposal smoothly.',
+                'Opening situational line.',
+              ),
+            )},`,
+          ]
+        : []),
+      '      "visual": {',
+      `        "variant": ${JSON.stringify(isMultiSpeakerFormat ? 'p168-story-dialogue' : 'ear-listen')},`,
+      `        "title": ${JSON.stringify(isMultiSpeakerFormat ? spkA.name : 'Luyện nghe & nói đuổi theo')},`,
+      `        "reactionText": ${JSON.stringify(isMultiSpeakerFormat ? spkA.name : 'Speaker')},`,
+      `        "speechText": ${JSON.stringify(sampleTurn1Speech)},`,
+      '        "sceneIcon": "mic"',
+      '      }',
+      '    },',
+      '    {',
+      '      "type": "dialogue",',
+      `      "indexLabel": "02 / ${countPadded}",`,
+      ...(isMultiSpeakerFormat
+        ? [
+            `      "speaker": ${JSON.stringify(spkB.name)},`,
+            `      "speakerGender": ${JSON.stringify(spkB.gender)},`,
+            `      "speakerRole": ${JSON.stringify(spkB.role)},`,
+          ]
+        : ['      "kicker": "TURN 02 · KEY INSIGHT",']),
+      '      "phonetic": "",',
+      `      "title": ${JSON.stringify(isMultiSpeakerFormat ? `${spkB.name} phản hồi & lưu ý thực tế` : 'Triển khai góc nhìn & kinh nghiệm thực tế')},`,
+      `      "content": ${JSON.stringify(sampleTurn2Speech)},`,
+      `      "speech": ${JSON.stringify(sampleTurn2Speech)},`,
+      `      "translation": ${JSON.stringify(explainSample('Bản dịch tự nhiên câu phản hồi / góc nhìn thực chiến.', 'Natural meaning of the reply/insight.', 'Natural meaning of the reply/insight.'))},`,
+      '      "vocabNotes": "",',
+      '      "grammarNote": "(Chỉ ghi nếu có cấu trúc khó so với level: giải thích + cách dùng + chú ý)",',
+      ...(includeExplanationSpeech
+        ? [
+            `      "explanationSpeech": ${JSON.stringify(
+              explainSample(
+                'Lưu ý thực tế rút ra: khi đồng ý ý tưởng mới nơi công sở, luôn chủ động nêu kèm điều kiện an toàn dữ liệu để thể hiện tư duy chuyên nghiệp.',
+                'Practical workplace takeaway: pair enthusiasm with concrete risk awareness.',
+                'Practical situational takeaway.',
+              ),
+            )},`,
+          ]
+        : []),
+      '      "visual": {',
+      `        "variant": ${JSON.stringify(isMultiSpeakerFormat ? 'css-chat-thread' : 'css-sticky-note')},`,
+      `        "title": ${JSON.stringify(isMultiSpeakerFormat ? `${spkA.name} ↔ ${spkB.name}` : 'Key Situational Insight')},`,
+      `        "labels": ${JSON.stringify(isMultiSpeakerFormat ? [`${spkA.name}: Đề xuất giải pháp`, `${spkB.name}: Bổ sung góc nhìn rủi ro`] : ['Tình huống thực tế', 'Cách ứng xử tự nhiên'])},`,
+      '        "sceneIcon": "chat"',
+      '      }',
+      '    },',
+      '    {',
+      '      "type": "vocab",',
+      '      "badge": "TỔNG KẾT BÀI HỌC",',
+      '      "title": "Hôm nay bạn vừa học được gì?",',
+      `      "content": ${JSON.stringify(explainSample('Tóm tắt mạch hội thoại/tình huống + các kỹ năng giao tiếp & từ vựng trọng tâm vừa nắm được.', 'Summary of today’s conversation/scenario and practical takeaways.', 'Summary of today’s takeaways.'))},`,
+      `      "speech": ${JSON.stringify(exOutroSpeech || 'Great job today.')},`,
+      ...(includeExplanationSpeech
+        ? [
+            `      "explanationSpeech": ${JSON.stringify(
+              explainSample(
+                'Tổng kết nội dung vừa nghe: bạn vừa nắm được cách đề xuất áp dụng công cụ mới và phản biện khéo léo về bảo mật dữ liệu trong cuộc họp công sở, cùng các cụm từ tự nhiên đi kèm.',
+                'Recap of what we learned today: how to pitch new ideas smoothly, raise practical guardrails politely, and apply the key expressions in real life.',
+                'Summary of key takeaways.',
+              ),
+            )},`,
+          ]
+        : []),
+      '      "translation": "Tổng kết nội dung chính & kiến thức ứng dụng thực tế",',
+      '      "visual": {',
+      '        "variant": "bs-list-group",',
+      '        "title": "Tổng kết kiến thức bài học",',
+      '        "labels": ["1. Nội dung chính vừa nghe", "2. Cách xử lý tình huống", "3. Từ/cụm đắt giá cần nhớ"],',
+      '        "sceneIcon": "check"',
+      '      }',
+      '    },',
+    ];
+  })();
+
+  const selectedExampleBlocks = isConversationalScriptMode ? dialogueExampleBlocks : exampleBlocks;
+
   const creatorChapters =
     durationMinutes && durationMinutes >= 5
       ? Math.max(3, Math.min(10, Math.round(durationMinutes / 3.5)))
@@ -2612,35 +2897,77 @@ export function buildAiCreatorWebAiPrompt(params: {
     ? [
         `- **Minimum Video Duration Floor (CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN)**: At least **${durationLabel}** — **AI TỰ QUYẾT ĐỊNH SỐ LƯỢNG MỤC KIẾN THỨC TỐI ƯU** (KHÔNG ép cứng một con số máy móc):`,
         durationMinutes
-          ? `  + **QUY MÔ BẮT BUỘC ĐỂ ĐẠT >= ${durationMinutes} PHÚT (CẤM DỪNG SỚM Ở ~2–3 PHÚT)**: Hãy thiết kế lộ trình **${autoMinCards}–${autoMaxCards} mục kiến thức**${creatorChapters ? ` chia thành **${creatorChapters} chương/tình huống nối tiếp nhau**` : ''}, mỗi mục khoảng 55–85 từ lời đọc + phân tích sâu (~20–30s/mục) để tổng thời lượng đạt hoặc vượt **${durationMinutes} phút**!`
+          ? `  + **QUY MÔ BẮT BUỘC ĐỂ ĐẠT >= ${durationMinutes} PHÚT (CẤM DỪNG SỚM Ở ~2–3 PHÚT)**: Hãy thiết kế lộ trình **${autoMinCards}–${autoMaxCards} ${isConversationalScriptMode ? 'lượt thoại / đoạn nói nối tiếp' : 'mục kiến thức'}**${creatorChapters ? ` chia thành **${creatorChapters} chương/tình huống nối tiếp nhau**` : ''}, mỗi mục khoảng 55–85 từ lời đọc + phân tích sâu (~20–30s/mục) để tổng thời lượng đạt hoặc vượt **${durationMinutes} phút**!`
           : '  + Hãy để **số lượng kiến thức phù hợp chủ đề và chiều sâu phân tích** quyết định thời lượng thực tế của video (TUYỆT ĐỐI KHÔNG rút ngắn thấp hơn sàn thời lượng hay hy sinh chất lượng giải thích).',
       ].join('\n')
-    : `- **Minimum Video Duration Floor (CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN)**: At least **${durationLabel}** with at least **${numericCount} core teaching items**${durationMinutes ? ` (tức trung bình **~${isCjkLearning ? `${fixedCjkPerCard}+ ký tự` : `${fixedWordsPerCard}+ từ`}/mục** (~${fixedSecPerCard}s/mục) ở \`speech\` + \`explanationSpeech\`${creatorChapters ? `, chia thành **${creatorChapters} nhóm chủ điểm tiến triển**` : ''} để chạm hoặc vượt **${durationMinutes} phút**, TUYỆT ĐỐI KHÔNG dừng ở ~3 phút!)` : ''} — let the number of knowledge points & explanation quality determine the final runtime (NEVER compress below this floor or sacrifice explanation completeness).`;
+    : `- **Minimum Video Duration Floor (CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN)**: At least **${durationLabel}** with at least **${numericCount} ${isConversationalScriptMode ? 'turns / segments' : 'core teaching items'}**${durationMinutes ? ` (tức trung bình **~${isCjkLearning ? `${fixedCjkPerCard}+ ký tự` : `${fixedWordsPerCard}+ từ`}/mục** (~${fixedSecPerCard}s/mục) ở \`speech\` + \`explanationSpeech\`${creatorChapters ? `, chia thành **${creatorChapters} nhóm chủ điểm tiến triển**` : ''} để chạm hoặc vượt **${durationMinutes} phút**, TUYỆT ĐỐI KHÔNG dừng ở ~3 phút!)` : ''} — let depth and completeness determine final runtime.`;
 
   const antiFluffAndAuditBlock = [
     '- **ANTI-RAMBLING, ZERO REPETITION & DEEP-INSIGHT MANDATE (DÀI NHƯNG PHẢI SÂU SẮC, CẤM LAN MAN / LẶP LẠI)**:',
-    '  + **NO RAMBLING OR FILLER**: Never pad `speech` or `explanationSpeech` with empty intros, vague praise ("this is super useful so let\'s practice"), or off-topic tangents. Every sentence MUST teach a concrete nuance, rule, collocation, or contrast.',
-    '  + **ZERO REPETITION**: Every single card in `cards[]` MUST introduce a **genuinely distinct word, collocation, grammar contrast, or real-life angle** — NEVER reuse the same idea/structure with trivial word swaps.',
-    '  + **DEPTH PER CARD**: In `explanationSpeech` + `translation` + `visual.labels`, explicitly cover: (1) exact situational register (casual vs polite vs professional), (2) WHY natives prefer this phrasing over literal/textbook mistakes, and (3) a vivid complete dialogue/example.',
+    '  + **NO RAMBLING OR FILLER**: Never pad `speech` or `explanationSpeech` with empty intros or off-topic tangents. Every line MUST push the story/dialogue/teaching point forward.',
+    '  + **ZERO REPETITION**: Every single card in `cards[]` MUST advance the conversation/scenario or introduce a genuinely distinct angle — NEVER loop the same cliché sentence.',
+    isConversationalScriptMode
+      ? '  + **AUTHENTIC FLOW & PRACTICAL SITUATIONAL KNOWLEDGE**: Keep dialogue/speech flowing naturally beat-by-beat; highlight practical cultural/workplace/tech insight in `explanationSpeech` + `translation` and ONLY attach `vocabNotes`/`grammarNote` when a word or grammar point is genuinely difficult for level ' + chosenLevel + ' (with Kanji-only Hiragana!).'
+      : '  + **DEPTH PER CARD**: In `explanationSpeech` + `translation` + `visual.labels`, explicitly cover: (1) exact situational register (casual vs polite vs professional), (2) WHY natives prefer this phrasing over literal/textbook mistakes, and (3) a vivid complete dialogue/example.',
     durationMinutes
-      ? `  + **SELF-AUDIT & SHORTFALL REASON (\`durationReport\`)**: Before returning JSON, sum ALL words/characters across \`speech\` + \`explanationSpeech\` across ALL cards and verify estimated audio minutes >= ${durationMinutes}. If under ${durationMinutes} min, expand with additional distinct chapters/angles until >= ${durationMinutes} min. If you genuinely cannot reach ${durationMinutes} min cleanly without rambling, repeating, or hitting output limits, you MUST set \`"metMinimum": false\` and explain the concrete reason inside \`"durationReport.shortfallReason"\`!`
-      : '  + **SELF-AUDIT**: Verify every card adds non-redundant, insightful knowledge before returning JSON.',
+      ? `  + **SELF-AUDIT & SHORTFALL REASON (\`durationReport\`)**: Before returning JSON, sum ALL words/characters across \`speech\` + \`explanationSpeech\` across ALL cards and verify estimated audio minutes >= ${durationMinutes}. If under ${durationMinutes} min, expand with additional distinct scenes/turns/angles until >= ${durationMinutes} min. If you genuinely cannot reach ${durationMinutes} min cleanly without rambling, repeating, or hitting output limits, you MUST set \`"metMinimum": false\` and explain the concrete reason inside \`"durationReport.shortfallReason"\`!`
+      : '  + **SELF-AUDIT**: Verify every card adds non-redundant, insightful value before returning JSON.',
   ].join('\n');
 
-  const coreCardsHeaderLine = isAutoItemCount
-    ? `2. **Core Teaching Cards (\`type: "vocab"\` — AI tự chọn số lượng mục kiến thức \`N\` phù hợp nhất với chủ đề & thời lượng tối thiểu)** — PEDAGOGICAL DEPTH FIRST:`
-    : `2. **Core Teaching Cards (\`${numericCount}\` cards, \`type: "vocab"\`) — PEDAGOGICAL DEPTH FIRST**:`;
+  const coreCardsHeaderLine = isConversationalScriptMode
+    ? isAutoItemCount
+      ? `2. **Core Conversation / Monologue / Situational Turns (\`type: "dialogue"\` — AI tự chọn số lượt nói \`N\` phù hợp mạch truyện & thời lượng tối thiểu)** — STRICT NON-VOCAB-LIST RULE:`
+      : `2. **Core Conversation / Monologue / Situational Turns (\`${numericCount}\` cards, \`type: "dialogue"\`) — STRICT NON-VOCAB-LIST RULE**:`
+    : isAutoItemCount
+      ? `2. **Core Teaching Cards (\`type: "vocab"\` — AI tự chọn số lượng mục kiến thức \`N\` phù hợp nhất với chủ đề & thời lượng tối thiểu)** — PEDAGOGICAL DEPTH FIRST:`
+      : `2. **Core Teaching Cards (\`${numericCount}\` cards, \`type: "vocab"\`) — PEDAGOGICAL DEPTH FIRST**:`;
 
   const coreCardsIndexLine = isAutoItemCount
-    ? `   - Ordered cleanly with \`"indexLabel": "01 / N"\` through \`"N / N"\` (where \`N\` is your chosen total item count — choose depth over arbitrary fixed counts).`
+    ? `   - Ordered cleanly with \`"indexLabel": "01 / N"\` through \`"N / N"\` (where \`N\` is your chosen total turn/item count).`
     : `   - Ordered cleanly with \`"indexLabel": "01 / ${countPadded}"\` through \`"${countPadded} / ${countPadded}"\`.`;
+
+  const formatSpecificStrictRules = (() => {
+    const lines: string[] = [];
+    lines.push(
+      '- **STRICT FORMAT DISCIPLINE (A–F vs G–N — KHÔNG ĐƯỢC LẪN LỘN KIỂU BÀI)**:',
+      '  + **Nhóm A–F (`vocab`, `phrases`, `phrasal_verbs`, `mistakes`, `grammar`, `comparisons`)**: MỚI LÀ dạng học từ vựng / cụm từ / ngữ pháp / sửa lỗi (mỗi card tập trung 1 từ/cụm/cấu trúc + giải thích + ví dụ).',
+      '  + **Nhóm G–N (`real_life`, `shadowing_solo`, `shadowing_dialogue`, `podcast_solo`, `podcast_duo`, `trending_social`, `workplace_tech`, `news_storytelling`)**: **TUYỆT ĐỐI KHÔNG ĐƯỢC VIẾT THÀNH DANH SÁCH HỌC TỪ VỰNG / NGỮ PHÁP RỜI RẠC** (`word + meaning`)! Mỗi card PHẢI là **một lượt thoại, một đoạn bài nói nối tiếp, hoặc một bước xử lý tình huống thực tế** (dùng `"type": "dialogue"`, viết câu văn/lời thoại liền mạch tự nhiên theo đúng ngữ cảnh)!',
+    );
+    if (isMultiSpeakerFormat || formatPref === 'auto') {
+      lines.push(
+        '  + **MULTI-SPEAKER DIALOGUE / 2–3 NGƯỜI (`G`, `I`, `K` hoặc hội thoại trong `L`/`M`)**: Bắt buộc viết **cuộc hội thoại sống động qua lại giữa 2–3 nhân vật cụ thể** (VD: Ken & Yuki, hoặc Host A / Host B / Khách mời). Trên MỖI card thoại, BẮT BUỘC khai báo `"speaker": "<Tên người nói>"`, `"speakerGender": "male" | "female"`, `"speakerRole": "<Vai trò ngắn gọn>"` để hệ thống TTS của app **tự động đổi giọng Nam / Nữ riêng cho từng nhân vật** và hiển thị tên người đang nói! Giữ `"speech"` 100% là lời thoại thuần túy (KHÔNG viết `"Ken:"` vào đầu `"speech"`).',
+      );
+    }
+    if (isShadowingFormat) {
+      lines.push(
+        '  + **SHADOWING STRICT RULE (`H`, `I`)**: Tạo chuỗi câu nói tự nhiên liên kết thành 1 mạch chuyện/hội thoại hoàn chỉnh (1 người kể ở `H`, hoặc 2–3 người đối đáp ở `I`) với nhịp ngắt nghỉ, nối âm và ngữ điệu giao tiếp đời thật để người học nhại theo ngay. TUYỆT ĐỐI KHÔNG biến thành thẻ từ vựng `word + meaning`!',
+      );
+    }
+    if (isPodcastFormat) {
+      lines.push(
+        '  + **PODCAST STRICT RULE (`J`, `K`)**: Xây dựng như một tập Podcast thực sự — mở đầu gợi tò mò, dẫn dắt mạch lập luận / kể chuyện có chiều sâu (`J`: 1 Host chia sẻ tự sự; `K`: 2 Host tung hứng, hỏi xoáy đáp xoay, phản ứng tự nhiên). TUYỆT ĐỐI KHÔNG biến thành danh sách liệt kê từ vựng!',
+      );
+    }
+    if (isSituationalKnowledgeFormat) {
+      lines.push(
+        '  + **SITUATIONAL KNOWLEDGE STRICT RULE (`L`, `M`, `N` — Công sở, Phỏng vấn, AI/Tech, Trend, Tin tức & Đời sống)**: PHẢI xây dựng thành **tình huống thực tế cụ thể** (cuộc họp xử lý sự cố/AI tại công sở, màn hỏi-đáp phỏng vấn hóc búa, tranh luận xu hướng mới, tình huống tâm lý đời thật) qua lời nói / hội thoại tự nhiên giúp người học **biết cách ứng xử, giải quyết vấn đề và thu nạp kiến thức thực chiến**, chứ không chỉ học từ vựng đơn lẻ!',
+      );
+    }
+    if (isConversationalScriptMode || formatPref === 'auto') {
+      lines.push(
+        '  + **MANDATORY CONTENT RECAP AT THE END (TỔNG KẾT NỘI DUNG HỌC ĐƯỢC GÌ)**: Với mọi bài hội thoại, bài nói, shadowing, podcast, tình huống hay bài đọc (`G–N`), ngay trước `outro` (hoặc tích hợp rõ trên card `"TỔNG KẾT BÀI HỌC"` + `outro.explanationSpeech`), BẮT BUỘC tổng kết cho người học: **(1) Nội dung/kết quả tình huống chính vừa nghe, (2) Người học rút ra được kiến thức/kỹ năng ứng xử gì, và (3) Các mẫu câu/từ vựng/ngữ pháp đắt giá vừa gặp trong mạch nói** (có Hiragana cho Kanji khó nếu có).',
+      );
+    }
+    return lines;
+  })();
 
   return [
     `# ROLE: AUTONOMOUS ${langOption.nativeName.toUpperCase()} EDUCATIONAL CONTENT DIRECTOR`,
-    `You are an expert ${langOption.nativeName} teacher, educational content strategist, video scriptwriter, and curriculum designer.`,
+    `You are an expert ${langOption.nativeName} teacher, dialogue scriptwriter, podcast producer, and curriculum designer.`,
     '',
-    'Your task is NOT to convert an existing reading passage into a video.',
-    `Your task is to independently CREATE an engaging, save-worthy ${langOption.nativeName} learning video concept from scratch — even when NO source text and NO URL are given.`,
+    isConversationalScriptMode
+      ? `Your task is to CREATE an authentic, continuous ${langOption.nativeName} conversation / spoken script / situational episode from scratch — NOT a disconnected vocabulary list!`
+      : `Your task is to independently CREATE an engaging, save-worthy ${langOption.nativeName} learning video concept from scratch — even when NO source text and NO URL are given.`,
     '',
     '## 1. LEARNING LANGUAGE, LEVEL & DURATION TARGET',
     `- **Target Language Being Taught**: **${langOption.label}**`,
@@ -2656,32 +2983,38 @@ export function buildAiCreatorWebAiPrompt(params: {
         ', and output ONLY the final JSON (never output the brainstorming list).',
     ...(params.customInputLines?.trim()
       ? [
-          `- **USER SUBTITLE / SCRIPT PROVIDED BELOW**: Edit, polish, correct, and structure these lines into cohesive teaching cards matching the JSON schema:\n"""\n${params.customInputLines.trim().slice(0, 8000)}\n"""`,
+          `- **USER SUBTITLE / SCRIPT PROVIDED BELOW**: Edit, polish, correct, and structure these lines into cohesive cards matching the JSON schema:\n"""\n${params.customInputLines.trim().slice(0, 8000)}\n"""`,
         ]
       : []),
     '',
-    '## 2. FORMAT & CONTENT DIVERSITY (7 FORMATS)',
-    `- Format preference: ${chosenFormatInstruction}`,
+    '## 2. FORMAT & CONTENT DIVERSITY (14 FORMATS A–N)',
+    `- **SELECTED FORMAT PREFERENCE**: ${chosenFormatInstruction}`,
     '- NEVER default to a dry reading passage + multiple-choice comprehension worksheet.',
-    '- Formats to draw from: **A. Vocabulary Lists** · **B. Natural Phrases** · **C. Phrasal Verbs** · **D. Common Mistakes** · **E. Grammar in Context** · **F. Vocabulary Comparisons** · **G. Real-life Conversations**.',
+    '- Formats overview: **A–F (Teaching Focus)**: A. Vocabulary Lists · B. Natural Phrases · C. Phrasal Verbs · D. Common Mistakes · E. Grammar in Context · F. Vocabulary Comparisons | **G–N (Dialogue / Spoken / Situational Focus)**: G. Real-life Conversations (2–3 speakers) · H. Shadowing 1 người · I. Shadowing nhiều người (2–3 người) · J. Podcast 1 người · K. Podcast 2 người (2 Host) · L. Chủ đề Hot & Trend hiện nay · M. Công sở / Phỏng vấn / AI & Tech · N. Tin tức nóng & Đời sống thực tế.',
+    ...formatSpecificStrictRules,
     '',
     '## 3. VIDEO PACING & STRUCTURE',
-    `1. **Hook Card (\`type: "title"\`)**: Scroll-stopping \`kicker\`, **CATCHY root \`title\` formatted as \`"<Tiêu đề hook gợi tò mò cuốn hút> | ${formatAudienceLevelLabel(chosenLevel, learningLang)}"\`** (TITLE FIRST, target-language audience LEVEL AFTER separated by \`|\` — used directly as the saved filename!), ${introOutroNativeOnly ? 'empty `speech: ""` with natural welcoming hook (mentioning the exact topic/target expression naturally in ' + langOption.nativeName + ') + transition into item 01 in `explanationSpeech` in ' + explainLangName : 'spoken `speech`' + (includeExplanationSpeech ? ' + `explanationSpeech`' : '')}, and \`visual\`.`,
+    `1. **Hook Card (\`type: "title"\`)**: Scroll-stopping \`kicker\`, **CATCHY root \`title\` formatted as \`"<Tiêu đề hook gợi tò mò cuốn hút> | ${formatAudienceLevelLabel(chosenLevel, learningLang)}"\`** (TITLE FIRST, target-language audience LEVEL AFTER separated by \`|\` — used directly as the saved filename!), ${introOutroNativeOnly ? 'empty `speech: ""` with natural welcoming hook (introducing the exact scenario/topic naturally in ' + langOption.nativeName + ') + transition into turn/item 01 in `explanationSpeech` in ' + explainLangName : 'spoken `speech`' + (includeExplanationSpeech ? ' + `explanationSpeech`' : '')}, and \`visual\`.`,
     coreCardsHeaderLine,
     coreCardsIndexLine,
-    '   - Include natural **spoken transition phrases** inside `explanationSpeech` (or `speech` if single-voice) when advancing to the next section/nuance (e.g. "Next expression...", "Moving on to...") so transitions are NEVER silent!',
-    '   - **EXPLANATION QUALITY & KNOWLEDGE DEPTH ARE MANDATORY (CẤM CÂU CỤT VÔ NGHĨA)**: NEVER sprint through shallow 1-word + 1-truncated-example stubs or meaningless half-sentences! Every card MUST deliver complete, self-contained pedagogical value in `explanationSpeech` + `translation` + `visual.labels`: explain **WHY** native speakers find it natural, explicitly contrast **what learners mistakenly say or stiff textbook equivalents** (instead of stiff textbook phrasing, explain why natives say the natural form), clarify situational register/nuance, keep target words/topics/grammar written directly in natural ' + langOption.nativeName + ', and use full, natural sentences (never 1-word native outputs or single-letter symbols). Let the **number of knowledge items** drive final video length (longer is always welcome; NEVER shorter/truncated!).',
+    isConversationalScriptMode
+      ? '   - Keep each turn/beat flowing smoothly from the previous line so it sounds like a REAL continuous conversation, podcast, or shadowing track (avoid abrupt dictionary lecturing mid-dialogue; keep concise practical insights / difficult vocab-grammar notes in `explanationSpeech` / `vocabNotes` / `grammarNote`).'
+      : '   - Include natural **spoken transition phrases** inside `explanationSpeech` (or `speech` if single-voice) when advancing to the next section/nuance (e.g. "Next expression...", "Moving on to...") so transitions are NEVER silent!',
+    isConversationalScriptMode
+      ? `   - **DIFFICULT VOCAB/GRAMMAR ONLY WHEN NEEDED (LEVEL ${chosenLevel}) + SITUATIONAL INSIGHT**: In dialogue/podcast/situational cards, ONLY add \`vocabNotes\` / \`grammarNote\` when a turn actually contains a difficult word or grammar pattern for level **${chosenLevel}** (with explanation, usage, caution if any, and Kanji-only Hiragana). Always clarify situational context & native nuance in \`explanationSpeech\` / \`translation\`.`
+      : '   - **EXPLANATION QUALITY & KNOWLEDGE DEPTH ARE MANDATORY (CẤM CÂU CỤT VÔ NGHĨA)**: NEVER sprint through shallow 1-word + 1-truncated-example stubs or meaningless half-sentences! Every card MUST deliver complete, self-contained pedagogical value in `explanationSpeech` + `vocabNotes` + `grammarNote` + `translation` + `visual.labels`: explain **WHY** native speakers find it natural, explicitly contrast **what learners mistakenly say or stiff textbook equivalents**, clarify situational register/nuance, keep target words/topics/grammar written directly in natural ' + langOption.nativeName + ', and use full, natural sentences.',
     '   - If level is a progression (`N5→N1`, `A1→C2`, `HSK 1→6`, `TOPIK 1→6`), progress clearly from elementary (`01`) to advanced (`' + countPadded + '`).',
     params.includeQuiz
-      ? `3. **Optional Quick Interactive Check (\`type: "quiz"\`, 1–2 concise cards)**: Place a quick 5-second check right after the items it tests (ONLY on key contrasts, NOT an unrelated quiz dumped out of nowhere).`
-      : `3. **NO Surprise Quiz Cards**: Do NOT append \`type: "quiz"\` cards at the end — stay focused on teaching items and practical examples.`,
-    `4. **Recap Outro Card (\`type: "outro"\`)**: ${introOutroNativeOnly ? 'Empty `speech: ""` with encouraging spoken closing summarizing the exact lesson topic/patterns (keeping key terms in natural ' + langOption.nativeName + ') in `explanationSpeech` in ' + explainLangName : 'Encouraging closing in `speech`' + (includeExplanationSpeech ? ' + `explanationSpeech`' : '')} + summary visual.`,
+      ? `3. **Optional Quick Interactive Check (\`type: "quiz"\`, 1–2 concise cards)**: Place a quick 5-second check right after the key exchange/concept it tests.`
+      : `3. **NO Surprise Quiz Cards**: Do NOT append \`type: "quiz"\` cards at the end — stay focused on the main flow.`,
+    `4. **Content Recap & Outro (\`type: "outro"\`${isConversationalScriptMode ? ' + preceding Recap Card' : ''})**: ${introOutroNativeOnly ? 'Empty `speech: ""` with clear closing summary in `explanationSpeech` in ' + explainLangName + ' explicitly recapping WHAT the learner just heard/learned (main scenario/topic takeaways, practical situational skills, and standout expressions in natural ' + langOption.nativeName + ')' : 'Clear closing summary in `speech`' + (includeExplanationSpeech ? ' + `explanationSpeech`' : '') + ' recapping what was learned in the lesson'} + summary visual.`,
     '',
     '## 4. LESSON TITLE & VOICEOVER / TTS QUALITY RULES (`title`, `speech`, `explanationSpeech`)',
     topicHint
       ? `- **CATCHY HOOK TITLE + MATCHING-LANGUAGE AUDIENCE LEVEL RULE**: Root \`"title"\` (used as saved filename!) MUST follow \`"<Hook Title> | ${formatAudienceLevelLabel(chosenLevel, learningLang)}"\`. Make the first part super intriguing, emotional or curiosity-driven around "${topicHint}" (NEVER a flat story/textbook name like "La bicicleta roja que esperaba a Mateo" or "Lesson 1" — benchmark vibe: \`"Todo empezó con un pequeño favor… y terminó en un reencuentro inesperado"\`, \`"その誘い方、英語で自然に言える？"\`, \`"Stop saying 'I'm fine' — natives actually say this"\`), followed by \` | ${formatAudienceLevelLabel(chosenLevel, learningLang)}\` matching ${langOption.nativeName}.`
-      : `- **CATCHY HOOK TITLE + MATCHING-LANGUAGE AUDIENCE LEVEL RULE**: Root \`"title"\` (used as saved filename!) MUST follow \`"<Hook Title> | ${formatAudienceLevelLabel(chosenLevel, learningLang)}"\`. Make the first part super intriguing, curiosity-driven and natural (NEVER a flat story/textbook title — benchmark vibe: \`"Todo empezó con un pequeño favor… y terminó en un reencuentro inesperado"\`, \`"その誘い方、英語で自然に言える？"\`, \`"One tiny phrase that instantly makes you sound native"\`) summarizing the exact expressions you generated.`,
+      : `- **CATCHY HOOK TITLE + MATCHING-LANGUAGE AUDIENCE LEVEL RULE**: Root \`"title"\` (used as saved filename!) MUST follow \`"<Hook Title> | ${formatAudienceLevelLabel(chosenLevel, learningLang)}"\`. Make the first part super intriguing, curiosity-driven and natural (NEVER a flat story/textbook title — benchmark vibe: \`"Todo empezó con un pequeño favor… y terminó en un reencuentro inesperado"\`, \`"その誘い方、英語で自然に言える？"\`, \`"One tiny phrase that instantly makes you sound native"\`) summarizing the exact episode/expressions you generated.`,
     ...dualTtsRules,
+    difficultVocabGrammarRule,
     '- NEVER put `/IPA/` symbols, `&`, markdown (`**`, `#`), URLs, or emojis inside `speech` or `explanationSpeech`.',
     `- ${translationRule}`,
     '',
@@ -2694,7 +3027,10 @@ export function buildAiCreatorWebAiPrompt(params: {
           '- **CHẾ ĐỘ @Gimmys ĐANG BẬT**: BẮT BUỘC đặt `"compositionId": "cartoon-host"` ở JSON gốc và gắn `"cartoonAction"` + `"cartoonMood"` phù hợp từng card (KHÔNG dùng sai emotion vui lên thẻ cảnh báo/lỗi sai; dùng `worried`/`thinking-chin` cho thẻ lỗi sai và `happy`/`excited`/`clap-jump` cho khen ngợi/tổng kết).',
         ]
       : [
-          '- **STRICT ANTI-REPETITION RULE**: NEVER assign the same `visual.variant` to two consecutive cards!',
+          '- **STRICT ANTI-REPETITION RULE**: NEVER assign the same `visual.variant` to two consecutive cards!' +
+            (isMultiSpeakerFormat
+              ? ' For 2–3 speaker turns, rotate conversation visuals cleanly (`"p168-story-dialogue"`, `"css-chat-thread"`, `"ear-listen"`, `"speech-bubble"`, `"avatar-speech"`, `"p168-situation-cards"`).'
+              : ''),
           variantsListText,
           `- Valid \`visual.sceneIcon\` names (NEVER invent outside this list): ${sceneIconsListText}`,
         ]),
@@ -2702,7 +3038,7 @@ export function buildAiCreatorWebAiPrompt(params: {
     '## 6. STRICT JSON OUTPUT FORMAT (EXPORT A VALID .JSON FILE)',
     '```json',
     '{',
-    '  "mode": "vocab | phrases | phrasal_verbs | mistakes | grammar | comparisons | real_life",',
+    '  "mode": "vocab | phrases | phrasal_verbs | mistakes | grammar | comparisons | real_life | shadowing_solo | shadowing_dialogue | podcast_solo | podcast_duo | trending_social | workplace_tech | news_storytelling",',
     ...(params.compositionId && params.compositionId !== 'ai-decide'
       ? [`  "compositionId": "${params.compositionId}",`]
       : []),
@@ -2720,12 +3056,12 @@ export function buildAiCreatorWebAiPrompt(params: {
     )},`,
     '  "cards": [',
     ...(params.compositionId === 'cartoon-host'
-      ? exampleBlocks.map((ln) =>
+      ? selectedExampleBlocks.map((ln) =>
           ln
             .replace(/"variant": "bs-card-header",/g, '"variant": "contrast-pair-cards",')
             .replace(/"variant": "css-magnifying-word",/g, '"variant": "cartoon-host", "cartoonAction": "point-up", "cartoonMood": "confident",'),
         )
-      : exampleBlocks),
+      : selectedExampleBlocks),
     '    {',
     '      "type": "outro",',
     '      "title": "Save & Practice Today",',
@@ -2735,8 +3071,12 @@ export function buildAiCreatorWebAiPrompt(params: {
       ? [
           `      "explanationSpeech": ${JSON.stringify(
             explainSample(
-              'Hãy lưu lại bài học hôm nay và luyện đọc to các mẫu câu vừa học mỗi ngày nhé!',
-              'Save this video and review these expressions again tomorrow!',
+              isConversationalScriptMode
+                ? 'Tổng kết bài học hôm nay: bạn vừa nắm được toàn bộ diễn biến tình huống, cách phản ứng khéo léo trong thực tế và những mẫu câu trọng tâm để áp dụng ngay!'
+                : 'Hãy lưu lại bài học hôm nay và luyện đọc to các mẫu câu vừa học mỗi ngày nhé!',
+              isConversationalScriptMode
+                ? 'Lesson recap: today you mastered the full scenario flow, practical response strategies, and the key natural expressions to use right away!'
+                : 'Save this video and review these expressions again tomorrow!',
               exOutroSpeech || 'Save this video and review these expressions again tomorrow!',
             ),
           )},`,
@@ -3320,12 +3660,12 @@ export function buildTranslationChallengePrompt(params: {
 
   const scriptPurityHint =
     learningLang === 'zh'
-      ? 'Put **100% pure Simplified Chinese Hanzi (汉字)** inside `"speech"` and `"answer"` (NO Pinyin inside `"speech"` or full-sentence `"phonetic"`).'
+      ? 'Put **100% pure Simplified Chinese Hanzi (汉字)** inside `"speech"` and `"answer"` (NO Pinyin inside `"speech"` or full-sentence `"phonetic"`, leave `"phonetic": ""`).'
       : learningLang === 'ja'
-        ? 'Put **100% pure natural Japanese (漢字 + かな)** inside `"speech"` and `"answer"`. **NEVER** put full-sentence Hiragana or Romaji under the answer!'
+        ? 'Put **100% pure natural Japanese (漢字 + かな)** inside `"speech"` and `"answer"`. **NEVER** put full-sentence Hiragana, inline Furigana parentheses like `漢字(かんじ)`, or Romaji on the sentence!'
         : learningLang === 'ko'
           ? 'Put **100% pure Korean Hangul (한국어)** inside `"speech"` and `"answer"` (NO full-sentence Romanization).'
-          : `Put **100% pure natural ${langOption.nativeName}** inside \`"speech"\` and \`"answer"\`.`;
+          : `Put **100% pure natural ${langOption.nativeName}** inside \`"speech"\` and \`"answer"\` (NO full-sentence IPA/phonetic).`;
 
   const exampleSource = isSameLangExplain
     ? learningLang === 'zh'
@@ -3471,11 +3811,10 @@ export function buildTranslationChallengePrompt(params: {
     `   - \`"sourcePrompt"\`: ${isSameLangExplain ? `Clear paraphrase / everyday situation cue in **${langOption.nativeName}** prompting the learner to produce the natural expression.` : `Natural, idiomatic, complete sentence (NEVER a 1-word stub!) in **${explainLangName}** (NOT stiff word-by-word textbook translation!).`}`,
     `   - \`"answer"\`: Natural spoken target sentence in **${langOption.nativeName}**.`,
     `   - \`"speech"\`: ${scriptPurityHint}`,
-    `   - **NO FULL-SENTENCE PHONETIC / HIRAGANA**: Leave \`"phonetic": ""\` empty! Do NOT write full-sentence Hiragana, Furigana, Romaji, or IPA beneath the target sentence.`,
-    `   - \`"vocabNotes"\`: **CRITICAL** — Chọn **CHỈ 1** cụm từ vựng/idiom quan trọng nhất câu để chú thích ngắn gọn bằng **${explainLangName}** (VD \`${exampleVocabNotes}\`). Không lặp lại ở \`grammarNote\`.`,
-    `   - \`"grammarNote"\`: Nếu \`"vocabNotes"\` đã có thì để rỗng \`""\` — chỉ điền tối đa 1 ghi chú ngắn gọn nhất trên thẻ.`,
+    `   - **NO FULL-SENTENCE PHONETIC / HIRAGANA / FURIGANA**: Leave \`"phonetic": ""\` empty! Do NOT write full-sentence Hiragana, inline Furigana, Romaji, Pinyin, or IPA beneath the target sentence.`,
+    `   - \`"vocabNotes"\` & \`"grammarNote"\` (CALIBRATED TO LEVEL ${chosenLevel}): Nếu câu có **từ vựng khó** hoặc **ngữ pháp khó** so với trình độ **${chosenLevel}**, BẮT BUỘC ghi rõ giải thích, cách dùng và chú ý nếu có bằng **${explainLangName}**; **riêng nếu từ vựng khó là chữ Kanji thì phải ghi kèm cách đọc Hiragana của riêng từ Kanji khó đó** (VD \`雰囲気（ふんいき）: bầu không khí — cách dùng & chú ý...\`), KHÔNG viết Hiragana cho cả câu! Nếu câu đơn giản vừa tầm level thì giữ tối đa 1 ghi chú ngắn gọn hoặc để rỗng \`""\`.`,
     includeNuanceTip
-      ? `   - \`"explanationSpeech"\`: **MANDATORY QUALITY & DEPTH** — Rich, complete spoken nuance tip in **${explainLangName}** (played after the ${repeatCount} repeats) explaining **WHY** native speakers say it this way, situational context, and what stiff literal mistake learners should avoid (explain the natural phrasing vs stiff literal mistake without using bare placeholder letters). Keep target words, topic phrases, and grammar patterns in natural **${langOption.nativeName}**. NEVER write truncated or meaningless filler fragments.`
+      ? `   - \`"explanationSpeech"\`: **MANDATORY QUALITY & DEPTH** — Rich, complete spoken nuance tip in **${explainLangName}** (played after the ${repeatCount} repeats) explaining **WHY** native speakers say it this way, how to use it naturally, cautions/mistakes to avoid, and explaining any difficult vocab/grammar for **${chosenLevel}**. Keep target words, topic phrases, and grammar patterns in natural **${langOption.nativeName}**. NEVER write truncated or meaningless filler fragments.`
       : `   - \`"explanationSpeech"\`: "" (keep empty so audio focuses 100% on Prompt -> Countdown -> ${repeatCount}x Repeats; ensure every \`sourcePrompt\` and \`answer\` is a complete, meaningful sentence).`,
     `   - \`"thinkSec": ${thinkSec}\`, \`"repeatCount": ${repeatCount}\``,
     `   - **QUY TẮC TTS SONG NGỮ & CHỐNG ĐỌC NHẦM KÝ TỰ**:`,
@@ -4266,6 +4605,7 @@ function parseCardVisualConfig(rawVisual: unknown): ReelCardVisualConfig | undef
         ? (v.sceneIcon.trim() as IllustrationSceneIcon)
         : undefined,
     speechText: typeof v.speechText === 'string' && v.speechText.trim() ? v.speechText.trim() : undefined,
+    reactionText: typeof v.reactionText === 'string' && v.reactionText.trim() ? v.reactionText.trim() : undefined,
     customPrimitives,
   };
 
@@ -4279,6 +4619,7 @@ function parseCardVisualConfig(rawVisual: unknown): ReelCardVisualConfig | undef
     !out.highlightWord &&
     !out.sceneIcon &&
     !out.speechText &&
+    !out.reactionText &&
     !out.customPrimitives
   ) {
     return undefined;
@@ -4321,6 +4662,13 @@ export function parseEnglishReelsAiJson(
       'mistakes',
       'comparisons',
       'real_life',
+      'shadowing_solo',
+      'shadowing_dialogue',
+      'podcast_solo',
+      'podcast_duo',
+      'trending_social',
+      'workplace_tech',
+      'news_storytelling',
     ]);
     const creatorSubMode = creatorSubModes.has(rawMode) ? rawMode : undefined;
     const mode: Exclude<ReelMode, 'auto'> =
@@ -4368,11 +4716,55 @@ export function parseEnglishReelsAiJson(
         type = 'quiz';
       } else if (rawType === 'outro' || rawType === 'recap') {
         type = 'outro';
-      } else if (rawType === 'vocab' || rawType === 'reading' || rawType === 'item' || rawType === 'phrase' || rawType === 'answer') {
+      } else if (
+        rawType === 'vocab' ||
+        rawType === 'reading' ||
+        rawType === 'item' ||
+        rawType === 'phrase' ||
+        rawType === 'answer' ||
+        rawType === 'dialogue' ||
+        rawType === 'turn' ||
+        rawType === 'line' ||
+        rawType === 'speech' ||
+        rawType === 'story' ||
+        rawType === 'situation' ||
+        rawType === 'takeaway' ||
+        rawType === 'summary' ||
+        rawType === 'recap_card'
+      ) {
         type = 'vocab';
       } else {
         type = mode === 'quiz' ? 'quiz' : isTranslationMode ? 'translation' : 'vocab';
       }
+
+      const rawSpeaker =
+        typeof c.speaker === 'string' && c.speaker.trim()
+          ? c.speaker.trim()
+          : typeof c.speakerName === 'string' && c.speakerName.trim()
+            ? c.speakerName.trim()
+            : '';
+      const rawSpeakerGenderStr =
+        typeof c.speakerGender === 'string'
+          ? c.speakerGender.trim().toLowerCase()
+          : typeof c.gender === 'string'
+            ? c.gender.trim().toLowerCase()
+            : '';
+      const speakerGender: 'male' | 'female' | undefined =
+        rawSpeakerGenderStr === 'male' || rawSpeakerGenderStr === 'm' || rawSpeakerGenderStr === 'nam'
+          ? 'male'
+          : rawSpeakerGenderStr === 'female' || rawSpeakerGenderStr === 'f' || rawSpeakerGenderStr === 'nữ' || rawSpeakerGenderStr === 'nu'
+            ? 'female'
+            : undefined;
+      const speakerRole =
+        typeof c.speakerRole === 'string' && c.speakerRole.trim()
+          ? c.speakerRole.trim()
+          : typeof c.role === 'string' &&
+              c.role.trim() &&
+              !['vocab', 'dialogue', 'example', 'intro', 'outro', 'quiz', 'translation'].includes(
+                c.role.trim().toLowerCase(),
+              )
+            ? c.role.trim()
+            : undefined;
 
       const wordVal = typeof c.word === 'string' && c.word.trim() ? c.word.trim() : '';
       const meaningVal = typeof c.meaning === 'string' && c.meaning.trim() ? c.meaning.trim() : '';
@@ -4559,6 +4951,9 @@ export function parseEnglishReelsAiJson(
         badge: resolvedBadge,
         indexLabel: indexLabelVal || undefined,
         kicker: kickerVal || undefined,
+        speaker: rawSpeaker || undefined,
+        speakerGender,
+        speakerRole,
         title,
         content: content || title,
         sourcePrompt: resolvedSourcePrompt,
@@ -4770,6 +5165,7 @@ function resolveVisualPayloadForReelCard(
     value: custom?.value ?? fallback.value,
     formula: custom?.formula || fallback.formula,
     speechText: custom?.speechText || fallback.speechText || card.content,
+    reactionText: custom?.reactionText || fallback.reactionText || card.speaker || undefined,
     highlightWord: custom?.highlightWord || fallback.highlightWord || card.title,
     sceneIcon: custom?.sceneIcon || fallback.sceneIcon || ctxFallback.sceneIcon,
     ...(custom?.checklist ? { checklist: custom.checklist } : {}),
@@ -6419,8 +6815,29 @@ export function reelCardsToLessonProject(
         });
       }
 
-      const pillLabel =
-        card.indexLabel && !card.badge.includes(card.indexLabel)
+      const speakerBadgeColors = [
+        { bg: '#DBEAFE', text: '#1D4ED8' },
+        { bg: '#F3E8FF', text: '#7E22CE' },
+        { bg: '#D1FAE5', text: '#047857' },
+      ];
+      const speakerColorIdx = (() => {
+        if (!card.speaker) return -1;
+        const seenSpeakers: string[] = [];
+        for (const sc of safeCards) {
+          if (sc.speaker && !seenSpeakers.includes(sc.speaker)) {
+            seenSpeakers.push(sc.speaker);
+          }
+        }
+        return Math.max(0, seenSpeakers.indexOf(card.speaker));
+      })();
+      const speakerPalette =
+        speakerColorIdx >= 0 ? speakerBadgeColors[speakerColorIdx % speakerBadgeColors.length] : null;
+
+      const pillLabel = card.speaker
+        ? card.indexLabel
+          ? `${card.indexLabel} · 🎙️ ${card.speaker}`
+          : `🎙️ ${card.speaker}`
+        : card.indexLabel && !card.badge.includes(card.indexLabel)
           ? `${card.indexLabel} · ${card.badge}`
           : card.badge || card.type.toUpperCase();
 
@@ -6437,6 +6854,7 @@ export function reelCardsToLessonProject(
           kind: 'topic-pill',
           text: pillLabel,
           bgColor:
+            speakerPalette?.bg ??
             activeProfile.pillBg ??
             (card.type === 'intro'
               ? '#E0E7FF'
@@ -6444,6 +6862,7 @@ export function reelCardsToLessonProject(
                 ? '#DCFCE7'
                 : '#DBEAFE'),
           textColor:
+            speakerPalette?.text ??
             activeProfile.pillColor ??
             (card.type === 'intro'
               ? '#3730A3'
@@ -6576,6 +6995,261 @@ export function reelCardsToLessonProject(
     watermark: options?.watermark,
     titleLayout: options?.titleLayout,
   };
+}
+
+export interface SpeakerVoiceResolutionOptions {
+  defaultVoice?: string;
+  defaultLang?: string;
+  provider?: string;
+  availableVoices?: Array<{ id: string; label?: string; lang?: string }>;
+}
+
+const MULTI_SPEAKER_VOICE_POOLS: Record<
+  string,
+  { female: string[]; male: string[] }
+> = {
+  en: {
+    female: ['en-US-JennyNeural', 'en-US-AriaNeural', 'en-GB-SoniaNeural', 'en-US-AvaMultilingualNeural'],
+    male: ['en-US-GuyNeural', 'en-US-AndrewMultilingualNeural', 'en-US-BrianMultilingualNeural'],
+  },
+  ja: {
+    female: ['ja-JP-NanamiNeural', 'en-US-AvaMultilingualNeural', 'en-US-EmmaMultilingualNeural'],
+    male: ['ja-JP-KeitaNeural', 'en-US-AndrewMultilingualNeural', 'en-US-BrianMultilingualNeural'],
+  },
+  zh: {
+    female: ['zh-CN-XiaoxiaoNeural', 'en-US-AvaMultilingualNeural', 'en-US-EmmaMultilingualNeural'],
+    male: ['zh-CN-YunxiNeural', 'en-US-AndrewMultilingualNeural', 'en-US-BrianMultilingualNeural'],
+  },
+  ko: {
+    female: ['ko-KR-SunHiNeural', 'en-US-AvaMultilingualNeural', 'en-US-EmmaMultilingualNeural'],
+    male: ['ko-KR-InJoonNeural', 'ko-KR-HyunsuMultilingualNeural', 'en-US-BrianMultilingualNeural'],
+  },
+  fr: {
+    female: ['fr-FR-DeniseNeural', 'fr-FR-VivienneMultilingualNeural', 'en-US-AvaMultilingualNeural'],
+    male: ['fr-FR-HenriNeural', 'en-US-AndrewMultilingualNeural', 'en-US-BrianMultilingualNeural'],
+  },
+  es: {
+    female: ['es-ES-ElviraNeural', 'en-US-EmmaMultilingualNeural', 'en-US-AvaMultilingualNeural'],
+    male: ['es-ES-AlvaroNeural', 'en-US-BrianMultilingualNeural', 'en-US-AndrewMultilingualNeural'],
+  },
+  vi: {
+    female: ['vi-VN-HoaiMyNeural', 'en-US-AvaMultilingualNeural'],
+    male: ['vi-VN-NamMinhNeural', 'en-US-AndrewMultilingualNeural'],
+  },
+};
+
+function normalizeBaseVoiceLang(rawLang?: string): string {
+  const low = String(rawLang || 'en').trim().toLowerCase();
+  if (low.startsWith('ja') || low === 'jp') return 'ja';
+  if (low.startsWith('zh')) return 'zh';
+  if (low.startsWith('ko')) return 'ko';
+  if (low.startsWith('fr')) return 'fr';
+  if (low.startsWith('es')) return 'es';
+  if (low.startsWith('vi')) return 'vi';
+  return 'en';
+}
+
+function detectVoiceIdGender(voiceId?: string): 'male' | 'female' | null {
+  const v = String(voiceId || '').toLowerCase();
+  if (!v) return null;
+  if (
+    /(?:guy|andrew|brian|keita|yunxi|injoon|hyunsu|henri|alvaro|namminh|matthew|takumi|onyx|echo|fenrir|puck|charon)/.test(
+      v,
+    )
+  ) {
+    return 'male';
+  }
+  if (
+    /(?:jenny|aria|sonia|natasha|ava|emma|vivienne|nanami|xiaoxiao|sunhi|denise|elvira|hoaimy|joanna|amy|mizuki|alloy|nova|shimmer|kore|aoede|leda)/.test(
+      v,
+    )
+  ) {
+    return 'female';
+  }
+  return null;
+}
+
+function inferSpeakerGenderForCard(
+  speakerName: string,
+  explicitGender?: 'male' | 'female',
+): 'male' | 'female' | null {
+  if (explicitGender === 'male' || explicitGender === 'female') {
+    return explicitGender;
+  }
+  const s = speakerName.trim().toLowerCase();
+  if (!s) return null;
+  if (
+    /\b(?:female|woman|girl|lady|she|her|yuki|sakura|hana|mei|lin|yuna|jisoo|minji|emma|sarah|maya|lisa|anna|sophie|maria|elena|claire|chloe|hoa|lan|mai|linh|thảo|trang|nữ)\b/i.test(
+      s,
+    )
+  ) {
+    return 'female';
+  }
+  if (
+    /\b(?:male|man|boy|guy|he|him|ken|takeshi|haruto|minho|jun|wei|ming|alex|john|david|tom|mike|mark|daniel|lucas|carlos|nam|hùng|minh|nam giới)\b/i.test(
+      s,
+    )
+  ) {
+    return 'male';
+  }
+  return null;
+}
+
+/**
+ * Assigns distinct TTS voices per speaker when a lesson contains 2+ speakers
+ * (e.g. Podcast Duo, Shadowing Dialogue, Roleplay), respecting explicit `speakerGender`
+ * and falling back to alternating Female/Male Edge Neural voices for the target language.
+ * Returns a map keyed by `card.id` -> resolved `voiceId` (empty if single/no speaker).
+ */
+export function buildSpeakerVoiceMap(
+  cards: ReelCard[],
+  options?: SpeakerVoiceResolutionOptions,
+): Map<string, string> {
+  const voiceByCardId = new Map<string, string>();
+  const provider = String(options?.provider || 'edge').toLowerCase();
+  if (provider === 'google') return voiceByCardId;
+
+  const speakerOrder: Array<{
+    key: string;
+    label: string;
+    explicitGender?: 'male' | 'female';
+    langCode: string;
+  }> = [];
+
+  for (const card of cards) {
+    const rawSpeaker = String(card.speaker || '').trim();
+    if (!rawSpeaker) continue;
+    const key = rawSpeaker.toLowerCase();
+    const cardLang = normalizeBaseVoiceLang(
+      card.learningLang || inferLearningLangFromCards([card], options?.defaultLang),
+    );
+    const existing = speakerOrder.find((item) => item.key === key);
+    if (!existing) {
+      speakerOrder.push({
+        key,
+        label: rawSpeaker,
+        explicitGender: card.speakerGender,
+        langCode: cardLang,
+      });
+    } else if (!existing.explicitGender && card.speakerGender) {
+      existing.explicitGender = card.speakerGender;
+    }
+  }
+
+  if (speakerOrder.length < 2) {
+    return voiceByCardId;
+  }
+
+  const primaryLang = speakerOrder[0].langCode || normalizeBaseVoiceLang(options?.defaultLang);
+
+  // ElevenLabs / custom voice pools when >= 2 voices are present in availableVoices
+  if (provider === 'elevenlabs' && options?.availableVoices && options.availableVoices.length >= 2) {
+    const speakerVoices = new Map<string, string>();
+    const pool = options.availableVoices.map((v) => v.id).filter(Boolean);
+    const firstVoice =
+      options.defaultVoice && pool.includes(options.defaultVoice)
+        ? options.defaultVoice
+        : pool[0];
+    const remaining = pool.filter((id) => id !== firstVoice);
+    const orderedPool = [firstVoice, ...remaining];
+    speakerOrder.forEach((sp, idx) => {
+      speakerVoices.set(sp.key, orderedPool[idx % orderedPool.length]);
+    });
+    for (const card of cards) {
+      const key = String(card.speaker || '').trim().toLowerCase();
+      const v = key ? speakerVoices.get(key) : undefined;
+      if (v) voiceByCardId.set(card.id, v);
+    }
+    return voiceByCardId;
+  }
+
+  if (provider === 'streamelements') {
+    const seFemale = primaryLang === 'ja' ? ['Mizuki'] : ['Joanna', 'Amy'];
+    const seMale = primaryLang === 'ja' ? ['Takumi'] : ['Matthew', 'Brian'];
+    const speakerVoices = new Map<string, string>();
+    let fIdx = 0;
+    let mIdx = 0;
+    speakerOrder.forEach((sp, idx) => {
+      const inferred = inferSpeakerGenderForCard(sp.label, sp.explicitGender);
+      const gender: 'male' | 'female' =
+        inferred ?? (idx % 2 === 0 ? 'female' : 'male');
+      const v =
+        gender === 'male'
+          ? seMale[mIdx++ % seMale.length]
+          : seFemale[fIdx++ % seFemale.length];
+      speakerVoices.set(sp.key, v);
+    });
+    for (const card of cards) {
+      const key = String(card.speaker || '').trim().toLowerCase();
+      const v = key ? speakerVoices.get(key) : undefined;
+      if (v) voiceByCardId.set(card.id, v);
+    }
+    return voiceByCardId;
+  }
+
+  const langPool = MULTI_SPEAKER_VOICE_POOLS[primaryLang] || MULTI_SPEAKER_VOICE_POOLS.en;
+  const defaultVoice = String(options?.defaultVoice || '').trim();
+  const defaultGender = detectVoiceIdGender(defaultVoice);
+  const firstSpeakerInferred = inferSpeakerGenderForCard(
+    speakerOrder[0].label,
+    speakerOrder[0].explicitGender,
+  );
+  const firstSpeakerGender: 'male' | 'female' =
+    firstSpeakerInferred ?? defaultGender ?? 'female';
+
+  const usedVoices = new Set<string>();
+  const speakerVoices = new Map<string, string>();
+
+  const pickNextUnusedVoice = (pool: string[], preferred?: string): string => {
+    if (preferred && !usedVoices.has(preferred)) {
+      usedVoices.add(preferred);
+      return preferred;
+    }
+    for (const candidate of pool) {
+      if (!usedVoices.has(candidate)) {
+        usedVoices.add(candidate);
+        return candidate;
+      }
+    }
+    return pool[usedVoices.size % pool.length];
+  };
+
+  speakerOrder.forEach((sp, idx) => {
+    const spPool = MULTI_SPEAKER_VOICE_POOLS[sp.langCode] || langPool;
+    const inferred = inferSpeakerGenderForCard(sp.label, sp.explicitGender);
+    const gender: 'male' | 'female' =
+      inferred ??
+      (idx === 0
+        ? firstSpeakerGender
+        : idx % 2 === 1
+          ? firstSpeakerGender === 'female'
+            ? 'male'
+            : 'female'
+          : firstSpeakerGender);
+
+    const canKeepDefaultForFirst =
+      idx === 0 &&
+      Boolean(defaultVoice) &&
+      (!defaultGender || defaultGender === gender) &&
+      (defaultVoice.toLowerCase().startsWith(`${sp.langCode}-`) ||
+        /MultilingualNeural$/i.test(defaultVoice));
+
+    const chosen = pickNextUnusedVoice(
+      gender === 'male' ? spPool.male : spPool.female,
+      canKeepDefaultForFirst ? defaultVoice : undefined,
+    );
+    speakerVoices.set(sp.key, chosen);
+  });
+
+  for (const card of cards) {
+    const key = String(card.speaker || '').trim().toLowerCase();
+    const v = key ? speakerVoices.get(key) : undefined;
+    if (v) {
+      voiceByCardId.set(card.id, v);
+    }
+  }
+
+  return voiceByCardId;
 }
 
 export function buildReelPromptBundleForSubtitles(
