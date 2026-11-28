@@ -25,6 +25,7 @@ import {
   ComparisonStripProps,
   DynamicSceneSpec,
   ElementLayout,
+  IllustrationFlowNode,
   IllustrationPropData,
   IllustrationPropProps,
   IllustrationSceneIcon,
@@ -1578,6 +1579,31 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${clamp01(alpha)})`;
 }
 
+function inferAvatarGenderFromName(
+  name?: string,
+  explicit?: 'male' | 'female',
+): 'male' | 'female' | undefined {
+  if (explicit === 'male' || explicit === 'female') return explicit;
+  const raw = (name || '').trim().toLowerCase();
+  if (!raw) return undefined;
+  const padded = ` ${raw.replace(/[^\p{L}\p{N}]+/gu, ' ')} `;
+  if (
+    /\b(maya|emma|sarah|jenny|hoa|lan|linh|yuki|sakura|hana|mei|thao|thảo|trang|mai|ngoc|ngọc|chloe|anna|lisa|emily|sophia|claire|rachel|nina|female|woman|girl|nữ|cô gái|bạn nữ)\b/u.test(
+      padded,
+    )
+  ) {
+    return 'female';
+  }
+  if (
+    /\b(liam|ken|takeshi|alex|john|david|nam|hung|hùng|minh|tuan|tuấn|duc|đức|hoang|hoàng|leo|tom|ben|mark|sam|daniel|ryan|kevin|male|man|boy|nam giới|bạn nam|anh)\b/u.test(
+      padded,
+    )
+  ) {
+    return 'male';
+  }
+  return undefined;
+}
+
 function drawCharacterAvatar(
   ctx: CanvasRenderingContext2D,
   opts: {
@@ -1586,7 +1612,8 @@ function drawCharacterAvatar(
     shirtColor: string;
     hairColor: string;
     skinColor?: string;
-    hairStyle?: 'short' | 'bob' | 'side';
+    hairStyle?: 'short' | 'bob' | 'side' | 'long';
+    gender?: 'male' | 'female' | 'neutral';
     expression?: 'smile' | 'happy' | 'curious';
     nameTag?: string;
     tagColor?: string;
@@ -1601,6 +1628,7 @@ function drawCharacterAvatar(
     hairColor,
     skinColor = '#FDE2C8',
     hairStyle = 'short',
+    gender,
     expression = 'smile',
     nameTag,
     tagColor = shirtColor,
@@ -1608,14 +1636,23 @@ function drawCharacterAvatar(
     lipSync,
   } = opts;
 
+  const isFemale = gender === 'female' || (!gender && (hairStyle === 'bob' || hairStyle === 'long'));
+  const resolvedHairStyle =
+    gender === 'female' && (hairStyle === 'short' || hairStyle === 'side')
+      ? 'bob'
+      : gender === 'male' && (hairStyle === 'bob' || hairStyle === 'long')
+        ? 'short'
+        : hairStyle;
+
   ctx.save();
   ctx.translate(x, y + (lipSync ? lipSync.headBobY * 0.45 : 0));
   if (scale !== 1) ctx.scale(scale, scale);
 
-  // Back hair for bob/long styles
-  if (hairStyle === 'bob') {
+  // Back hair volume for female/bob/long styles (clearly distinguishes female silhouette)
+  if (isFemale || resolvedHairStyle === 'bob' || resolvedHairStyle === 'long') {
+    const backHeight = resolvedHairStyle === 'long' ? 104 : 90;
     ctx.fillStyle = hairColor;
-    drawRoundedRectPath(ctx, -46, -42, 92, 86, 36);
+    drawRoundedRectPath(ctx, -47, -43, 94, backHeight, 38);
     ctx.fill();
   }
 
@@ -1624,14 +1661,22 @@ function drawCharacterAvatar(
   drawRoundedRectPath(ctx, -48, 34, 96, 62, 30);
   ctx.fill();
 
-  // Shirt collar
+  // Shirt collar: scoop neckline for female vs crisp V-collar for male
   ctx.fillStyle = '#FFFFFF';
-  ctx.beginPath();
-  ctx.moveTo(-18, 34);
-  ctx.lineTo(0, 50);
-  ctx.lineTo(18, 34);
-  ctx.closePath();
-  ctx.fill();
+  if (isFemale) {
+    ctx.beginPath();
+    ctx.moveTo(-20, 34);
+    ctx.quadraticCurveTo(0, 52, 20, 34);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(-18, 34);
+    ctx.lineTo(0, 52);
+    ctx.lineTo(18, 34);
+    ctx.closePath();
+    ctx.fill();
+  }
 
   // Neck + subtle chin shadow
   ctx.fillStyle = skinColor;
@@ -1642,14 +1687,23 @@ function drawCharacterAvatar(
   ctx.ellipse(0, 26, 13, 6, 0, 0, Math.PI * 2);
   ctx.fill();
 
+  // Visible ears for short/male hairstyles
+  if (!isFemale) {
+    ctx.fillStyle = skinColor;
+    ctx.beginPath();
+    ctx.ellipse(-40, -12, 7.5, 10, 0, 0, Math.PI * 2);
+    ctx.ellipse(40, -12, 7.5, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // Head
   ctx.fillStyle = skinColor;
   ctx.beginPath();
   ctx.arc(0, -14, 41, 0, Math.PI * 2);
   ctx.fill();
 
-  // Soft cheek blush
-  ctx.fillStyle = 'rgba(244, 114, 182, 0.25)';
+  // Soft cheek blush (slightly warmer on female avatars)
+  ctx.fillStyle = isFemale ? 'rgba(244, 114, 182, 0.34)' : 'rgba(244, 114, 182, 0.18)';
   ctx.beginPath();
   ctx.ellipse(-22, -4, 8, 5, 0, 0, Math.PI * 2);
   ctx.ellipse(22, -4, 8, 5, 0, 0, Math.PI * 2);
@@ -1660,27 +1714,35 @@ function drawCharacterAvatar(
   ctx.beginPath();
   ctx.arc(0, -24, 42, Math.PI * 0.96, Math.PI * 2.04);
   ctx.fill();
-  if (hairStyle === 'side') {
+  if (resolvedHairStyle === 'side') {
     ctx.beginPath();
     ctx.moveTo(-40, -28);
     ctx.quadraticCurveTo(-8, -12, 34, -36);
     ctx.quadraticCurveTo(10, -56, -40, -28);
     ctx.fill();
-  } else if (hairStyle === 'bob') {
+  } else if (resolvedHairStyle === 'bob' || resolvedHairStyle === 'long') {
     ctx.beginPath();
     ctx.ellipse(-18, -36, 22, 13, -0.3, 0, Math.PI * 2);
     ctx.ellipse(18, -36, 22, 13, 0.3, 0, Math.PI * 2);
     ctx.fill();
-  } else {
+    // Side framing locks for female face
     ctx.beginPath();
-    ctx.ellipse(0, -44, 34, 15, 0, 0, Math.PI * 2);
+    ctx.ellipse(-37, -14, 7.5, 22, 0.08, 0, Math.PI * 2);
+    ctx.ellipse(37, -14, 7.5, 22, -0.08, 0, Math.PI * 2);
     ctx.fill();
+  } else {
+    // Crisp short cropped male top hair + clean sideburns
+    ctx.beginPath();
+    ctx.ellipse(0, -45, 34, 15, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(-41, -30, 7, 15);
+    ctx.fillRect(34, -30, 7, 15);
   }
 
   // Eyebrows
   const browRaise = lipSync ? lipSync.browLift * 2.5 : 0;
   ctx.strokeStyle = hairColor;
-  ctx.lineWidth = 3.2;
+  ctx.lineWidth = isFemale ? 2.8 : 3.6;
   ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(-21, -24 - browRaise);
@@ -1689,7 +1751,7 @@ function drawCharacterAvatar(
   ctx.quadraticCurveTo(14, -27 - browRaise, 21, -24 - browRaise);
   ctx.stroke();
 
-  // Eyes + white specular glints (smooth blink support)
+  // Eyes + white specular glints (smooth blink support + subtle female lashes)
   const eyeScaleY = lipSync ? Math.max(0.1, 1 - lipSync.blinkFactor) : 1;
   if (eyeScaleY < 0.25) {
     ctx.strokeStyle = '#0F172A';
@@ -1701,6 +1763,16 @@ function drawCharacterAvatar(
     ctx.arc(14, -12, 5.2, 0.15 * Math.PI, 0.85 * Math.PI);
     ctx.stroke();
   } else {
+    if (isFemale) {
+      ctx.strokeStyle = '#0F172A';
+      ctx.lineWidth = 2.3;
+      ctx.beginPath();
+      ctx.moveTo(-19, -15);
+      ctx.lineTo(-22, -18);
+      ctx.moveTo(19, -15);
+      ctx.lineTo(22, -18);
+      ctx.stroke();
+    }
     ctx.fillStyle = '#0F172A';
     ctx.beginPath();
     ctx.ellipse(-14, -12, 4.8, 4.8 * eyeScaleY, 0, 0, Math.PI * 2);
@@ -2025,7 +2097,7 @@ function drawCartoonHostCharacter(
 
   const skinLight = '#ECC094';
 
-  // Helper to draw optional hand prop for mic / megaphone / pointer-stick
+  // Helper to draw optional hand prop for mic / megaphone / pointer-stick / notebook / trophy / coffee-cup
   const drawHandPropAccessory = (wx: number, wy: number, dirAngle: number) => {
     if (lip.accessory === 'mic') {
       ctx.save();
@@ -2078,6 +2150,85 @@ function drawCartoonHostCharacter(
       ctx.lineTo(6, 8);
       ctx.closePath();
       ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    } else if (lip.accessory === 'notebook') {
+      ctx.save();
+      ctx.translate(wx + 6, wy + 2);
+      ctx.rotate(-0.18);
+      ctx.fillStyle = '#EFF6FF';
+      ctx.strokeStyle = '#1D4ED8';
+      ctx.lineWidth = 3.4;
+      ctx.beginPath();
+      ctx.roundRect(-24, -22, 48, 38, 6);
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = '#60A5FA';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(0, -20);
+      ctx.lineTo(0, 14);
+      ctx.moveTo(-18, -10);
+      ctx.lineTo(-4, -10);
+      ctx.moveTo(-18, 0);
+      ctx.lineTo(-4, 0);
+      ctx.moveTo(5, -10);
+      ctx.lineTo(18, -10);
+      ctx.moveTo(5, 0);
+      ctx.lineTo(18, 0);
+      ctx.stroke();
+      ctx.restore();
+    } else if (lip.accessory === 'coffee-cup') {
+      ctx.save();
+      ctx.translate(wx + 4, wy - 6);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 3.2;
+      ctx.beginPath();
+      ctx.roundRect(-14, -10, 28, 28, 6);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#78350F';
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 13, 4.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = ink;
+      ctx.beginPath();
+      ctx.arc(15, 4, 7, -Math.PI * 0.5, Math.PI * 0.5);
+      ctx.stroke();
+      // Rising steam curls
+      const steamShift = Math.sin(time * 3.5) * 3;
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.85)';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(-4, -20);
+      ctx.quadraticCurveTo(-8 + steamShift, -28, -3, -36);
+      ctx.moveTo(5, -20);
+      ctx.quadraticCurveTo(9 - steamShift, -28, 4, -36);
+      ctx.stroke();
+      ctx.restore();
+    } else if (lip.accessory === 'trophy') {
+      ctx.save();
+      ctx.translate(wx + 2, wy - 18);
+      ctx.fillStyle = '#FACC15';
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 3.2;
+      ctx.beginPath();
+      ctx.moveTo(-16, -24);
+      ctx.lineTo(16, -24);
+      ctx.quadraticCurveTo(14, 4, 0, 8);
+      ctx.quadraticCurveTo(-14, 4, -16, -24);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#92400E';
+      ctx.beginPath();
+      ctx.roundRect(-10, 14, 20, 8, 3);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, 8);
+      ctx.lineTo(0, 14);
       ctx.stroke();
       ctx.restore();
     }
@@ -2181,26 +2332,36 @@ function drawCartoonHostCharacter(
     opacity: number,
     scale: number,
     badgeEmoji?: string,
+    liftAboveClap = false,
   ) => {
     if ((!glyph && !badgeEmoji) || opacity <= 0.02 || scale <= 0.1) return;
     const anchorDist = pointMix >= 0.45 ? 98 : 82;
     const badgeAngle = pointMix >= 0.45 ? dirAngle + 0.28 : dirAngle;
-    const offsetX =
-      pointMix >= 0.45 ? Math.cos(badgeAngle) * anchorDist : 54;
-    const offsetY =
-      pointMix >= 0.45 ? Math.sin(badgeAngle) * anchorDist : -66;
+    const offsetX = liftAboveClap
+      ? 68
+      : pointMix >= 0.45
+        ? Math.cos(badgeAngle) * anchorDist
+        : 54;
+    const offsetY = liftAboveClap
+      ? -78
+      : pointMix >= 0.45
+        ? Math.sin(badgeAngle) * anchorDist
+        : -66;
     const gx = wx + offsetX;
     const gy = wy + offsetY;
     const pulse = 1 + Math.sin(time * 4.2) * 0.04;
 
     const badgeFill =
-      glyph === 'cross'
-        ? '#DC2626'
-        : glyph === 'check'
-          ? '#16A34A'
-          : glyph === 'question'
-            ? '#D97706'
-            : '#2563EB';
+      badgeEmoji && !glyph
+        ? '#FFFFFF'
+        : glyph === 'cross'
+          ? '#DC2626'
+          : glyph === 'check'
+            ? '#16A34A'
+            : glyph === 'question'
+              ? '#D97706'
+              : '#2563EB';
+    const badgeBorder = badgeEmoji && !glyph ? '#93C5FD' : '#FFFFFF';
 
     ctx.save();
     ctx.globalAlpha *= clamp01(opacity);
@@ -2217,7 +2378,7 @@ function drawCartoonHostCharacter(
     ctx.fill();
     ctx.restore();
 
-    ctx.strokeStyle = '#FFFFFF';
+    ctx.strokeStyle = badgeBorder;
     ctx.lineWidth = 4.6;
     ctx.beginPath();
     ctx.arc(0, 0, 32, 0, Math.PI * 2);
@@ -2228,7 +2389,7 @@ function drawCartoonHostCharacter(
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     if (badgeEmoji) {
-      ctx.font = '700 32px "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
+      ctx.font = '700 32px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(badgeEmoji, 0, 2);
@@ -2332,7 +2493,7 @@ function drawCartoonHostCharacter(
       ctx.strokeText('?', 154, -245 + bobB);
       ctx.fillText('?', 154, -245 + bobB);
     } else if (lip.fxOverlay === 'hearts') {
-      ctx.font = '700 36px "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
+      ctx.font = '700 36px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('💖', -150, -230 + bobA);
       ctx.fillText('💕', 156, -245 + bobB);
@@ -2354,6 +2515,104 @@ function drawCartoonHostCharacter(
       ctx.quadraticCurveTo(sx - 16, sy + 4, sx, sy - 18);
       ctx.fill();
       ctx.stroke();
+    } else if (lip.fxOverlay === 'confetti-pop') {
+      const pieces = [
+        { x: -168, y: -245 + bobA, c: '#F43F5E', r: 0.4 },
+        { x: 162, y: -255 + bobB, c: '#3B82F6', r: -0.5 },
+        { x: -195, y: -150 - bobB, c: '#FACC15', r: 0.9 },
+        { x: 190, y: -155 + bobA, c: '#10B981', r: -0.8 },
+        { x: -120, y: -305 + bobB * 0.6, c: '#A855F7', r: 0.2 },
+        { x: 122, y: -310 - bobA * 0.6, c: '#FB923C', r: -0.3 },
+      ];
+      pieces.forEach((p, idx) => {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.r + time * 1.6);
+        ctx.fillStyle = p.c;
+        if (idx % 2 === 0) {
+          ctx.fillRect(-9, -4, 18, 8);
+        } else {
+          ctx.beginPath();
+          ctx.arc(0, 0, 7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      });
+    } else if (lip.fxOverlay === 'angry-vein') {
+      const vx = 104;
+      const vy = -242 + bobA * 0.3;
+      ctx.strokeStyle = '#DC2626';
+      ctx.lineWidth = 5.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(vx - 16, vy - 12);
+      ctx.quadraticCurveTo(vx - 4, vy - 4, vx - 14, vy + 10);
+      ctx.moveTo(vx + 16, vy - 12);
+      ctx.quadraticCurveTo(vx + 4, vy - 4, vx + 14, vy + 10);
+      ctx.moveTo(vx - 12, vy - 18);
+      ctx.quadraticCurveTo(vx, vy - 8, vx + 12, vy - 18);
+      ctx.moveTo(vx - 12, vy + 16);
+      ctx.quadraticCurveTo(vx, vy + 6, vx + 12, vy + 16);
+      ctx.stroke();
+    } else if (lip.fxOverlay === 'sleep-zzz') {
+      ctx.fillStyle = '#3B82F6';
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 3;
+      ctx.font = `900 38px ${FONT_DISPLAY}`;
+      ctx.textAlign = 'center';
+      ctx.strokeText('Z', 112, -238 + bobA * 0.6);
+      ctx.fillText('Z', 112, -238 + bobA * 0.6);
+      ctx.font = `900 28px ${FONT_DISPLAY}`;
+      ctx.strokeText('z', 148, -268 - bobB * 0.6);
+      ctx.fillText('z', 148, -268 - bobB * 0.6);
+      ctx.font = `900 22px ${FONT_DISPLAY}`;
+      ctx.fillText('z', 176, -292 + bobA * 0.4);
+    } else if (lip.fxOverlay === 'mind-blown') {
+      ctx.strokeStyle = '#F97316';
+      ctx.lineWidth = 5;
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 8; i++) {
+        const ang = -Math.PI + (i / 7) * Math.PI;
+        const r1 = 148;
+        const r2 = 186 + Math.sin(time * 5 + i) * 8;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(ang) * r1, -158 + Math.sin(ang) * r1);
+        ctx.lineTo(Math.cos(ang) * r2, -158 + Math.sin(ang) * r2);
+        ctx.stroke();
+      }
+    } else if (lip.fxOverlay === 'target-bull') {
+      const tx = -152;
+      const ty = -238 + bobA * 0.7;
+      ctx.fillStyle = '#EF4444';
+      ctx.beginPath();
+      ctx.arc(tx, ty, 24, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(tx, ty, 15, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#EF4444';
+      ctx.beginPath();
+      ctx.arc(tx, ty, 7, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (lip.fxOverlay === 'hundred-score') {
+      const hx = 146;
+      const hy = -238 + bobA * 0.7;
+      ctx.font = '700 44px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('💯', hx, hy);
+    } else if (lip.fxOverlay === 'clap-waves') {
+      ctx.strokeStyle = '#F59E0B';
+      ctx.lineWidth = 4.5;
+      ctx.lineCap = 'round';
+      [-1, 1].forEach((dir) => {
+        ctx.beginPath();
+        ctx.arc(dir * 136, 40, 26 + Math.abs(bobA), dir > 0 ? -0.7 : Math.PI - 0.7, dir > 0 ? 0.7 : Math.PI + 0.7);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(dir * 150, 40, 42 + Math.abs(bobB), dir > 0 ? -0.55 : Math.PI - 0.55, dir > 0 ? 0.55 : Math.PI + 0.55);
+        ctx.stroke();
+      });
     }
     ctx.restore();
   };
@@ -2490,7 +2749,7 @@ function drawCartoonHostCharacter(
 
     drawHandPropAccessory(wx, wy, lip.rightHandAngle);
     drawBlendedRightHand(wx, wy, lip.rightHandAngle, lip.rightHandPointMix, lip.rightHandCompactMix);
-    if (clapImpact <= 0.2) {
+    if (clapImpact <= 0.2 || Boolean(lip.badgeEmoji)) {
       drawHandReactionBadge(
         wx,
         wy,
@@ -2500,6 +2759,7 @@ function drawCartoonHostCharacter(
         lip.badgeOpacity,
         lip.badgeScale,
         lip.badgeEmoji,
+        clapImpact > 0.2,
       );
     }
 
@@ -2722,6 +2982,66 @@ function drawCartoonHostCharacter(
     ctx.closePath();
     ctx.fill();
     ctx.restore();
+  } else if (lip.eyeStyle === 'laugh-squint') {
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 6.2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(lx - 13, ey - 8);
+    ctx.lineTo(lx + 8, ey);
+    ctx.lineTo(lx - 13, ey + 8);
+    ctx.moveTo(rx + 13, ey - 8);
+    ctx.lineTo(rx - 8, ey);
+    ctx.lineTo(rx + 13, ey + 8);
+    ctx.stroke();
+  } else if (lip.eyeStyle === 'determined') {
+    ctx.fillStyle = ink;
+    ctx.beginPath();
+    ctx.ellipse(lx, ey + 2, 11.5, 9.5 * eyeScaleY, 0.14, 0, Math.PI * 2);
+    ctx.ellipse(rx, ey + 2, 11.5, 9.5 * eyeScaleY, -0.14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(lx + 2.5, ey, 2.8, 0, Math.PI * 2);
+    ctx.arc(rx - 2.5, ey, 2.8, 0, Math.PI * 2);
+    ctx.fill();
+    // Sharp determined brow slash
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 6.2;
+    ctx.beginPath();
+    ctx.moveTo(lx - 18, ey - 14);
+    ctx.lineTo(lx + 15, ey - 7);
+    ctx.moveTo(rx + 18, ey - 14);
+    ctx.lineTo(rx - 15, ey - 7);
+    ctx.stroke();
+  } else if (lip.eyeStyle === 'pleading') {
+    ctx.fillStyle = ink;
+    ctx.beginPath();
+    ctx.ellipse(lx, ey, 14, 16 * eyeScaleY, 0, 0, Math.PI * 2);
+    ctx.ellipse(rx, ey, 14, 16 * eyeScaleY, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(lx - 4, ey - 5, 5.2, 0, Math.PI * 2);
+    ctx.arc(rx - 4, ey - 5, 5.2, 0, Math.PI * 2);
+    ctx.arc(lx + 5, ey + 5, 2.8, 0, Math.PI * 2);
+    ctx.arc(rx + 5, ey + 5, 2.8, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (lip.eyeStyle === 'dizzy') {
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 4.6;
+    [lx, rx].forEach((cx) => {
+      ctx.beginPath();
+      for (let t = 0; t < Math.PI * 3.6; t += 0.28) {
+        const rad = t * 1.45;
+        const px = cx + Math.cos(t) * rad;
+        const py = ey + Math.sin(t) * rad;
+        if (t === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    });
   } else if (eyeScaleY < 0.24 || lip.eyeStyle === 'happy-arc') {
     ctx.strokeStyle = ink;
     ctx.lineWidth = 5.6;
@@ -2807,6 +3127,49 @@ function drawCartoonHostCharacter(
     ctx.beginPath();
     ctx.ellipse(0, mouthY + 12, 18, 22, 0, 0, Math.PI * 2);
     ctx.fill();
+  } else if (lip.mouthStyle === 'laugh-open' && (!lip.isSpeaking || openAmt <= 0.35)) {
+    const laughH = 38 + openAmt * 18;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(-40, mouthY - 4);
+    ctx.quadraticCurveTo(0, mouthY + 2, 40, mouthY - 4);
+    ctx.bezierCurveTo(36, mouthY + laughH, -36, mouthY + laughH, -40, mouthY - 4);
+    ctx.closePath();
+    ctx.fillStyle = ink;
+    ctx.fill();
+    ctx.clip();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(-38, mouthY - 4, 76, 11);
+    ctx.fillStyle = '#FB7185';
+    ctx.beginPath();
+    ctx.ellipse(0, mouthY + laughH * 0.72, 22, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  } else if (lip.mouthStyle === 'grit-teeth' && (!lip.isSpeaking || openAmt <= 0.22)) {
+    ctx.save();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 4.6;
+    ctx.beginPath();
+    ctx.roundRect(-30, mouthY - 2, 60, 22, 9);
+    ctx.fill();
+    ctx.stroke();
+    ctx.lineWidth = 2.8;
+    [-14, 0, 14].forEach((tx) => {
+      ctx.beginPath();
+      ctx.moveTo(tx, mouthY - 1);
+      ctx.lineTo(tx, mouthY + 19);
+      ctx.stroke();
+    });
+    ctx.restore();
+  } else if (lip.mouthStyle === 'whistle-o' && (!lip.isSpeaking || openAmt <= 0.25)) {
+    ctx.fillStyle = '#9F1239';
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 4.5;
+    ctx.beginPath();
+    ctx.arc(0, mouthY + 10, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
   } else if (lip.mouthStyle === 'big-grin' && (!lip.isSpeaking || openAmt <= 0.16)) {
     ctx.save();
     ctx.beginPath();
@@ -2825,7 +3188,14 @@ function drawCartoonHostCharacter(
     ctx.lineWidth = 6.2;
     ctx.lineCap = 'round';
     ctx.beginPath();
-    if (lip.mouthStyle === 'wavy-nervous') {
+    if (lip.mouthStyle === 'cat-smile') {
+      ctx.moveTo(-24, mouthY + 4);
+      ctx.quadraticCurveTo(-12, mouthY + 18, 0, mouthY + 5);
+      ctx.quadraticCurveTo(12, mouthY + 18, 24, mouthY + 4);
+    } else if (lip.mouthStyle === 'pout') {
+      ctx.moveTo(-18, mouthY + 16);
+      ctx.quadraticCurveTo(0, mouthY + 2, 18, mouthY + 16);
+    } else if (lip.mouthStyle === 'wavy-nervous') {
       ctx.moveTo(-26, mouthY + 6);
       ctx.quadraticCurveTo(-12, mouthY - 4, 0, mouthY + 6);
       ctx.quadraticCurveTo(12, mouthY + 16, 26, mouthY + 4);
@@ -5189,12 +5559,17 @@ function drawIllustrationProp(
     ctx.arc(-295, 10, 86, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+    const avatarGender = inferAvatarGenderFromName(
+      `${reaction} ${props.data?.title || ''}`,
+      props.data?.speakerGender,
+    );
     drawCharacterAvatar(ctx, {
       x: -295,
       y: 2,
       shirtColor: '#2563EB',
       hairColor: '#1E293B',
-      hairStyle: 'side',
+      hairStyle: avatarGender === 'female' ? 'bob' : 'short',
+      gender: avatarGender,
       expression: reaction.includes('blunt') ? 'curious' : 'smile',
       scale: 0.92,
       lipSync: lip,
@@ -7448,12 +7823,17 @@ function drawIllustrationProp(
 
     // Character avatar left
     const lip = computeSpeechLipSyncState(cues, time);
+    const dlgGender = inferAvatarGenderFromName(
+      props.data?.reactionText,
+      props.data?.speakerGender,
+    );
     drawCharacterAvatar(ctx, {
       x: -265,
       y: 8,
-      shirtColor: '#3B82F6',
-      hairColor: '#1E293B',
-      hairStyle: 'bob',
+      shirtColor: dlgGender === 'female' ? '#EC4899' : '#3B82F6',
+      hairColor: dlgGender === 'female' ? '#581C87' : '#1E293B',
+      hairStyle: dlgGender === 'female' ? 'bob' : 'short',
+      gender: dlgGender,
       expression: 'curious',
       scale: 0.78,
       lipSync: lip,
@@ -7713,12 +8093,19 @@ function drawPodcastStudioScene(
       ctx.restore();
     }
 
+    const explicitGender = (spk as IllustrationFlowNode).gender;
+    const inferredGender = inferAvatarGenderFromName(spk.label, explicitGender);
+    const fallbackGender: 'male' | 'female' =
+      inferredGender ?? (idx % 2 === 0 ? 'female' : 'male');
+    const resolvedHair: 'short' | 'bob' =
+      fallbackGender === 'female' ? 'bob' : 'short';
     drawCharacterAvatar(ctx, {
       x: cx,
       y: -52,
       shirtColor: spkAccent,
-      hairColor: idx % 2 === 0 ? '#0F172A' : '#78350F',
-      hairStyle: idx % 2 === 1 ? 'bob' : 'side',
+      hairColor: fallbackGender === 'female' ? '#4C1D95' : '#0F172A',
+      hairStyle: resolvedHair,
+      gender: fallbackGender,
       expression: isActive ? 'happy' : 'curious',
       scale: 0.58,
       lipSync: isActive ? lip : undefined,

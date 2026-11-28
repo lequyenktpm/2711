@@ -303,6 +303,96 @@ function getRightArmTargetPose(
         pointMix: 0,
         compactMix: 0,
       };
+    case 'peace-sign':
+      return {
+        ex: 158 + sway * 0.3,
+        ey: -8 + bob * 0.4,
+        wx: 186 + Math.sin(t * 3.2) * 5,
+        wy: -136 + bob,
+        handAngle: -Math.PI * 0.46,
+        pointMix: 0.78,
+        compactMix: 0.25,
+      };
+    case 'salute':
+      return {
+        ex: 164 + sway * 0.2,
+        ey: -54,
+        wx: 134,
+        wy: -176 + bob * 0.3,
+        handAngle: -Math.PI * 0.72,
+        pointMix: 0,
+        compactMix: 0.9,
+      };
+    case 'shush':
+      return {
+        ex: 142,
+        ey: 24,
+        wx: 118,
+        wy: -108 + Math.sin(t * 2.2) * 3,
+        handAngle: -Math.PI * 0.54,
+        pointMix: 1,
+        compactMix: 0.3,
+      };
+    case 'bow-polite':
+      return {
+        ex: 126,
+        ey: 96,
+        wx: 118,
+        wy: 148 + bob * 0.3,
+        handAngle: Math.PI * 0.65,
+        pointMix: 0,
+        compactMix: 0.95,
+      };
+    case 'heart-hands':
+      return {
+        ex: 154 + sway * 0.25,
+        ey: -28 + bob * 0.4,
+        wx: 118,
+        wy: -106 + Math.sin(t * 3.0) * 4,
+        handAngle: -Math.PI * 0.68,
+        pointMix: 0,
+        compactMix: 0.5,
+      };
+    case 'cross-arms':
+      return {
+        ex: 146,
+        ey: 44,
+        wx: 116,
+        wy: 64 + bob * 0.3,
+        handAngle: Math.PI * 0.85,
+        pointMix: 0,
+        compactMix: 0.85,
+      };
+    case 'open-welcome':
+      return {
+        ex: 166 + sway * 0.4,
+        ey: 10 + bob * 0.4,
+        wx: 218 + sway * 0.3,
+        wy: -46 + bob,
+        handAngle: -0.35,
+        pointMix: 0,
+        compactMix: 0,
+      };
+    case 'writing-note':
+      return {
+        ex: 154,
+        ey: 42,
+        wx: 148 + Math.sin(t * 9.0) * 7,
+        wy: -16 + Math.cos(t * 9.0) * 5,
+        handAngle: -0.45 + Math.sin(t * 9.0) * 0.1,
+        pointMix: 0.65,
+        compactMix: 0.4,
+      };
+    case 'snap-idea':
+      return {
+        ex: 156 + sway * 0.3,
+        ey: -22,
+        wx: 174 + Math.sin(t * 4.5) * 4,
+        wy: -154 + bob * 0.8,
+        handAngle: -Math.PI * 0.5,
+        pointMix: 0.85,
+        compactMix: 0.2,
+      };
     case 'explain': {
       // Smoothly modulate gesture height by continuous speechActivity (zero abrupt threshold jumps)
       const act = clamp01(speechActivity);
@@ -590,6 +680,60 @@ const ARM_POSES: Record<CartoonGestureMode, ArmPose> = {
     rightShoulder: -1.12,
     rightElbow: -0.85,
   },
+  'peace-sign': {
+    leftShoulder: 0.44,
+    leftElbow: 0.38,
+    rightShoulder: -1.15,
+    rightElbow: -0.78,
+  },
+  salute: {
+    leftShoulder: 0.32,
+    leftElbow: 0.3,
+    rightShoulder: -1.32,
+    rightElbow: -1.04,
+  },
+  shush: {
+    leftShoulder: 0.42,
+    leftElbow: 0.44,
+    rightShoulder: -0.88,
+    rightElbow: -0.96,
+  },
+  'bow-polite': {
+    leftShoulder: 0.22,
+    leftElbow: 0.48,
+    rightShoulder: -0.22,
+    rightElbow: -0.48,
+  },
+  'heart-hands': {
+    leftShoulder: 0.96,
+    leftElbow: 0.86,
+    rightShoulder: -0.96,
+    rightElbow: -0.86,
+  },
+  'cross-arms': {
+    leftShoulder: 0.52,
+    leftElbow: 0.88,
+    rightShoulder: -0.52,
+    rightElbow: -0.88,
+  },
+  'open-welcome': {
+    leftShoulder: 0.84,
+    leftElbow: 0.46,
+    rightShoulder: -0.84,
+    rightElbow: -0.46,
+  },
+  'writing-note': {
+    leftShoulder: 0.62,
+    leftElbow: 0.72,
+    rightShoulder: -0.66,
+    rightElbow: -0.76,
+  },
+  'snap-idea': {
+    leftShoulder: 0.44,
+    leftElbow: 0.4,
+    rightShoulder: -1.24,
+    rightElbow: -0.84,
+  },
 };
 
 const NEGATIVE_CONTEXT_REGEX =
@@ -645,16 +789,19 @@ function defaultParamsFor(
             ? 'smirk'
             : 'lip-sync',
     fxOverlay:
-      gestureMode === 'approve-tip'
+      gestureMode === 'approve-tip' || gestureMode === 'snap-idea'
         ? 'lightbulb'
         : gestureMode === 'warn-avoid'
           ? 'warning-bolt'
           : gestureMode === 'question' || gestureMode === 'think-chin'
             ? 'question-marks'
-            : gestureMode === 'cheer' || gestureMode === 'fist-pump'
-              ? 'sparkles'
-              : 'none',
+            : gestureMode === 'heart-hands'
+              ? 'hearts'
+              : gestureMode === 'cheer' || gestureMode === 'fist-pump' || gestureMode === 'open-welcome'
+                ? 'sparkles'
+                : 'none',
     blushIntensity: mood === 'happy' || mood === 'excited' || mood === 'shy' ? 0.35 : 0.12,
+    bodySquashStretch: 0,
   };
 }
 
@@ -1298,32 +1445,43 @@ export function computeSpeechLipSyncState(
   const rightHandPointMix = lerp(armFrom.pointMix, armTo.pointMix, gestureBlend);
   const rightHandCompactMix = lerp(armFrom.compactMix, armTo.compactMix, gestureBlend);
 
-  // Smooth badge fade/scale in and gradual retract fade-out (never vanishes abruptly in 1 frame)
-  let badgeGlyph: CartoonLipSyncFrame['badgeGlyph'] = currentState.pointerGlyph;
-  let badgeOpacity = currentState.pointerGlyph ? 1 : 0;
-  let badgeScale = currentState.pointerGlyph ? 1 : 0.7;
+  // Smooth badge fade/scale in and gradual retract fade-out (supports both vector glyphs and emoji badges)
+  const currHasBadge = Boolean(currentState.pointerGlyph || currentState.params.badgeEmoji);
+  const prevHasBadge = Boolean(prevState.pointerGlyph || prevState.params.badgeEmoji);
+  const currBadgeId = `${currentState.pointerGlyph || ''}|${currentState.params.badgeEmoji || ''}`;
+  const prevBadgeId = `${prevState.pointerGlyph || ''}|${prevState.params.badgeEmoji || ''}`;
 
-  if (prevState.pointerGlyph !== currentState.pointerGlyph) {
-    if (currentState.pointerGlyph && !prevState.pointerGlyph) {
+  let badgeGlyph: CartoonLipSyncFrame['badgeGlyph'] = currentState.pointerGlyph;
+  let badgeEmoji: string | undefined = currentState.params.badgeEmoji;
+  let badgeOpacity = currHasBadge ? 1 : 0;
+  let badgeScale = currHasBadge ? 1 : 0.7;
+
+  if (prevBadgeId !== currBadgeId) {
+    if (currHasBadge && !prevHasBadge) {
       badgeGlyph = currentState.pointerGlyph;
+      badgeEmoji = currentState.params.badgeEmoji;
       badgeOpacity = clamp01(gestureBlend * 1.25);
       badgeScale = lerp(0.68, 1, gestureBlend);
-    } else if (!currentState.pointerGlyph && prevState.pointerGlyph) {
+    } else if (!currHasBadge && prevHasBadge) {
       badgeGlyph = prevState.pointerGlyph;
+      badgeEmoji = prevState.params.badgeEmoji;
       badgeOpacity = clamp01(1 - gestureBlend * 1.18);
       badgeScale = lerp(1, 0.64, gestureBlend);
       if (badgeOpacity <= 0.02) {
         badgeGlyph = null;
+        badgeEmoji = undefined;
         badgeOpacity = 0;
       }
-    } else if (currentState.pointerGlyph && prevState.pointerGlyph) {
+    } else if (currHasBadge && prevHasBadge) {
       if (gestureBlend < 0.42) {
         badgeGlyph = prevState.pointerGlyph;
+        badgeEmoji = prevState.params.badgeEmoji;
         badgeOpacity = clamp01(1 - gestureBlend / 0.42);
         badgeScale = lerp(1, 0.75, gestureBlend / 0.42);
       } else {
         const enter = clamp01((gestureBlend - 0.42) / 0.58);
         badgeGlyph = currentState.pointerGlyph;
+        badgeEmoji = currentState.params.badgeEmoji;
         badgeOpacity = enter;
         badgeScale = lerp(0.75, 1, enter);
       }
@@ -1537,7 +1695,7 @@ export function computeSpeechLipSyncState(
     jumpOffsetY,
     clapImpact,
     badgeGlyph,
-    badgeEmoji: currentState.params.badgeEmoji,
+    badgeEmoji,
     badgeOpacity,
     badgeScale,
     gestureMode: currentState.gestureMode,

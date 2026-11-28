@@ -479,3 +479,74 @@ test('Từ Bài / Link supports multilingual learning languages, word-ordering/M
   assert.ok(viJaSpans.some((s) => s.lang === 'vi'));
   assert.ok(viJaSpans.some((s) => s.lang === 'ja'));
 });
+
+test('podcast-duo and dialogue-stage assign accurate male/female speaker gender to avatar icons', () => {
+  const mixedDialogue: ReelCard[] = [
+    {
+      id: 'd0',
+      type: 'intro',
+      badge: 'INTRO',
+      speaker: 'Narrator',
+      title: 'Airport Check-in',
+      content: 'Intro conversation',
+      ttsText: 'Intro',
+      learningLang: 'en',
+      durationSec: 2,
+    },
+    {
+      id: 'd1',
+      type: 'vocab',
+      badge: 'TURN 1',
+      speaker: 'Ken',
+      speakerRole: 'Passenger',
+      title: 'Check-in',
+      content: 'Excuse me, where is gate five?',
+      ttsText: 'Excuse me, where is gate five?',
+      learningLang: 'en',
+      durationSec: 3,
+    },
+    {
+      id: 'd2',
+      type: 'vocab',
+      badge: 'TURN 2',
+      speaker: 'Sakura',
+      speakerRole: 'Staff',
+      title: 'Gate directions',
+      content: 'Turn left right past security.',
+      ttsText: 'Turn left right past security.',
+      learningLang: 'en',
+      durationSec: 3,
+    },
+  ];
+
+  const podcastProj = reelCardsToLessonProject(mixedDialogue, {
+    title: 'Airport Check-in',
+    compositionId: 'podcast-duo',
+    learningLanguage: 'en',
+    targetLang: 'Tiếng Việt',
+  });
+  const studioProp = podcastProj.elements.find((e) => e.id === 'reel-prop-1');
+  assert.ok(studioProp && studioProp.props.kind === 'illustration-prop');
+  if (studioProp && studioProp.props.kind === 'illustration-prop') {
+    assert.equal(studioProp.props.variant, 'podcast-studio');
+    const nodes = studioProp.props.data?.nodes || [];
+    const kenNode = nodes.find((n) => n.label === 'Ken');
+    const sakuraNode = nodes.find((n) => n.label === 'Sakura');
+    assert.equal(kenNode?.gender, 'male');
+    assert.equal(sakuraNode?.gender, 'female');
+  }
+
+  const stageProj = reelCardsToLessonProject(mixedDialogue, {
+    title: 'Airport Check-in',
+    compositionId: 'dialogue-stage',
+    learningLanguage: 'en',
+    targetLang: 'Tiếng Việt',
+  });
+  const kenStageProp = stageProj.elements.find((e) => e.id === 'reel-prop-1');
+  assert.ok(kenStageProp && kenStageProp.props.kind === 'illustration-prop');
+  if (kenStageProp && kenStageProp.props.kind === 'illustration-prop') {
+    assert.equal(kenStageProp.props.variant, 'p168-story-dialogue');
+    assert.equal(kenStageProp.props.data?.speakerGender, 'male');
+  }
+});
+

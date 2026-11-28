@@ -245,6 +245,7 @@ export interface IllustrationFlowNode {
   icon?: 'clock' | 'history' | 'rocket' | 'chat' | 'star' | 'check' | 'water' | 'office';
   sceneIcon?: IllustrationSceneIcon;
   color?: string;
+  gender?: 'male' | 'female';
 }
 
 export interface IllustrationChecklistItem {
@@ -306,7 +307,16 @@ export type CartoonGestureMode =
   | 'facepalm'
   | 'fist-pump'
   | 'hold-mic'
-  | 'clap-jump';
+  | 'clap-jump'
+  | 'peace-sign'
+  | 'salute'
+  | 'shush'
+  | 'bow-polite'
+  | 'heart-hands'
+  | 'cross-arms'
+  | 'open-welcome'
+  | 'writing-note'
+  | 'snap-idea';
 
 export type CartoonExpressionMood =
   | 'neutral'
@@ -329,7 +339,11 @@ export type CartoonEyeStyle =
   | 'focused'
   | 'sleepy'
   | 'heart'
-  | 'cool-shades';
+  | 'cool-shades'
+  | 'laugh-squint'
+  | 'determined'
+  | 'pleading'
+  | 'dizzy';
 
 export type CartoonMouthStyle =
   | 'lip-sync'
@@ -338,7 +352,12 @@ export type CartoonMouthStyle =
   | 'o-shock'
   | 'wavy-nervous'
   | 'flat-serious'
-  | 'smirk';
+  | 'smirk'
+  | 'laugh-open'
+  | 'cat-smile'
+  | 'whistle-o'
+  | 'grit-teeth'
+  | 'pout';
 
 export type CartoonFxOverlay =
   | 'none'
@@ -350,7 +369,14 @@ export type CartoonFxOverlay =
   | 'music-notes'
   | 'sweat-drop'
   | 'check-burst'
-  | 'fire-aura';
+  | 'fire-aura'
+  | 'confetti-pop'
+  | 'angry-vein'
+  | 'sleep-zzz'
+  | 'mind-blown'
+  | 'target-bull'
+  | 'hundred-score'
+  | 'clap-waves';
 
 export type CartoonAccessory =
   | 'none'
@@ -359,7 +385,10 @@ export type CartoonAccessory =
   | 'pointer-stick'
   | 'mic'
   | 'graduation-cap'
-  | 'sunglasses';
+  | 'sunglasses'
+  | 'notebook'
+  | 'trophy'
+  | 'coffee-cup';
 
 export interface CartoonAnimationKeyframe {
   /** Normalized position 0..1 within sequenceDurationSec */
@@ -440,6 +469,7 @@ export interface IllustrationPropData {
   boxes?: IllustrationSpatialBox[];
   speechText?: string;
   reactionText?: string;
+  speakerGender?: 'male' | 'female';
   sceneIcon?: IllustrationSceneIcon;
   highlightWord?: string;
   dynamicScene?: DynamicSceneSpec;

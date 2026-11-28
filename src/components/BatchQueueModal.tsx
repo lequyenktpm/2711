@@ -82,9 +82,12 @@ import {
   exportProjectToVideo,
 } from '../engine/mp4Exporter';
 import {
+  BatchPromptBundleItem,
   BatchSubTabId,
+  buildBatchPromptZipBundle,
   buildBatchPromptZipName,
   buildBatchTtsSegmentsForReelCards,
+  filterBatchResultUploadFiles,
   generateBatchPromptsForTopics,
   getBatchPromptSubfolder,
   mapBatchSynthesisDurations,
@@ -1071,17 +1074,17 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
     if (!fileList || fileList.length === 0 || batchSubTab === 'studio') return;
     const rawFiles = Array.from(fileList);
     e.target.value = '';
-    const expandedFiles = await expandUploadedFilesOrZips(rawFiles);
+    const expandedFiles = filterBatchResultUploadFiles(
+      await expandUploadedFilesOrZips(rawFiles),
+    );
     const entries = await Promise.all(
-      expandedFiles
-        .filter((f) => /\.(json|txt|md)$/i.test(f.name) || f.type === 'application/json')
-        .map(async (f) => ({
-          rawText: await f.text(),
-          fileName: f.name,
-        })),
+      expandedFiles.map(async (f) => ({
+        rawText: await f.text(),
+        fileName: f.name.split('/').pop() || f.name,
+      })),
     );
     if (entries.length === 0) {
-      setMultiJsonParseMsg('Không tìm thấy file .json/.txt nào bên trong tệp bạn vừa chọn.');
+      setMultiJsonParseMsg('Không tìm thấy file .json/.txt kết quả nào bên trong tệp bạn vừa chọn.');
       return;
     }
     ingestMultiJsonTexts(entries, batchSubTab);
@@ -1129,12 +1132,20 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
       readingFormat: promptGenReadingFormat,
     });
 
-    const zipEntries: Record<string, string> = {};
-    prompts.forEach((p) => {
-      zipEntries[p.fileName] = p.promptText;
+    const zipName = buildBatchPromptZipName(batchSubTab);
+    const zipEntries = buildBatchPromptZipBundle({
+      subTab: batchSubTab,
+      zipName,
+      items: prompts.map((p) => ({
+        fileName: p.fileName,
+        topic: p.topic,
+        durationMinutes: p.durationMinutes,
+        learningLanguage: promptGenLang,
+        level: promptGenLevel,
+        promptText: p.promptText,
+      })),
     });
     const zipData = buildZipArchive(zipEntries);
-    const zipName = buildBatchPromptZipName(batchSubTab);
     const subfolder = getBatchPromptSubfolder(batchSubTab);
     const savedMeta = await saveZipToServerSubfolder(
       zipData,
@@ -1151,7 +1162,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
       count: prompts.length,
     });
     setMultiJsonParseMsg(
-      `Đã tạo ${prompts.length} prompt trong ${zipName} (lưu tại ${savedMeta.savedPath}). Chạy AI Web lấy JSON → nén .zip (hoặc chọn nhiều .json) rồi upload lên đây!`,
+      `Đã tạo ${prompts.length} prompt + README/Manifest AI tự động trong ${zipName} (lưu tại ${savedMeta.savedPath}). Chỉ cần thả nguyên file .zip này vào ChatGPT/Gemini/Claude Web để AI tự chạy & trả về .zip kết quả JSON rồi upload lại đây!`,
     );
   };
 
@@ -1209,23 +1220,31 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
 
   const handleJsonFilesSelected = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
-    const files = (await expandUploadedFilesOrZips(Array.from(fileList))).filter((f) =>
-      JSON_EXT_RE.test(f.name),
-    );
+    const files = filterBatchResultUploadFiles(
+      await expandUploadedFilesOrZips(Array.from(fileList)),
+    ).filter((f) => JSON_EXT_RE.test(f.name));
     if (files.length === 0) return;
+
+    const normStem = (name: string) =>
+      getBaseName(name.split('/').pop() || name)
+        .toLowerCase()
+        .replace(/(?:\s*\|\s*prompt|[._-]prompt|[._-]result)$/i, '')
+        .trim();
 
     const jsonBlobsToPersist: Array<{ id: string; file: File }> = [];
     setItems((prev) => {
       const next = prev.map((item) => {
-        const matchingFile = files.find(
-          (f) => getBaseName(f.name).toLowerCase() === item.baseName.toLowerCase(),
-        );
+        const targetStem = normStem(item.baseName);
+        const matchingFile = files.find((f) => {
+          const base = getBaseName(f.name.split('/').pop() || f.name).toLowerCase();
+          return base === item.baseName.toLowerCase() || normStem(f.name) === targetStem;
+        });
         if (matchingFile) {
           jsonBlobsToPersist.push({ id: item.id, file: matchingFile });
           return {
             ...item,
             jsonFile: matchingFile,
-            detail: `Đã nạp file ${matchingFile.name}`,
+            detail: `Đã nạp file ${matchingFile.name.split('/').pop() || matchingFile.name}`,
           };
         }
         return item;
@@ -1439,7 +1458,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
     setIsRunning(true);
 
     const queueSnapshot = [...items];
-    const promptFiles: Record<string, string> = {};
+    const promptBundleItems: BatchPromptBundleItem[] = [];
     const runErrors: string[] = [];
 
     for (let idx = 0; idx < queueSnapshot.length; idx++) {
@@ -1460,7 +1479,12 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
           fallback: 'Prompt',
         });
         const promptFileName = cleanDownloadFileName(`${promptStem} | Prompt`, 'txt', 'Prompt');
-        promptFiles[promptFileName] = promptText;
+        promptBundleItems.push({
+          fileName: promptFileName,
+          topic: item.baseName,
+          expectedJsonFile: `${item.baseName}.json`,
+          promptText,
+        });
         await saveTextOutput(promptText, promptFileName);
 
         updateItem(item.id, {
@@ -1488,9 +1512,14 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
       }
     }
 
-    if (Object.keys(promptFiles).length >= 1) {
-      const zipData = buildZipArchive(promptFiles);
+    if (promptBundleItems.length >= 1) {
       const zipName = buildBatchPromptZipName('studio');
+      const zipEntries = buildBatchPromptZipBundle({
+        subTab: 'studio',
+        zipName,
+        items: promptBundleItems,
+      });
+      const zipData = buildZipArchive(zipEntries);
       const subfolder = getBatchPromptSubfolder('studio');
       const savedMeta = await saveZipToServerSubfolder(
         zipData,
@@ -1504,7 +1533,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
         relativePath: savedMeta.relativePath,
         savedPath: savedMeta.savedPath,
         subfolder,
-        count: Object.keys(promptFiles).length,
+        count: promptBundleItems.length,
       });
     }
 
@@ -2809,7 +2838,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                 Hàng đợi Batch Đa Tab — Tự động hóa hàng loạt (Không cần API Key)
               </h2>
               <p className="text-xs text-slate-500">
-                Chọn thông số trước để tạo Prompt ZIP riêng cho từng tab, đưa qua AI Web rồi tải lại tệp <code>.zip</code> hoặc nhiều <code>.json</code> để tự động dựng MP4.
+                Xuất Prompt ZIP (đã kèm file hướng dẫn AI tự xử lý) → thả nguyên file <code>.zip</code> vào ChatGPT / Gemini / Claude Web để nhận lại <code>.zip</code> các file JSON rồi nạp vào đây dựng MP4.
               </p>
             </div>
           </div>
@@ -3872,7 +3901,7 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                   <div className="text-xs text-emerald-900">
-                    <strong>Đã xuất xong prompt ({promptReadyCount} bài)!</strong> Lấy JSON từ AI Web dán vào từng bài rồi bấm nút bên cạnh:
+                    <strong>Đã xuất xong gói Prompt ZIP ({promptReadyCount} bài) kèm hướng dẫn AI tự động!</strong> Thả nguyên file <code>.zip</code> vào AI Web để lấy <code>.zip</code> JSON trả về rồi bấm <strong>Nạp .json / .zip</strong> và render:
                   </div>
                 </div>
                 <button

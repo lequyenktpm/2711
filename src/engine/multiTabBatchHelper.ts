@@ -53,6 +53,7 @@ export interface BatchTtsSegmentSpec {
   id: string;
   text: string;
   pauseAfterSec?: number;
+  silenceOnly?: boolean;
   voice?: string;
   lang?: string;
   autoSplit?: boolean;
@@ -64,8 +65,11 @@ export interface BatchCardSegmentMapping {
   aIdx: number | null;
   repeatIndices?: number[];
   thinkSec: number;
+  questionWaitSec?: number;
   isOutro: boolean;
   isTranslation?: boolean;
+  isQuiz?: boolean;
+  hasAnswerCue?: boolean;
 }
 
 export function detectLearningLanguageFromText(
@@ -437,19 +441,34 @@ export function buildBatchTtsSegmentsForReelCards(
       });
     } else if (c.type === 'quiz' && c.options && c.options.length > 0) {
       quizOrd += 1;
-      const { questionSpeech, answerSpeech, thinkSec } = getQuizCardSpeechParts(c, quizOrd);
-      const cleanQ = stripBatchParenthesizedPinyinIfCjk(questionSpeech || 'Quiz question.', lessonVoiceLang);
-      const qIdx = segments.length;
-      segments.push({
-        id: `${c.id}-q`,
-        text: cleanQ,
-        pauseAfterSec: thinkSec,
-        voice: cardVoice,
-        lang: lessonVoiceLang,
-        autoSplit: opts.enableDualTts
-          ? shouldAutoSplitBatchSpeech(cleanQ, lessonVoiceLang, explLang)
-          : undefined,
-      });
+      const { questionSpeech, answerSpeech, thinkSec, questionWaitSec } = getQuizCardSpeechParts(c, quizOrd);
+      const isSilentQuiz = Boolean(c.silentQuestion) || !questionSpeech;
+      let qIdx: number | null = null;
+      if (isSilentQuiz) {
+        const totalSilentPause = Number((questionWaitSec + thinkSec).toFixed(2));
+        if (totalSilentPause > 0.05) {
+          qIdx = segments.length;
+          segments.push({
+            id: `${c.id}-q`,
+            text: '',
+            pauseAfterSec: totalSilentPause,
+            silenceOnly: true,
+          });
+        }
+      } else {
+        const cleanQ = stripBatchParenthesizedPinyinIfCjk(questionSpeech || 'Quiz question.', lessonVoiceLang);
+        qIdx = segments.length;
+        segments.push({
+          id: `${c.id}-q`,
+          text: cleanQ,
+          pauseAfterSec: thinkSec,
+          voice: cardVoice,
+          lang: lessonVoiceLang,
+          autoSplit: opts.enableDualTts
+            ? shouldAutoSplitBatchSpeech(cleanQ, lessonVoiceLang, explLang)
+            : undefined,
+        });
+      }
       let aIdx: number | null = null;
       if (answerSpeech) {
         const cleanA = stripBatchParenthesizedPinyinIfCjk(answerSpeech, lessonVoiceLang);
@@ -481,7 +500,16 @@ export function buildBatchTtsSegmentsForReelCards(
           autoSplit: shouldAutoSplitBatchSpeech(explSpeech, explLang, lessonVoiceLang),
         });
       }
-      cardMapping.push({ qIdx, explIdx, aIdx, thinkSec, isOutro: false });
+      cardMapping.push({
+        qIdx,
+        explIdx,
+        aIdx,
+        thinkSec,
+        questionWaitSec: isSilentQuiz ? questionWaitSec : undefined,
+        isOutro: false,
+        isQuiz: true,
+        hasAnswerCue: Boolean(answerSpeech || (opts.enableDualTts && explSpeech)),
+      });
     } else if (opts.enableDualTts && (c.type === 'intro' || c.type === 'transition' || c.type === 'outro')) {
       const explOnly =
         sanitizeBatchSpeechText(c.explanationSpeech || c.translation || c.content || c.title) ||
@@ -624,9 +652,18 @@ export function mapBatchSynthesisDurations(
     const qSpoken = m.qIdx !== null ? spokenDurs[m.qIdx] ?? segDurs[m.qIdx] ?? 2.8 : 0;
     const pDur = m.qIdx !== null ? pauseDurs[m.qIdx] ?? 0 : 0;
     const aSpoken = m.aIdx !== null ? segDurs[m.aIdx] ?? 2.6 : undefined;
+    const aOnlySpoken = m.aIdx !== null ? spokenDurs[m.aIdx] ?? aSpoken : undefined;
     const explDur = m.explIdx !== null ? segDurs[m.explIdx] ?? 0 : 0;
     const explSpoken = m.explIdx !== null ? spokenDurs[m.explIdx] ?? explDur : 0;
-    const isQuiz = m.aIdx !== null;
+    const isQuiz = Boolean(m.isQuiz || m.aIdx !== null);
+    const effectiveQuestionSec =
+      isQuiz && qSpoken <= 0.05 && typeof m.questionWaitSec === 'number'
+        ? Math.min(pDur, m.questionWaitSec)
+        : qSpoken;
+    const effectiveThinkSec =
+      isQuiz && qSpoken <= 0.05 && typeof m.questionWaitSec === 'number'
+        ? Math.max(0, Number((pDur - effectiveQuestionSec).toFixed(3)))
+        : pDur;
     const totalSec = Number(
       Math.max(1.2, qSpoken + pDur + (aSpoken ?? 0) + explDur).toFixed(3),
     );
@@ -634,14 +671,16 @@ export function mapBatchSynthesisDurations(
     if (qSpoken > 0.05) {
       speechWindows.push({ start: winCursor, end: winCursor + qSpoken });
     }
-    if (isQuiz && aSpoken && aSpoken > 0.05) {
+    if (isQuiz) {
       const ansStart = winCursor + qSpoken + pDur;
-      const aOnlySpoken = m.aIdx !== null ? spokenDurs[m.aIdx] ?? aSpoken : aSpoken;
-      speechWindows.push({ start: ansStart, end: ansStart + aOnlySpoken });
-      if (explSpoken > 0.05) {
-        speechWindows.push({ start: ansStart + aSpoken, end: ansStart + aSpoken + explSpoken });
+      if (aOnlySpoken && aOnlySpoken > 0.05) {
+        speechWindows.push({ start: ansStart, end: ansStart + aOnlySpoken });
       }
-    } else if (!isQuiz && explSpoken > 0.05) {
+      if (explSpoken > 0.05) {
+        const explStart = ansStart + (aSpoken ?? 0);
+        speechWindows.push({ start: explStart, end: explStart + explSpoken });
+      }
+    } else if (explSpoken > 0.05) {
       speechWindows.push({
         start: winCursor + qSpoken + pDur,
         end: winCursor + qSpoken + pDur + explSpoken,
@@ -650,8 +689,8 @@ export function mapBatchSynthesisDurations(
     winCursor += totalSec;
     return {
       totalSec,
-      questionSec: isQuiz ? qSpoken : undefined,
-      thinkSec: isQuiz ? pDur : undefined,
+      questionSec: isQuiz ? effectiveQuestionSec : undefined,
+      thinkSec: isQuiz ? effectiveThinkSec : undefined,
       answerSec: isQuiz ? Number(((aSpoken ?? 0) + explDur).toFixed(3)) : undefined,
     };
   });
@@ -688,12 +727,14 @@ export function mapBatchWordBoundariesToProjectCues(
         const eWords = dataCues[m.explIdx]?.words ?? [];
         mappedWordsByProjCue[projCueCursor++] = eWords.map((w) => ({ ...w }));
       }
-    } else if (m.aIdx !== null) {
+    } else if (m.isQuiz || m.aIdx !== null) {
       const qWords = m.qIdx !== null ? dataCues[m.qIdx]?.words ?? [] : [];
       mappedWordsByProjCue[projCueCursor++] = qWords.map((w) => ({ ...w }));
-      const aWords = dataCues[m.aIdx]?.words ?? [];
-      const eWords = m.explIdx !== null ? dataCues[m.explIdx]?.words ?? [] : [];
-      mappedWordsByProjCue[projCueCursor++] = [...aWords, ...eWords].map((w) => ({ ...w }));
+      if (m.hasAnswerCue ?? (m.aIdx !== null)) {
+        const aWords = m.aIdx !== null ? dataCues[m.aIdx]?.words ?? [] : [];
+        const eWords = m.explIdx !== null ? dataCues[m.explIdx]?.words ?? [] : [];
+        mappedWordsByProjCue[projCueCursor++] = [...aWords, ...eWords].map((w) => ({ ...w }));
+      }
     } else {
       const qWords = m.qIdx !== null ? dataCues[m.qIdx]?.words ?? [] : [];
       const eWords = m.explIdx !== null ? dataCues[m.explIdx]?.words ?? [] : [];
@@ -958,3 +999,143 @@ export function generateBatchPromptsForTopics(options: {
     };
   });
 }
+
+export interface BatchPromptBundleItem {
+  fileName: string;
+  topic: string;
+  durationMinutes?: number;
+  learningLanguage?: string;
+  level?: string;
+  promptText: string;
+  expectedJsonFile?: string;
+}
+
+/**
+ * Packages generated prompts into a self-contained ZIP structure with a clear
+ * `00_README_DROP_INTO_AI.txt` + `00_BATCH_MANIFEST.json` + `prompts/*`
+ * so the user can drop the entire `.zip` straight into ChatGPT / Gemini / Claude Web
+ * and receive back a `.zip` of `.json` outputs ready to upload into KineticSub Batch.
+ */
+export function buildBatchPromptZipBundle(params: {
+  subTab: BatchSubTabId;
+  zipName: string;
+  items: BatchPromptBundleItem[];
+}): Record<string, string> {
+  const entries: Record<string, string> = {};
+  const resultZipName = params.zipName.toLowerCase().endsWith('.zip')
+    ? `results_${params.zipName}`
+    : `results_${params.zipName}.zip`;
+
+  const tasks = params.items.map((item, idx) => {
+    const cleanTxtName = cleanDownloadFileName(
+      item.fileName.replace(/\.txt$/i, ''),
+      'txt',
+      `Prompt_${String(idx + 1).padStart(2, '0')}`,
+    );
+    const defaultJsonName =
+      cleanTxtName
+        .replace(/\.txt$/i, '')
+        .replace(/(?:\s*\|\s*prompt|[._-]prompt)$/i, '') + '.json';
+    const expectedJsonFile = item.expectedJsonFile
+      ? cleanDownloadFileName(
+          item.expectedJsonFile.replace(/\.json$/i, ''),
+          'json',
+          defaultJsonName.replace(/\.json$/i, ''),
+        )
+      : defaultJsonName;
+    const promptPath = `prompts/${cleanTxtName}`;
+    entries[promptPath] = item.promptText;
+    return {
+      index: idx + 1,
+      promptFile: promptPath,
+      expectedJsonFile,
+      resultPath: `results/${expectedJsonFile}`,
+      topic: item.topic,
+      durationMinutes: item.durationMinutes ?? null,
+      learningLanguage: item.learningLanguage ?? null,
+      level: item.level ?? null,
+    };
+  });
+
+  const manifest = {
+    version: 1,
+    subTab: params.subTab,
+    totalTasks: tasks.length,
+    outputFolder: 'results',
+    resultZipSuggestion: resultZipName,
+    instructionsForWebAI: [
+      'Unzip this archive and inspect 00_BATCH_MANIFEST.json.',
+      'For EVERY task in tasks[], read prompts/<file>, follow ALL schema/language/duration rules inside that prompt carefully, and generate 1 complete valid JSON file (NEVER summarize, skip tasks, or include markdown ```json fences inside .json files).',
+      'Save each generated JSON file strictly as results/<expectedJsonFile> using UTF-8 encoding.',
+      `Compress ONLY the results/ folder (or all generated .json files) into a single ZIP file named "${resultZipName}" and return the download link to the user.`,
+    ],
+    tasks,
+  };
+
+  entries['00_BATCH_MANIFEST.json'] = JSON.stringify(manifest, null, 2);
+  entries['00_README_DROP_INTO_AI.txt'] = [
+    '====================================================================',
+    'KINETICSUB STUDIO — ONE-SHOT BATCH PROMPT BUNDLE FOR WEB AI',
+    '====================================================================',
+    '',
+    '[HƯỚNG DẪN DÀNH CHO NGƯỜI DÙNG]',
+    '1. Thả trực tiếp TOÀN BỘ file .zip này vào ChatGPT (Plus/Code Interpreter), Gemini, hoặc Claude Web.',
+    '2. Nhắn ngắn gọn câu lệnh mẫu bên dưới (hoặc chỉ cần gửi file .zip này):',
+    '   "Hãy đọc 00_README_DROP_INTO_AI.txt và 00_BATCH_MANIFEST.json trong file zip này, xử lý ĐẦY ĐỦ từng file prompt trong thư mục prompts/, xuất mỗi prompt thành 1 file .json chuẩn đặt đúng tên trong thư mục results/, rồi nén lại thành 1 file .zip trả lại cho tôi tải về."',
+    '3. Tải file .zip kết quả AI trả về rồi Upload trực tiếp vào Batch của KineticSub Studio.',
+    '',
+    '--------------------------------------------------------------------',
+    '[AUTONOMOUS INSTRUCTIONS FOR WEB AI ASSISTANT / CODE INTERPRETER]',
+    '--------------------------------------------------------------------',
+    `Batch Sub-Tab: ${params.subTab}`,
+    `Total Prompts: ${tasks.length}`,
+    `Expected Return Zip Name: ${resultZipName}`,
+    '',
+    'PLEASE EXECUTE THESE EXACT STEPS AUTOMATICALLY:',
+    '1. Extract this uploaded archive and read `00_BATCH_MANIFEST.json`.',
+    '2. Iterate through EVERY single entry in `tasks[]` (do NOT stop early, do NOT summarize, do NOT merge multiple tasks into 1 file unless generating them via Python loop writing separate files).',
+    '3. For each task, read the full prompt text at `task.promptFile` (`prompts/...`), satisfy every JSON schema field, duration target, language constraint, and educational rule requested in that prompt.',
+    '4. Write raw valid UTF-8 JSON (NO ```json markdown code fences, NO explanatory prose outside JSON) to `results/<task.expectedJsonFile>`.',
+    '5. Validate every written `.json` file with `json.loads(...)` before archiving.',
+    `6. Package all files in \`results/\` into \`${resultZipName}\` and provide the downloadable link.`,
+    '',
+    'TASKS INDEX:',
+    ...tasks.map(
+      (t) =>
+        `  #${t.index}: ${t.promptFile}  -->  ${t.resultPath}${t.topic ? `  [${t.topic}]` : ''}`,
+    ),
+  ].join('\n');
+
+  return entries;
+}
+
+/**
+ * Filters expanded files from uploaded `.zip` or multi-file picks so README/manifest/prompts
+ * docs inside a round-trip prompt bundle never get parsed as AI output JSONs.
+ */
+export function filterBatchResultUploadFiles<
+  T extends { name: string; type?: string },
+>(files: T[]): T[] {
+  const candidates = files.filter((f) => {
+    const normalized = (f.name || '').replace(/\\/g, '/');
+    const baseLower = (normalized.split('/').pop() || '').toLowerCase();
+    if (!baseLower) return false;
+    if (/(?:^|\/)__macosx(?:\/|$)/i.test(normalized)) return false;
+    if (/(?:^|\/)prompts\//i.test(normalized)) return false;
+    if (
+      baseLower === '00_readme_drop_into_ai.txt' ||
+      baseLower === '00_batch_manifest.json' ||
+      baseLower === '.ds_store' ||
+      baseLower === 'thumbs.db'
+    ) {
+      return false;
+    }
+    return /\.(json|txt|md)$/i.test(baseLower) || f.type === 'application/json';
+  });
+
+  const jsonOnly = candidates.filter(
+    (f) => /\.json$/i.test(f.name) || f.type === 'application/json',
+  );
+  return jsonOnly.length > 0 ? jsonOnly : candidates;
+}
+

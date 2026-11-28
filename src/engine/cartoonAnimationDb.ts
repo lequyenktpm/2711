@@ -31,13 +31,13 @@ export const DEFAULT_CARTOON_ANIMATION_PARAMS: CartoonAnimationParams = {
   bounceIntensity: 1,
   headTiltDeg: 0,
   blushIntensity: 0.25,
-  bodySquashStretch: 0.04,
+  bodySquashStretch: 0,
 };
 
 export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
   {
     id: 'explain',
-    label: 'Giải thích tự nhiên (Explain)',
+    label: 'Giải thích tự nhiên (Explain 💬)',
     category: 'teaching',
     description: 'Nhịp tay mở linh hoạt khi giảng bài, nhép miệng chuẩn theo lời thoại.',
     keywords: ['explain', 'teach', 'lesson', 'note', 'grammar', 'giải thích', 'bài học'],
@@ -51,16 +51,17 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       fxOverlay: 'none',
       accessory: 'none',
       badgeGlyph: null,
+      badgeEmoji: '💬',
       speed: 1,
       bounceIntensity: 1,
       headTiltDeg: 2,
       blushIntensity: 0.15,
-      bodySquashStretch: 0.03,
+      bodySquashStretch: 0,
     },
   },
   {
     id: 'present',
-    label: 'Đứng chào chỉnh tề (Present)',
+    label: 'Đứng chào chỉnh tề (Present 🙋)',
     category: 'greeting',
     description: 'Tư thế tự tin, hai tay đặt gọn bên hông nhẹ nhàng nhún theo nhịp thở.',
     keywords: ['present', 'idle', 'stand', 'intro', 'giới thiệu'],
@@ -74,16 +75,17 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       fxOverlay: 'none',
       accessory: 'none',
       badgeGlyph: null,
+      badgeEmoji: '🙋',
       speed: 0.9,
       bounceIntensity: 0.75,
       headTiltDeg: 0,
       blushIntensity: 0.2,
-      bodySquashStretch: 0.02,
+      bodySquashStretch: 0,
     },
   },
   {
     id: 'wave-hello',
-    label: 'Vẫy tay chào mừng (Wave Hello)',
+    label: 'Vẫy tay chào mừng (Wave Hello 👋)',
     category: 'greeting',
     description: 'Vẫy tay nhiệt tình kèm mắt cười cong và ánh sao lấp lánh đầu video.',
     keywords: ['wave', 'hello', 'hi', 'welcome', 'chào', 'mở đầu', 'intro'],
@@ -102,7 +104,7 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       bounceIntensity: 1.3,
       headTiltDeg: 6,
       blushIntensity: 0.55,
-      bodySquashStretch: 0.08,
+      bodySquashStretch: 0,
     },
   },
   {
@@ -126,7 +128,7 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       bounceIntensity: 1.15,
       headTiltDeg: 4,
       blushIntensity: 0.35,
-      bodySquashStretch: 0.05,
+      bodySquashStretch: 0,
     },
   },
   {
@@ -145,11 +147,12 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       fxOverlay: 'none',
       accessory: 'pointer-stick',
       badgeGlyph: null,
+      badgeEmoji: '☝️',
       speed: 1.0,
       bounceIntensity: 0.9,
       headTiltDeg: -3,
       blushIntensity: 0.15,
-      bodySquashStretch: 0.03,
+      bodySquashStretch: 0,
     },
   },
   {
@@ -168,11 +171,12 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       fxOverlay: 'none',
       accessory: 'pointer-stick',
       badgeGlyph: null,
+      badgeEmoji: '👉',
       speed: 1.0,
       bounceIntensity: 0.9,
       headTiltDeg: 5,
       blushIntensity: 0.25,
-      bodySquashStretch: 0.03,
+      bodySquashStretch: 0,
     },
   },
   {
@@ -196,7 +200,7 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       bounceIntensity: 1.2,
       headTiltDeg: 5,
       blushIntensity: 0.45,
-      bodySquashStretch: 0.06,
+      bodySquashStretch: 0,
     },
   },
   {
@@ -220,7 +224,7 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       bounceIntensity: 0.85,
       headTiltDeg: -6,
       blushIntensity: 0,
-      bodySquashStretch: 0.04,
+      bodySquashStretch: 0,
     },
   },
   {
@@ -244,7 +248,7 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       bounceIntensity: 0.85,
       headTiltDeg: 10,
       blushIntensity: 0.15,
-      bodySquashStretch: 0.04,
+      bodySquashStretch: 0,
     },
   },
   {
@@ -268,7 +272,7 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       bounceIntensity: 0.5,
       headTiltDeg: 8,
       blushIntensity: 0.1,
-      bodySquashStretch: 0.02,
+      bodySquashStretch: 0,
     },
   },
   {
@@ -284,7 +288,7 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       gestureMode: 'double-point',
       eyeStyle: 'wide-surprised',
       mouthStyle: 'o-shock',
-      fxOverlay: 'sparkles',
+      fxOverlay: 'mind-blown',
       accessory: 'none',
       badgeGlyph: 'tip',
       badgeEmoji: '🤯',
@@ -292,7 +296,7 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       bounceIntensity: 1.6,
       headTiltDeg: -4,
       blushIntensity: 0.3,
-      bodySquashStretch: 0.14,
+      bodySquashStretch: 0,
     },
   },
   {
@@ -308,7 +312,7 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       gestureMode: 'cheer',
       eyeStyle: 'star',
       mouthStyle: 'big-grin',
-      fxOverlay: 'sparkles',
+      fxOverlay: 'confetti-pop',
       accessory: 'none',
       badgeGlyph: 'check',
       badgeEmoji: '🎉',
@@ -316,14 +320,14 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       bounceIntensity: 1.5,
       headTiltDeg: 6,
       blushIntensity: 0.65,
-      bodySquashStretch: 0.1,
+      bodySquashStretch: 0,
     },
   },
   {
     id: 'celebrate-jump',
-    label: 'Nhảy ăn mừng bùng nổ (Victory Fist 🔥)',
+    label: 'Ăn mừng bùng nổ (Victory Fist 🔥)',
     category: 'emphasis',
-    description: 'Nắm tay đấm không khí cực sung kèm hào quang lửa nhiệt huyết.',
+    description: 'Nắm tay đấm không khí cực sung kèm hào quang lửa nhiệt huyết (chân bám sàn).',
     keywords: ['victory', 'win', 'finish', 'boom', 'fire', 'chiến thắng', 'bùng nổ'],
     source: 'built-in',
     updatedAt: 1,
@@ -337,10 +341,10 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       badgeGlyph: 'check',
       badgeEmoji: '🔥',
       speed: 1.5,
-      bounceIntensity: 1.8,
+      bounceIntensity: 1.6,
       headTiltDeg: 4,
       blushIntensity: 0.6,
-      bodySquashStretch: 0.16,
+      bodySquashStretch: 0,
     },
   },
   {
@@ -364,7 +368,7 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       bounceIntensity: 0.9,
       headTiltDeg: -6,
       blushIntensity: 0.1,
-      bodySquashStretch: 0.04,
+      bodySquashStretch: 0,
     },
   },
   {
@@ -388,7 +392,7 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       bounceIntensity: 1.05,
       headTiltDeg: 3,
       blushIntensity: 0.3,
-      bodySquashStretch: 0.05,
+      bodySquashStretch: 0,
     },
   },
   {
@@ -412,7 +416,7 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       bounceIntensity: 0.65,
       headTiltDeg: -10,
       blushIntensity: 0.45,
-      bodySquashStretch: 0.06,
+      bodySquashStretch: 0,
     },
   },
   {
@@ -436,7 +440,7 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       bounceIntensity: 0.75,
       headTiltDeg: 7,
       blushIntensity: 0.2,
-      bodySquashStretch: 0.04,
+      bodySquashStretch: 0,
     },
   },
   {
@@ -445,7 +449,7 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
     category: 'emphasis',
     description:
       'Chuỗi 5 keyframe cử động khớp thuần túy: khuỵu gối nhẹ trên nền -> giơ hai tay lên -> hai lòng bàn tay chạm vỗ -> tiếp tục vỗ nhịp cổ vũ -> dang rộng hai tay cười rạng rỡ (chân bám sàn, không co giãn hay nhảy thân).',
-    keywords: ['clap', 'applause', 'bravo', 'jump clap', 'congrats', 'vỗ tay', 'bật nhảy', 'khen ngợi'],
+    keywords: ['clap', 'applause', 'bravo', 'clap cheer', 'congrats', 'vỗ tay', 'cổ vũ', 'khen ngợi'],
     source: 'built-in',
     updatedAt: 1,
     params: {
@@ -553,6 +557,486 @@ export const BUILTIN_CARTOON_ANIMATIONS: CartoonAnimationDefinition[] = [
       ],
     },
   },
+  {
+    id: 'laugh-joy',
+    label: 'Cười sảng khoái (Laugh Joy 😂)',
+    category: 'reaction',
+    description: 'Mắt híp cười tít + miệng cười ha ha + pháo giấy vui nhộn (bám sàn, không nhảy).',
+    keywords: ['laugh', 'funny', 'haha', 'lol', 'joke', 'hài hước', 'cười'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'excited',
+      gestureMode: 'cheer',
+      eyeStyle: 'laugh-squint',
+      mouthStyle: 'laugh-open',
+      fxOverlay: 'confetti-pop',
+      accessory: 'none',
+      badgeGlyph: null,
+      badgeEmoji: '😂',
+      speed: 1.2,
+      bounceIntensity: 1.15,
+      headTiltDeg: 8,
+      blushIntensity: 0.65,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'love-adore',
+    label: 'Yêu thích say mê (Love 😍)',
+    category: 'reaction',
+    description: 'Mắt trái tim, miệng mèo dễ thương và hai tay ghép hình tim trước ngực.',
+    keywords: ['love', 'adore', 'favorite', 'cute', 'yêu thích', 'tuyệt'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'happy',
+      gestureMode: 'heart-hands',
+      eyeStyle: 'heart',
+      mouthStyle: 'cat-smile',
+      fxOverlay: 'hearts',
+      accessory: 'none',
+      badgeGlyph: null,
+      badgeEmoji: '😍',
+      speed: 1.0,
+      bounceIntensity: 0.9,
+      headTiltDeg: 6,
+      blushIntensity: 0.75,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'wink-secret',
+    label: 'Nháy mắt bật mí (Wink Secret 😉)',
+    category: 'emphasis',
+    description: 'Nháy mắt tinh nghịch kèm động tác búng tay phát hiện mẹo hay.',
+    keywords: ['wink', 'trick', 'secret', 'clever', 'nháy mắt', 'bí quyết'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'cool',
+      gestureMode: 'snap-idea',
+      eyeStyle: 'wink',
+      mouthStyle: 'smirk',
+      fxOverlay: 'sparkles',
+      accessory: 'none',
+      badgeGlyph: 'tip',
+      badgeEmoji: '😉',
+      speed: 1.05,
+      bounceIntensity: 0.95,
+      headTiltDeg: 5,
+      blushIntensity: 0.35,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'party-celebrate',
+    label: 'Chúc mừng pháo giấy (Party 🥳)',
+    category: 'emphasis',
+    description: 'Đội mũ tốt nghiệp, pháo hoa giấy rực rỡ khi hoàn thành bài học hoặc đạt điểm cao.',
+    keywords: ['party', 'celebrate', 'graduate', 'finish', 'chúc mừng', 'hoàn thành'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'excited',
+      gestureMode: 'cheer',
+      eyeStyle: 'star',
+      mouthStyle: 'laugh-open',
+      fxOverlay: 'confetti-pop',
+      accessory: 'graduation-cap',
+      badgeGlyph: 'check',
+      badgeEmoji: '🥳',
+      speed: 1.25,
+      bounceIntensity: 1.25,
+      headTiltDeg: 4,
+      blushIntensity: 0.6,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'muscle-determined',
+    label: 'Quyết tâm chinh phục (Determined 💪)',
+    category: 'emphasis',
+    description: 'Ánh mắt quyết tâm, giơ nắm đấm chắc nịch truyền động lực luyện nói.',
+    keywords: ['power', 'strong', 'try', 'practice', 'focus', 'quyết tâm', 'cố lên'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'proud',
+      gestureMode: 'fist-pump',
+      eyeStyle: 'determined',
+      mouthStyle: 'grit-teeth',
+      fxOverlay: 'fire-aura',
+      accessory: 'none',
+      badgeGlyph: 'check',
+      badgeEmoji: '💪',
+      speed: 1.15,
+      bounceIntensity: 1.0,
+      headTiltDeg: -3,
+      blushIntensity: 0.2,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'shush-secret',
+    label: 'Suỵt — Mẹo nhỏ bí mật (Shush 🤫)',
+    category: 'teaching',
+    description: 'Đưa ngón trỏ lên môi ra hiệu bí mật ít người biết.',
+    keywords: ['shh', 'shush', 'secret', 'quiet', 'insider', 'bí mật', 'ít ai biết'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'shy',
+      gestureMode: 'shush',
+      eyeStyle: 'wink',
+      mouthStyle: 'whistle-o',
+      fxOverlay: 'sparkles',
+      accessory: 'none',
+      badgeGlyph: 'tip',
+      badgeEmoji: '🤫',
+      speed: 0.9,
+      bounceIntensity: 0.65,
+      headTiltDeg: 7,
+      blushIntensity: 0.4,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'eyes-notice',
+    label: 'Chú ý điểm quan trọng (Notice 👀)',
+    category: 'teaching',
+    description: 'Mắt mở to quan sát kỹ và chỉ tay sang phần cần lưu ý.',
+    keywords: ['notice', 'watch', 'look', 'attention', 'detail', 'chú ý', 'quan sát'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'curious',
+      gestureMode: 'point-right',
+      eyeStyle: 'wide-surprised',
+      mouthStyle: 'flat-serious',
+      fxOverlay: 'sparkles',
+      accessory: 'none',
+      badgeGlyph: 'tip',
+      badgeEmoji: '👀',
+      speed: 1.0,
+      bounceIntensity: 0.75,
+      headTiltDeg: -4,
+      blushIntensity: 0.1,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'target-focus',
+    label: 'Bắt trúng trọng tâm (Target 🎯)',
+    category: 'teaching',
+    description: 'Mắt sắc bén tập trung, chỉ tay dứt khoát kèm biểu tượng hồng tâm.',
+    keywords: ['target', 'goal', 'key', 'main point', 'trọng tâm', 'mục tiêu', 'chính xác'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'proud',
+      gestureMode: 'point-up',
+      eyeStyle: 'determined',
+      mouthStyle: 'smirk',
+      fxOverlay: 'target-bull',
+      accessory: 'none',
+      badgeGlyph: 'check',
+      badgeEmoji: '🎯',
+      speed: 1.05,
+      bounceIntensity: 0.85,
+      headTiltDeg: 2,
+      blushIntensity: 0.15,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'perfect-100',
+    label: 'Chuẩn 100 điểm bản xứ (100% 💯)',
+    category: 'emphasis',
+    description: 'Giơ ngón cái kèm hiệu ứng 100 điểm đỏ rực cho câu chuẩn tự nhiên.',
+    keywords: ['100', 'perfect', 'score', 'fluent', 'hoàn hảo', 'điểm 10'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'excited',
+      gestureMode: 'thumbs-up',
+      eyeStyle: 'star',
+      mouthStyle: 'big-grin',
+      fxOverlay: 'hundred-score',
+      accessory: 'none',
+      badgeGlyph: 'check',
+      badgeEmoji: '💯',
+      speed: 1.15,
+      bounceIntensity: 1.1,
+      headTiltDeg: 4,
+      blushIntensity: 0.5,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'plead-soft',
+    label: 'Năn nỉ lịch sự / Nhờ vả nhẹ nhàng (Plead 🥺)',
+    category: 'reaction',
+    description: 'Mắt long lanh dễ thương + môi bĩu nhẹ + hai tay mở xin giúp đỡ lịch sự.',
+    keywords: ['please', 'beg', 'polite request', 'sorry', 'làm ơn', 'nhờ vả', 'xin lỗi'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'shy',
+      gestureMode: 'open-welcome',
+      eyeStyle: 'pleading',
+      mouthStyle: 'pout',
+      fxOverlay: 'hearts',
+      accessory: 'none',
+      badgeGlyph: null,
+      badgeEmoji: '🥺',
+      speed: 0.85,
+      bounceIntensity: 0.6,
+      headTiltDeg: 9,
+      blushIntensity: 0.65,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'proud-huff',
+    label: 'Khoanh tay nghiêm khắc / Bực nhẹ (Huff 😤)',
+    category: 'reaction',
+    description: 'Khoanh tay trước ngực, mắt nghiêm và ký hiệu gân nổi khi cảnh báo câu thô lỗ.',
+    keywords: ['strict', 'rude', 'upset', 'annoyed', 'nghiêm khắc', 'bực mình', 'thô lỗ'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'worried',
+      gestureMode: 'cross-arms',
+      eyeStyle: 'determined',
+      mouthStyle: 'pout',
+      fxOverlay: 'angry-vein',
+      accessory: 'none',
+      badgeGlyph: 'cross',
+      badgeEmoji: '😤',
+      speed: 1.0,
+      bounceIntensity: 0.7,
+      headTiltDeg: -6,
+      blushIntensity: 0.15,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'bow-polite',
+    label: 'Cúi chào lễ phép (Polite Bow 🙇)',
+    category: 'greeting',
+    description: 'Chắp tay lịch sự, nghiêng người chào trang trọng kiểu Nhật/Hàn/Việt.',
+    keywords: ['bow', 'polite', 'respect', 'keigo', 'ojigi', 'cúi chào', 'kính ngữ', 'cảm ơn'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'happy',
+      gestureMode: 'bow-polite',
+      eyeStyle: 'happy-arc',
+      mouthStyle: 'smile',
+      fxOverlay: 'sparkles',
+      accessory: 'none',
+      badgeGlyph: null,
+      badgeEmoji: '🙇',
+      speed: 0.9,
+      bounceIntensity: 0.65,
+      headTiltDeg: 10,
+      blushIntensity: 0.35,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'thank-you',
+    label: 'Chắp tay cảm ơn chân thành (Thank You 🙏)',
+    category: 'greeting',
+    description: 'Chắp hai tay trước ngực đầy biết ơn kèm trái tim ấm áp.',
+    keywords: ['thank', 'thanks', 'grateful', 'appreciate', 'cảm ơn', 'biết ơn'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'happy',
+      gestureMode: 'heart-hands',
+      eyeStyle: 'happy-arc',
+      mouthStyle: 'cat-smile',
+      fxOverlay: 'hearts',
+      accessory: 'none',
+      badgeGlyph: 'check',
+      badgeEmoji: '🙏',
+      speed: 0.95,
+      bounceIntensity: 0.75,
+      headTiltDeg: 5,
+      blushIntensity: 0.5,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'peace-friendly',
+    label: 'Giơ tay Peace thân thiện (Peace ✌️)',
+    category: 'greeting',
+    description: 'Giơ ký hiệu chữ V thân thiện, nháy mắt tươi tắn.',
+    keywords: ['peace', 'friendly', 'bye', 'see you', 'tạm biệt', 'thân thiện'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'happy',
+      gestureMode: 'peace-sign',
+      eyeStyle: 'wink',
+      mouthStyle: 'big-grin',
+      fxOverlay: 'sparkles',
+      accessory: 'none',
+      badgeGlyph: null,
+      badgeEmoji: '✌️',
+      speed: 1.1,
+      bounceIntensity: 1.0,
+      headTiltDeg: 6,
+      blushIntensity: 0.45,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'take-note',
+    label: 'Ghi chép sổ tay ngữ pháp (Take Note ✍️)',
+    category: 'teaching',
+    description: 'Cầm sổ tay ghi chú cấu trúc quan trọng cần nhớ.',
+    keywords: ['write', 'note', 'notebook', 'memorize', 'grammar', 'ghi chú', 'sổ tay'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'curious',
+      gestureMode: 'writing-note',
+      eyeStyle: 'focused',
+      mouthStyle: 'flat-serious',
+      fxOverlay: 'lightbulb',
+      accessory: 'notebook',
+      badgeGlyph: 'tip',
+      badgeEmoji: '✍️',
+      speed: 0.95,
+      bounceIntensity: 0.7,
+      headTiltDeg: -5,
+      blushIntensity: 0.15,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'salute-ready',
+    label: 'Chào điều lệnh sẵn sàng (Salute 🫡)',
+    category: 'greeting',
+    description: 'Đưa tay lên trán chào nghiêm chỉnh sẵn sàng thử thách.',
+    keywords: ['salute', 'ready', 'challenge', 'mission', 'sẵn sàng', 'thử thách'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'proud',
+      gestureMode: 'salute',
+      eyeStyle: 'determined',
+      mouthStyle: 'smile',
+      fxOverlay: 'check-burst',
+      accessory: 'none',
+      badgeGlyph: 'check',
+      badgeEmoji: '🫡',
+      speed: 1.05,
+      bounceIntensity: 0.85,
+      headTiltDeg: -2,
+      blushIntensity: 0.2,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'sleepy-break',
+    label: 'Buồn ngủ / Chậm chạp nhàm chán (Sleepy 😴)',
+    category: 'reaction',
+    description: 'Mắt lim dim kèm chữ Zzz khi ví dụ kiểu câu cũ rích buồn ngủ.',
+    keywords: ['sleep', 'boring', 'tired', 'textbook', 'nhàm chán', 'buồn ngủ', 'mệt'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'sad',
+      gestureMode: 'present',
+      eyeStyle: 'sleepy',
+      mouthStyle: 'whistle-o',
+      fxOverlay: 'sleep-zzz',
+      accessory: 'none',
+      badgeGlyph: null,
+      badgeEmoji: '😴',
+      speed: 0.7,
+      bounceIntensity: 0.45,
+      headTiltDeg: -12,
+      blushIntensity: 0.15,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'coffee-chat',
+    label: 'Thư giãn tán gẫu quán cà phê (Coffee Chat ☕)',
+    category: 'greeting',
+    description: 'Cầm cốc cà phê ấm áp cho tình huống giao tiếp đời thường, quán cà phê.',
+    keywords: ['coffee', 'cafe', 'casual', 'small talk', 'morning', 'cà phê', 'trò chuyện'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'happy',
+      gestureMode: 'open-welcome',
+      eyeStyle: 'happy-arc',
+      mouthStyle: 'smile',
+      fxOverlay: 'music-notes',
+      accessory: 'coffee-cup',
+      badgeGlyph: null,
+      badgeEmoji: '☕',
+      speed: 0.9,
+      bounceIntensity: 0.75,
+      headTiltDeg: 4,
+      blushIntensity: 0.35,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'trophy-winner',
+    label: 'Cúp vô địch hoàn thành xuất sắc (Trophy 🏆)',
+    category: 'emphasis',
+    description: 'Nâng cúp vàng chiến thắng kèm pháo giấy chúc mừng ở cuối bài.',
+    keywords: ['trophy', 'champion', 'master', 'winner', 'cúp', 'vô địch', 'xuất sắc'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'excited',
+      gestureMode: 'cheer',
+      eyeStyle: 'star',
+      mouthStyle: 'laugh-open',
+      fxOverlay: 'confetti-pop',
+      accessory: 'trophy',
+      badgeGlyph: 'check',
+      badgeEmoji: '🏆',
+      speed: 1.2,
+      bounceIntensity: 1.1,
+      headTiltDeg: 3,
+      blushIntensity: 0.55,
+      bodySquashStretch: 0,
+    },
+  },
+  {
+    id: 'heart-hands',
+    label: 'Thả tim đồng cảm (Heart Hands 🫶)',
+    category: 'reaction',
+    description: 'Hai tay tạo hình trái tim ấm áp ủng hộ người học.',
+    keywords: ['heart hands', 'support', 'warm', 'care', 'thả tim', 'ủng hộ'],
+    source: 'built-in',
+    updatedAt: 1,
+    params: {
+      mood: 'happy',
+      gestureMode: 'heart-hands',
+      eyeStyle: 'happy-arc',
+      mouthStyle: 'big-grin',
+      fxOverlay: 'hearts',
+      accessory: 'none',
+      badgeGlyph: null,
+      badgeEmoji: '🫶',
+      speed: 1.0,
+      bounceIntensity: 0.9,
+      headTiltDeg: 5,
+      blushIntensity: 0.6,
+      bodySquashStretch: 0,
+    },
+  },
 ];
 
 const listeners = new Set<() => void>();
@@ -590,6 +1074,15 @@ const VALID_GESTURES = new Set<CartoonGestureMode>([
   'fist-pump',
   'hold-mic',
   'clap-jump',
+  'peace-sign',
+  'salute',
+  'shush',
+  'bow-polite',
+  'heart-hands',
+  'cross-arms',
+  'open-welcome',
+  'writing-note',
+  'snap-idea',
 ]);
 
 const VALID_MOODS = new Set<CartoonExpressionMood>([
@@ -615,6 +1108,10 @@ const VALID_EYES = new Set<CartoonEyeStyle>([
   'sleepy',
   'heart',
   'cool-shades',
+  'laugh-squint',
+  'determined',
+  'pleading',
+  'dizzy',
 ]);
 
 const VALID_MOUTHS = new Set<CartoonMouthStyle>([
@@ -625,6 +1122,11 @@ const VALID_MOUTHS = new Set<CartoonMouthStyle>([
   'wavy-nervous',
   'flat-serious',
   'smirk',
+  'laugh-open',
+  'cat-smile',
+  'whistle-o',
+  'grit-teeth',
+  'pout',
 ]);
 
 const VALID_FX = new Set<CartoonFxOverlay>([
@@ -638,6 +1140,13 @@ const VALID_FX = new Set<CartoonFxOverlay>([
   'sweat-drop',
   'check-burst',
   'fire-aura',
+  'confetti-pop',
+  'angry-vein',
+  'sleep-zzz',
+  'mind-blown',
+  'target-bull',
+  'hundred-score',
+  'clap-waves',
 ]);
 
 const VALID_ACCESSORIES = new Set<CartoonAccessory>([
@@ -648,6 +1157,9 @@ const VALID_ACCESSORIES = new Set<CartoonAccessory>([
   'mic',
   'graduation-cap',
   'sunglasses',
+  'notebook',
+  'trophy',
+  'coffee-cup',
 ]);
 
 function normalizeMoodAlias(rawMood: string): string {
@@ -705,10 +1217,18 @@ function normalizeGestureAlias(rawGesture: string): string {
     case 'present-side':
     case 'hold-megaphone':
       return 'explain';
-    case 'peace-sign':
-    case 'salute':
     case 'chest-heart':
-      return 'thumbs-up';
+      return 'heart-hands';
+    case 'bow':
+      return 'bow-polite';
+    case 'shh':
+      return 'shush';
+    case 'snap':
+      return 'snap-idea';
+    case 'write':
+      return 'writing-note';
+    case 'welcome':
+      return 'open-welcome';
     default:
       return rawGesture;
   }
@@ -717,6 +1237,9 @@ function normalizeGestureAlias(rawGesture: string): string {
 function normalizeFxAlias(rawFx: string): string {
   switch (rawFx) {
     case 'confetti':
+      return 'sparkles';
+    case 'confetti-burst':
+      return 'confetti-pop';
     case 'stars':
     case 'glitter':
     case 'sparkle':
@@ -735,6 +1258,15 @@ function normalizeFxAlias(rawFx: string): string {
       return 'music-notes';
     case 'fire':
       return 'fire-aura';
+    case 'zzz':
+    case 'sleep':
+      return 'sleep-zzz';
+    case 'target':
+      return 'target-bull';
+    case '100':
+      return 'hundred-score';
+    case 'clap':
+      return 'clap-waves';
     default:
       return rawFx;
   }
@@ -753,9 +1285,10 @@ function sanitizeKeyframes(raw: unknown): CartoonAnimationKeyframe[] | undefined
     const kf: CartoonAnimationKeyframe = {
       at,
       ...(typeof obj.label === 'string' && obj.label.trim() ? { label: obj.label.trim() } : {}),
-      ...(typeof obj.jumpOffsetY === 'number' && Number.isFinite(obj.jumpOffsetY)
-        ? { jumpOffsetY: Math.max(-180, Math.min(80, obj.jumpOffsetY)) }
-        : {}),
+      // Strictly grounded: never allow jumping or whole-body squash/stretch
+      jumpOffsetY: 0,
+      bodySquashX: 1,
+      bodySquashY: 1,
       ...(typeof obj.kneeBend === 'number' && Number.isFinite(obj.kneeBend)
         ? { kneeBend: Math.max(0, Math.min(1, obj.kneeBend)) }
         : {}),
@@ -785,12 +1318,6 @@ function sanitizeKeyframes(raw: unknown): CartoonAnimationKeyframe[] | undefined
         : {}),
       ...(typeof obj.eyeStyle === 'string' && VALID_EYES.has(obj.eyeStyle as CartoonEyeStyle)
         ? { eyeStyle: obj.eyeStyle as CartoonEyeStyle }
-        : {}),
-      ...(typeof obj.bodySquashX === 'number' && Number.isFinite(obj.bodySquashX)
-        ? { bodySquashX: Math.max(0.75, Math.min(1.25, obj.bodySquashX)) }
-        : {}),
-      ...(typeof obj.bodySquashY === 'number' && Number.isFinite(obj.bodySquashY)
-        ? { bodySquashY: Math.max(0.75, Math.min(1.25, obj.bodySquashY)) }
         : {}),
       ...(typeof obj.headTiltDeg === 'number' && Number.isFinite(obj.headTiltDeg)
         ? { headTiltDeg: Math.max(-25, Math.min(25, obj.headTiltDeg)) }
@@ -877,10 +1404,7 @@ export function sanitizeCartoonAnimationParams(
       typeof obj.blushIntensity === 'number' && Number.isFinite(obj.blushIntensity)
         ? Math.max(0, Math.min(1, Number(obj.blushIntensity.toFixed(2))))
         : fallback.blushIntensity,
-    bodySquashStretch:
-      typeof obj.bodySquashStretch === 'number' && Number.isFinite(obj.bodySquashStretch)
-        ? Math.max(0, Math.min(0.35, Number(obj.bodySquashStretch.toFixed(2))))
-        : fallback.bodySquashStretch,
+    bodySquashStretch: 0,
     ...(keyframes ? { keyframes } : {}),
     ...(typeof obj.sequenceDurationSec === 'number' && Number.isFinite(obj.sequenceDurationSec)
       ? { sequenceDurationSec: Math.max(0.4, Math.min(8, Number(obj.sequenceDurationSec.toFixed(2)))) }
@@ -1315,27 +1839,29 @@ export function getCartoonAnimationsPromptBlock(): string {
   const active = getEffectiveCartoonAnimationCatalog();
   const lines = active.map(
     (a) =>
-      `  • "${a.id}" (${a.label}) [mood=${a.params.mood}, gesture=${a.params.gestureMode}, eyes=${a.params.eyeStyle}, fx=${a.params.fxOverlay}${a.keywords.length ? `, kw: ${a.keywords.slice(0, 4).join(', ')}` : ''}]`,
+      `  • "${a.id}" (${a.label}) [emoji=${a.params.badgeEmoji || '—'}, mood=${a.params.mood}, gesture=${a.params.gestureMode}, eyes=${a.params.eyeStyle}, mouth=${a.params.mouthStyle}, fx=${a.params.fxOverlay}${a.params.accessory && a.params.accessory !== 'none' ? `, acc=${a.params.accessory}` : ''}${a.keywords.length ? `, kw: ${a.keywords.slice(0, 4).join(', ')}` : ''}]`,
   );
 
   return [
-    'DANH SÁCH HÀNH ĐỘNG & BIỂU CẢM NHÂN VẬT @Gimmys HIỆN CÓ TRONG DATABASE:',
+    'DANH SÁCH HÀNH ĐỘNG, EMOJI & BIỂU CẢM NHÂN VẬT @Gimmys HIỆN CÓ TRONG DATABASE:',
     ...lines,
     '',
     'CÁCH AI ĐIỀU KHIỂN HOẶC TỰ SÁNG TẠO HÀNH ĐỘNG CHO NHÂN VẬT HOẠT HÌNH:',
-    '- Trên từng scene / card, có thể thêm "cartoonAction": "<id từ danh sách trên>" và/hoặc "cartoonMood": "happy|excited|curious|worried|surprised|proud|cool|sad|shy|neutral".',
+    '- **TUYỆT ĐỐI KHÔNG NHẢY (`jumpOffsetY = 0`) & KHÔNG KÉO DÃN/NÉN THÂN (`bodySquash = 1`, `bodySquashStretch = 0`)**: Nhân vật @Gimmys luôn đứng vững hai chân bám sàn; chỉ thể hiện cảm xúc bằng biểu cảm khuôn mặt (mắt, miệng, má hồng, nghiêng đầu), cử động tay khớp, nhún gối nhẹ tại chỗ và emoji/FX.',
+    '- Trên từng scene / card, hãy chọn `"cartoonAction": "<id từ danh sách trên>"` (nên xoay vòng đa dạng các emoji như 👋 💬 💡 👍 ⚠️ ❓ 🤔 🤯 🎉 🔥 😎 🎤 😅 🤷 👏 😂 😍 😉 🥳 💪 🤫 👀 🎯 💯 🥺 😤 🙇 🙏 ✌️ ✍️ 🫡 😴 ☕ 🏆 🫶!) và/hoặc `"cartoonMood": "happy|excited|curious|worried|surprised|proud|cool|sad|shy|neutral"`, hoặc gắn `"cartoonAnimationSpec": { gestureMode, mood, eyeStyle, mouthStyle, fxOverlay, accessory, badgeEmoji }` để phối hợp tùy biến.',
     '- **QUY TẮC CHỌN EMOTION NGHIÊM NGẶT (CẤM LỆCH CẢM XÚC)**:',
-    '  + Nội dung sai / tránh dùng / AVOID / NG → BẮT BUỘC dùng mood `"worried"` hoặc `"sad"`, action `"warn-avoid"` hoặc `"sad-oops"` (TUYỆT ĐỐI KHÔNG dùng `"happy"`/`"excited"`/`"clap-jump"`).',
-    '  + Nội dung khen thưởng / đáp án đúng / chúc mừng → dùng `"clap-jump"`, `"cheer"`, `"thumbs-up"` với mood `"excited"`/`"happy"`/`"proud"`.',
-    '  + Nội dung câu hỏi / suy nghĩ → `"thinking-chin"` / `"question"` với mood `"curious"`.',
-    '- Có thể gắn "keyframes": [{ at: 0..1, jumpOffsetY, kneeBend, leftWristX, leftWristY, rightWristX, rightWristY, clapImpact, mouthStyle, bodySquashX, bodySquashY }] để tạo chuỗi động tác nhiều frame thật sự (như `"clap-jump"`).',
-    '- Nếu muốn đề xuất lưu hành động mới vào Database dùng lại lâu dài, có thể kèm mảng gốc "cartoonAnimations": [{ "id": "...", "label": "...", "category": "reaction", "keywords": ["..."], "params": { ... } }].',
+    '  + Nội dung sai / tránh dùng / AVOID / NG → BẮT BUỘC dùng mood `"worried"` hoặc `"sad"`, action `"warn-avoid"` (⚠️), `"proud-huff"` (😤) hoặc `"sad-oops"` (😅) (TUYỆT ĐỐI KHÔNG dùng `"happy"`/`"excited"`/`"clap-jump"`).',
+    '  + Nội dung khen thưởng / đáp án đúng / chúc mừng → dùng `"clap-jump"` (👏), `"cheer"` (🎉), `"party-celebrate"` (🥳), `"perfect-100"` (💯), `"trophy-winner"` (🏆), `"thumbs-up"` (👍) với mood `"excited"`/`"happy"`/`"proud"`.',
+    '  + Nội dung câu hỏi / suy nghĩ / chú ý → `"thinking-chin"` (🤔), `"question"` (❓), `"eyes-notice"` (👀), `"target-focus"` (🎯) với mood `"curious"`/`"proud"`.',
+    '  + Nội dung chào hỏi / lịch sự / bí quyết → `"wave-hello"` (👋), `"bow-polite"` (🙇), `"thank-you"` (🙏), `"peace-friendly"` (✌️), `"wink-secret"` (😉), `"shush-secret"` (🤫), `"love-adore"` (😍), `"heart-hands"` (🫶), `"take-note"` (✍️), `"coffee-chat"` (☕).',
+    '- Có thể gắn `"keyframes": [{ at: 0..1, kneeBend, leftWristX, leftWristY, rightWristX, rightWristY, clapImpact, mouthStyle, eyeStyle, headTiltDeg }]` (giữ `jumpOffsetY: 0`, `bodySquashX: 1`, `bodySquashY: 1`) để tạo chuỗi động tác khớp nhiều frame bám sàn.',
+    '- Nếu muốn đề xuất lưu hành động mới vào Database dùng lại lâu dài, có thể kèm mảng gốc `"cartoonAnimations": [{ "id": "...", "label": "...", "category": "reaction", "keywords": ["..."], "params": { ... } }]`.',
   ].join('\n');
 }
 
 export function buildCartoonActionWebAiPrompt(concept: string, baseActionId?: string): string {
   const baseDef = baseActionId ? getCartoonAnimationById(baseActionId) : undefined;
-  const cleanConcept = concept.trim() || 'Nhân vật @Gimmys khuỵu gối bật nhảy lên vỗ tay chúc mừng người học vừa trả lời đúng';
+  const cleanConcept = concept.trim() || 'Nhân vật @Gimmys nhún gối bám sàn, vỗ tay chúc mừng và biểu cảm rạng rỡ (không nhảy, không kéo dãn thân)';
 
   return [
     'Bạn là Đạo diễn Hoạt hình 2D & Biểu cảm Nhân vật cho ứng dụng học ngoại ngữ KineticSub (nhân vật mascot @Gimmys).',
@@ -1344,17 +1870,19 @@ export function buildCartoonActionWebAiPrompt(concept: string, baseActionId?: st
       ? `Bạn có thể tham khảo hoặc phát triển từ mẫu có sẵn "${baseDef.id}" (${JSON.stringify(baseDef.params)}).`
       : '',
     '',
+    'QUY TẮC CỐ ĐỊNH: TUYỆT ĐỐI KHÔNG nhảy (`jumpOffsetY = 0`) và KHÔNG kéo dãn/nén thân (`bodySquashStretch = 0`, `bodySquashX = 1`, `bodySquashY = 1`) — chỉ biểu cảm khuôn mặt, cử động tay khớp, nghiêng đầu, nhún gối bám sàn và emoji/FX.',
+    '',
     'QUY ƯỚC THAM SỐ HỆ THỐNG BẮT BUỘC:',
-    '- gestureMode: "present" | "explain" | "question" | "cheer" | "point-up" | "point-right" | "warn-avoid" | "approve-tip" | "wave" | "shrug" | "think-chin" | "thumbs-up" | "double-point" | "facepalm" | "fist-pump" | "hold-mic" | "clap-jump"',
+    '- gestureMode: "present" | "explain" | "question" | "cheer" | "point-up" | "point-right" | "warn-avoid" | "approve-tip" | "wave" | "shrug" | "think-chin" | "thumbs-up" | "double-point" | "facepalm" | "fist-pump" | "hold-mic" | "clap-jump" | "peace-sign" | "salute" | "shush" | "bow-polite" | "heart-hands" | "cross-arms" | "open-welcome" | "writing-note" | "snap-idea"',
     '- mood: "neutral" | "happy" | "worried" | "curious" | "surprised" | "excited" | "sad" | "cool" | "proud" | "shy"',
-    '- eyeStyle: "normal" | "happy-arc" | "wide-surprised" | "wink" | "star" | "focused" | "sleepy" | "heart" | "cool-shades"',
-    '- mouthStyle: "lip-sync" | "smile" | "big-grin" | "o-shock" | "wavy-nervous" | "flat-serious" | "smirk"',
-    '- fxOverlay: "none" | "sparkles" | "lightbulb" | "warning-bolt" | "question-marks" | "hearts" | "music-notes" | "sweat-drop" | "check-burst" | "fire-aura"',
-    '- accessory: "none" | "badge-card" | "megaphone" | "pointer-stick" | "mic" | "graduation-cap" | "sunglasses"',
+    '- eyeStyle: "normal" | "happy-arc" | "wide-surprised" | "wink" | "star" | "focused" | "sleepy" | "heart" | "cool-shades" | "laugh-squint" | "determined" | "pleading" | "dizzy"',
+    '- mouthStyle: "lip-sync" | "smile" | "big-grin" | "o-shock" | "wavy-nervous" | "flat-serious" | "smirk" | "laugh-open" | "cat-smile" | "whistle-o" | "grit-teeth" | "pout"',
+    '- fxOverlay: "none" | "sparkles" | "lightbulb" | "warning-bolt" | "question-marks" | "hearts" | "music-notes" | "sweat-drop" | "check-burst" | "fire-aura" | "confetti-pop" | "angry-vein" | "sleep-zzz" | "mind-blown" | "target-bull" | "hundred-score" | "clap-waves"',
+    '- accessory: "none" | "badge-card" | "megaphone" | "pointer-stick" | "mic" | "graduation-cap" | "sunglasses" | "notebook" | "trophy" | "coffee-cup"',
     '- badgeGlyph: "check" | "cross" | "question" | "tip" | null',
-    '- badgeEmoji: 1 emoji ngắn (VD: "🔥", "🤯", "👏", "💯")',
-    '- speed: số thực 0.4..2.2 | bounceIntensity: 0..2.0 | headTiltDeg: -25..25 | blushIntensity: 0..1 | bodySquashStretch: 0..0.35',
-    '- keyframes (tùy chọn cho động tác nhiều frame như khuỵu gối -> bật nhảy -> 2 tay chạm nhau vỗ tay -> tiếp đất): mảng `{ at: 0..1, jumpOffsetY, kneeBend, leftWristX, leftWristY, rightWristX, rightWristY, clapImpact, bodySquashX, bodySquashY }`, kèm `sequenceDurationSec` & `loopSequence: true`.',
+    '- badgeEmoji: 1 emoji ngắn khớp cảm xúc & hành động (VD: "😂", "😍", "😉", "🥳", "💪", "🤫", "👀", "🎯", "💯", "🥺", "😤", "🙇", "🙏", "✌️", "✍️", "🫡", "😴", "☕", "🏆", "🫶", "🔥", "🤯", "👏")',
+    '- speed: số thực 0.4..2.2 | bounceIntensity: 0..2.0 (chỉ điều khiển biên độ khớp tay/đầu, KHÔNG nhảy) | headTiltDeg: -25..25 | blushIntensity: 0..1 | bodySquashStretch: 0',
+    '- keyframes (tùy chọn cho động tác nhiều frame như nhún gối bám sàn -> 2 tay chạm nhau vỗ tay -> dang tay): mảng `{ at: 0..1, kneeBend, leftWristX, leftWristY, rightWristX, rightWristY, clapImpact, eyeStyle, mouthStyle, headTiltDeg }` (luôn giữ `jumpOffsetY: 0`, `bodySquashX: 1`, `bodySquashY: 1`), kèm `sequenceDurationSec` & `loopSequence: true`.',
     '',
     'BẮT BUỘC XUẤT RA FILE `.json` HOÀN CHỈNH (hoặc duy nhất 1 khối JSON chuẩn có thể tải xuống thành file `.json`, không giải thích ngoài JSON):',
     '```json',
@@ -1362,25 +1890,25 @@ export function buildCartoonActionWebAiPrompt(concept: string, baseActionId?: st
       {
         cartoonAnimations: [
           {
-            id: 'clap-jump-custom',
-            label: 'Bật nhảy vỗ tay chúc mừng 👏',
+            id: 'clap-cheer-custom',
+            label: 'Vỗ tay cổ vũ rạng rỡ 👏',
             category: 'emphasis',
-            description: 'Khuỵu gối lấy đà -> bật nhảy giơ tay -> 2 tay chạm nhau vỗ tay -> tiếp đất',
+            description: 'Nhún gối bám sàn -> giơ tay -> 2 tay chạm nhau vỗ tay -> dang tay chúc mừng (không nhảy)',
             keywords: ['clap', 'congrats', 'vỗ tay', 'chúc mừng'],
             params: {
               mood: 'excited',
               gestureMode: 'clap-jump',
               eyeStyle: 'star',
               mouthStyle: 'lip-sync',
-              fxOverlay: 'sparkles',
+              fxOverlay: 'confetti-pop',
               accessory: 'none',
               badgeGlyph: 'check',
               badgeEmoji: '👏',
               speed: 1.0,
-              bounceIntensity: 1.25,
+              bounceIntensity: 1.1,
               headTiltDeg: 4,
               blushIntensity: 0.55,
-              bodySquashStretch: 0.1,
+              bodySquashStretch: 0,
               sequenceDurationSec: 1.5,
               loopSequence: true,
             },

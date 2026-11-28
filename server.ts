@@ -1780,6 +1780,7 @@ async function startServer(): Promise<void> {
                   id?: string;
                   text?: string;
                   pauseAfterSec?: number;
+                  silenceOnly?: boolean;
                   voice?: string;
                   lang?: string;
                   secondaryVoice?: string;
@@ -1791,8 +1792,9 @@ async function startServer(): Promise<void> {
                 i: number,
               ) => ({
                 id: seg?.id || `seg-${i + 1}`,
-                text: stripTimestampsFromScript(String(seg?.text || '')),
+                text: seg?.silenceOnly ? '' : stripTimestampsFromScript(String(seg?.text || '')),
                 pauseAfterSec: seg?.pauseAfterSec,
+                silenceOnly: Boolean(seg?.silenceOnly),
                 voice: typeof seg?.voice === 'string' ? seg.voice.trim() : '',
                 lang: typeof seg?.lang === 'string' ? seg.lang.trim() : '',
                 secondaryVoice: typeof seg?.secondaryVoice === 'string' ? seg.secondaryVoice.trim() : '',
@@ -1802,7 +1804,10 @@ async function startServer(): Promise<void> {
                 autoSplit: typeof seg?.autoSplit === 'boolean' ? seg.autoSplit : undefined,
               }),
             )
-            .filter((s: { text: string }) => s.text.length > 0)
+            .filter(
+              (s: { text: string; pauseAfterSec?: number; silenceOnly?: boolean }) =>
+                s.text.length > 0 || s.silenceOnly || Number(s.pauseAfterSec || 0) > 0.05,
+            )
         : typeof body?.text === 'string' && body.text.trim()
           ? stripTimestampsFromScript(body.text)
               .split(/\r?\n+/)
@@ -1810,6 +1815,7 @@ async function startServer(): Promise<void> {
                 id: `seg-${i + 1}`,
                 text: t.trim(),
                 pauseAfterSec: 0,
+                silenceOnly: false,
                 voice: '',
                 lang: '',
                 secondaryVoice: '',
@@ -1998,9 +2004,51 @@ async function startServer(): Promise<void> {
 
       for (let i = 0; i < rawSegments.length; i++) {
         const segItem = rawSegments[i];
-        const segText = sanitizeTtsSegmentText(String(segItem?.text || ''));
-        const pauseAfterSec = Math.max(0, Math.min(12, Number(segItem?.pauseAfterSec || 0)));
-        if (!segText) continue;
+        const segText = segItem?.silenceOnly
+          ? ''
+          : sanitizeTtsSegmentText(String(segItem?.text || ''));
+        const pauseAfterSec = Math.max(0, Math.min(20, Number(segItem?.pauseAfterSec || 0)));
+        if (!segText) {
+          let actualPauseDur = 0;
+          if (pauseAfterSec > 0.05) {
+            const pausePath = path.join(tmpDir, `seg_pause_${i}.wav`);
+            await runProcess('ffmpeg', [
+              '-y',
+              '-f',
+              'lavfi',
+              '-i',
+              'anullsrc=r=24000:cl=mono',
+              '-t',
+              String(Number(pauseAfterSec.toFixed(2))),
+              '-ar',
+              '24000',
+              '-ac',
+              '1',
+              '-c:a',
+              'pcm_s16le',
+              pausePath,
+            ]);
+            actualPauseDur = await getAudioDurationSec(pausePath);
+            segFiles.push(pausePath);
+          }
+          const start = Number(cursor.toFixed(3));
+          segDurations.push(Number(actualPauseDur.toFixed(3)));
+          spokenDurations.push(0);
+          pauseDurations.push(actualPauseDur);
+          cues.push({
+            id: String(segItem?.id || `tts-cue-${i + 1}`),
+            start,
+            end: start,
+            text: '',
+            words: [],
+          });
+          cursor = Number((cursor + actualPauseDur).toFixed(3));
+          onProgress?.(
+            Math.min(88, Math.max(8, Math.round(((i + 1) / rawSegments.length) * 86))),
+            `Đã tạo khoảng chờ im lặng đoạn ${i + 1}/${rawSegments.length}`,
+          );
+          continue;
+        }
 
         const segPrimaryLang = segItem?.lang || lang;
         const segPrimaryVoice = segItem?.voice || voice;

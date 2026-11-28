@@ -16,6 +16,7 @@ import {
   buildStarterLessonForLanguage,
   buildTranslationChallengePrompt,
   CREATOR_FORMAT_OPTIONS,
+  getQuizCardSpeechParts,
   parseEnglishReelsAiJson,
   recommendCreatorItemCount,
   recommendTranslationItemCount,
@@ -29,10 +30,14 @@ import {
 import { estimateMp4FileSize, formatMegabytesLabel } from '../mp4Config';
 import { LAYOUT_COMPOSITIONS } from '../illustrationLayouts';
 import {
+  buildBatchPromptZipBundle,
   buildBatchPromptZipName,
   buildBatchTtsSegmentsForReelCards,
+  filterBatchResultUploadFiles,
   generateBatchPromptsForTopics,
   getBatchPromptSubfolder,
+  mapBatchSynthesisDurations,
+  mapBatchWordBoundariesToProjectCues,
 } from '../multiTabBatchHelper';
 import {
   buildReadingWebAiPrompt,
@@ -1320,6 +1325,252 @@ test('starter lessons and outro bento/composition cards stay pure in target lang
     }
   }
 });
+
+test('batch prompt ZIP bundle includes AI instructions, manifest, and result filter ignores non-output docs', async () => {
+  const zipName = buildBatchPromptZipName('creator');
+  const bundle = buildBatchPromptZipBundle({
+    subTab: 'creator',
+    zipName,
+    items: [
+      {
+        fileName: '01_N4_Cafe | Prompt.txt',
+        topic: 'Ordering Coffee',
+        durationMinutes: 2,
+        learningLanguage: 'ja',
+        level: 'N4',
+        promptText: 'Prompt 1 content...',
+      },
+      {
+        fileName: '02_N4_Station | Prompt.txt',
+        topic: 'Train Station',
+        durationMinutes: 3,
+        learningLanguage: 'ja',
+        level: 'N4',
+        promptText: 'Prompt 2 content...',
+      },
+    ],
+  });
+
+  assert.ok(bundle['00_README_DROP_INTO_AI.txt'], 'Expected README for Web AI');
+  assert.ok(bundle['00_BATCH_MANIFEST.json'], 'Expected JSON manifest');
+  assert.ok(
+    Object.keys(bundle).some((k) => k.startsWith('prompts/') && /Cafe/i.test(k) && k.endsWith('.txt')),
+    `Expected prompts/* file for Cafe, got: ${Object.keys(bundle).join(', ')}`,
+  );
+  assert.match(bundle['00_README_DROP_INTO_AI.txt'], /results_/);
+
+  const manifest = JSON.parse(bundle['00_BATCH_MANIFEST.json']);
+  assert.equal(manifest.totalTasks, 2);
+  assert.equal(manifest.tasks.length, 2);
+  assert.ok(bundle[manifest.tasks[0].promptFile]);
+  assert.match(manifest.tasks[0].expectedJsonFile, /\.json$/);
+  assert.doesNotMatch(manifest.tasks[0].expectedJsonFile, /prompt\.json$/i);
+
+  const rawZipBytes = buildZipArchive(bundle);
+  const unpacked = await extractFilesFromZipArchive(rawZipBytes);
+  assert.ok(unpacked['00_README_DROP_INTO_AI.txt']);
+  assert.ok(unpacked['00_BATCH_MANIFEST.json']);
+
+  const simulatedMixedUpload = [
+    { name: '__MACOSX/._lesson1.json', type: 'application/json' },
+    { name: '00_README_DROP_INTO_AI.txt', type: 'text/plain' },
+    { name: '00_BATCH_MANIFEST.json', type: 'application/json' },
+    { name: 'prompts/01_N4_Cafe.txt', type: 'text/plain' },
+    { name: 'results/01_N4_Cafe.json', type: 'application/json' },
+    { name: 'results/02_N4_Station.json', type: 'application/json' },
+  ];
+  const filtered = filterBatchResultUploadFiles(simulatedMixedUpload);
+  assert.deepEqual(
+    filtered.map((f) => f.name),
+    ['results/01_N4_Cafe.json', 'results/02_N4_Station.json'],
+  );
+});
+
+test('buildEnglishReelsWebAiPrompt handles empty sourceText by instructing AI to invent level-accurate lesson', () => {
+  const prompt = buildEnglishReelsWebAiPrompt({
+    sourceText: '',
+    title: '',
+    mode: 'auto',
+    targetLang: 'Tiếng Việt',
+    learningLanguage: 'ja',
+    level: 'N4',
+    includeQuiz: 'always',
+  });
+  assert.match(prompt, /N4/);
+  assert.match(prompt, /NỘI DUNG GỐC ĐANG ĐỂ TRỐNG|AI TỰ SÁNG TẠO/i);
+  assert.match(prompt, /"level": "N4"/);
+  assert.match(prompt, /Đang để trống — AI tự sáng tạo/);
+});
+
+test('Từ Bài / Link silent-quiz workflow enforces 1s wait + 5s countdown + post-reveal explanation audio, verbatim copy vs short reading prompts, and batch alignment', () => {
+  // 1. Prompt with pasted sourceText enforces verbatim copy + typo-fix only + 1s/5s silent quiz + 1-right/3-wrong/traps + time-not-important
+  const pastedPrompt = buildEnglishReelsWebAiPrompt({
+    sourceText: 'Q1. 昨日、駅で友達（　）会いました。\nA) が B) に C) を D) で',
+    mode: 'auto',
+    targetLang: 'Tiếng Việt',
+    learningLanguage: 'ja',
+    level: 'N4',
+    durationMinutes: 0,
+  });
+  assert.match(pastedPrompt, /CHÉP NGUYÊN VĂN|CHỈ SỬA LỖI CHÍNH TẢ/i);
+  assert.match(pastedPrompt, /TIME \(THỜI LƯỢNG\) KHÔNG QUAN TRỌNG/i);
+  assert.match(pastedPrompt, /"silentQuestion": true/);
+  assert.match(pastedPrompt, /"questionWaitSec": 1/);
+  assert.match(pastedPrompt, /3 ĐÁP ÁN CÒN LẠI SAI|3 phương án sai còn lại/i);
+  assert.match(pastedPrompt, /CHỈ nói ngắn gọn hôm nay học nội dung gì/i);
+
+  // 2. Prompt with empty sourceText emphasizes short reading (1-3 sentences) + grammar/vocab MCQs
+  const emptyPrompt = buildEnglishReelsWebAiPrompt({
+    sourceText: '',
+    mode: 'auto',
+    targetLang: 'Tiếng Việt',
+    learningLanguage: 'ja',
+    level: 'N5',
+  });
+  assert.match(emptyPrompt, /BÀI ĐỌC NGẮN.*1–3 câu/is);
+  assert.match(emptyPrompt, /trắc nghiệm Ngữ pháp, Từ vựng/i);
+
+  // 3. Parse AI JSON with silentQuestion and verify getQuizCardSpeechParts + reelCardsToLessonProject timeline
+  const parsed = parseEnglishReelsAiJson(
+    JSON.stringify({
+      title: 'Chọn đúng trợ từ chỉ nơi gặp gỡ? | 初中級者向け (日本語 N4)',
+      level: 'N4',
+      learningLang: 'ja',
+      mode: 'quiz',
+      cards: [
+        {
+          type: 'intro',
+          badge: 'BÀI TẬP · N4',
+          title: 'Trắc nghiệm trợ từ N4',
+          content: 'Hôm nay làm bài trắc nghiệm trợ từ & từ vựng N4.',
+          ttsText: '',
+          explanationSpeech: 'Hôm nay chúng ta làm bài trắc nghiệm trợ từ và từ vựng N4 trong bài.',
+        },
+        {
+          type: 'quiz',
+          badge: 'QUIZ #1',
+          title: 'Trợ từ đi với 会います',
+          content: '昨日、駅で友達（　）会いました。',
+          options: ['が', 'に', 'を', 'で'],
+          answerIndex: 1,
+          silentQuestion: true,
+          questionWaitSec: 1,
+          thinkSec: 5,
+          ttsText: '',
+          ttsAnswerText: '',
+          explanation: 'Chọn B (に). A sai vì が đánh dấu chủ ngữ; C (を) không đi với 会う; D (で) chỉ nơi hành động.',
+          explanationSpeech:
+            'Đáp án đúng là B, に vì động từ 会います gặp gỡ luôn đi với trợ từ に chỉ đối tượng hướng tới. Phương án A が sai vì が đánh dấu chủ ngữ chứ không dùng cho người mình gặp. Phương án C を sai vì 会う là tự động từ không nhận を. Phương án D で sai vì で dùng để chỉ địa điểm diễn ra hành động như 駅で, không gắn sau danh từ chỉ người được gặp. Chú ý rất nhiều bạn nhầm sang を theo thói quen tiếng Việt gặp ai.',
+        },
+      ],
+    }),
+    { targetLang: 'Tiếng Việt' },
+  );
+  assert.ok(parsed);
+  const quizCard = parsed.cards[1];
+  assert.equal(quizCard.type, 'quiz');
+  assert.equal(quizCard.silentQuestion, true);
+  assert.equal(quizCard.questionWaitSec, 1);
+  assert.equal(quizCard.thinkSec, 5);
+  assert.equal(quizCard.ttsText, '');
+  assert.equal(quizCard.ttsAnswerText, undefined);
+
+  const speechParts = getQuizCardSpeechParts(quizCard, 1);
+  assert.equal(speechParts.questionSpeech, '');
+  assert.equal(speechParts.answerSpeech, '');
+  assert.equal(speechParts.questionWaitSec, 1);
+  assert.equal(speechParts.thinkSec, 5);
+
+  // 4. Batch TTS segments + duration mapping + cue alignment
+  const batch = buildBatchTtsSegmentsForReelCards(parsed.cards, {
+    learningLanguage: 'ja',
+    enableDualTts: true,
+  });
+  assert.equal(batch.segments.length, 3); // intro-expl, quiz-q (silenceOnly), quiz-expl
+  assert.equal(batch.segments[1]?.silenceOnly, true);
+  assert.equal(batch.segments[1]?.text, '');
+  assert.equal(batch.segments[1]?.pauseAfterSec, 6);
+  assert.ok(batch.segments[2]?.id.endsWith('-expl'));
+
+  const mappedTiming = mapBatchSynthesisDurations(
+    batch.cardMapping,
+    [4.0, 6.0, 14.0],
+    [4.0, 0, 14.0],
+    [0, 6.0, 0],
+    batch.extraOutroIdx,
+  );
+  assert.equal(mappedTiming.timings[1]?.questionSec, 1);
+  assert.equal(mappedTiming.timings[1]?.thinkSec, 5);
+  assert.equal(mappedTiming.timings[1]?.answerSec, 14);
+  assert.equal(mappedTiming.timings[1]?.totalSec, 20);
+  // Speech windows contain intro + quiz explanation AFTER 6s silent wait+countdown
+  assert.equal(mappedTiming.speechWindows.length, 2);
+  assert.equal(mappedTiming.speechWindows[1]?.start, 10);
+  assert.equal(mappedTiming.speechWindows[1]?.end, 24);
+
+  const proj = reelCardsToLessonProject(parsed.cards, {
+    title: parsed.title,
+    targetLang: 'Tiếng Việt',
+    learningLanguage: 'ja',
+    cardDurationsSec: mappedTiming.durations,
+    cardTimings: mappedTiming.timings,
+  });
+
+  // Ensure silent question does NOT emit question karaoke/plain subtitle box, DOES emit ask pill, 5 countdown meters, and answer karaoke
+  const qKaraoke = proj.elements.find((e) => e.id.startsWith('reel-karaoke-q-'));
+  const qPlain = proj.elements.find((e) => e.id.startsWith('reel-plain-q-'));
+  const askPill = proj.elements.find((e) => e.id === 'reel-q-pill-ask-1');
+  const countdownMeters = proj.elements.filter((e) => e.id.startsWith('reel-q-countdown-meter-1-'));
+  const ansKaraoke = proj.elements.find((e) => e.id === 'reel-karaoke-a-1');
+  assert.equal(qKaraoke, undefined);
+  assert.equal(qPlain, undefined);
+  assert.ok(askPill);
+  assert.equal(askPill.endTime - askPill.startTime, 1);
+  assert.equal(countdownMeters.length, 5);
+  assert.equal(countdownMeters[0].startTime - askPill.startTime, 1);
+  assert.equal(countdownMeters[4].endTime - countdownMeters[0].startTime, 5);
+  assert.ok(ansKaraoke);
+  assert.equal(ansKaraoke.startTime - askPill.startTime, 6);
+
+  // Word-boundary mapping preserves explanation words on ansKaraoke's cue even though qIdx was silent
+  const fakeDataCues: TranscriptCue[] = [
+    { id: 's0', start: 0, end: 4, text: 'intro', words: [{ word: 'Hôm nay', start: 0, end: 0.5 }] },
+    { id: 's1', start: 4, end: 4, text: '', words: [] },
+    {
+      id: 's2',
+      start: 10,
+      end: 24,
+      text: 'Đáp án đúng là B',
+      words: [
+        { word: 'Đáp', start: 10, end: 10.4 },
+        { word: 'án', start: 10.4, end: 10.8 },
+      ],
+    },
+  ];
+  const syncedCues = mapBatchWordBoundariesToProjectCues(proj.cues, batch.cardMapping, fakeDataCues);
+  assert.equal(syncedCues.length, 3);
+  assert.equal(syncedCues[1].words.length, 0);
+  assert.equal(syncedCues[2].words[0]?.word, 'Đáp');
+
+  // 5. Source-mode starter builder for Japanese N4 creates silent quiz starter lesson
+  const jaSourceStarter = buildStarterLessonForLanguage('ja', 'Tiếng Việt', 'N4', {
+    creationMode: 'source',
+  });
+  assert.equal(jaSourceStarter.mode, 'quiz');
+  assert.equal(jaSourceStarter.cards[0]?.type, 'intro');
+  assert.equal(jaSourceStarter.cards[0]?.ttsText, '');
+  const jaQuizCards = jaSourceStarter.cards.filter((c) => c.type === 'quiz');
+  assert.ok(jaQuizCards.length >= 1);
+  for (const qc of jaQuizCards) {
+    assert.equal(qc.silentQuestion, true);
+    assert.equal(qc.questionWaitSec, 1);
+    assert.equal(qc.thinkSec, 5);
+    assert.equal(qc.ttsText, '');
+    assert.ok((qc.explanationSpeech || '').length > 20);
+  }
+});
+
+
 
 
 

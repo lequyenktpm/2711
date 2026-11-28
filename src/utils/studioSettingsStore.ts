@@ -96,6 +96,7 @@ export interface PersistedStudioSettings {
   reels?: PersistedReelsModeSettings & {
     reelCreationMode?: ReelCreationMode;
     sourceLearningLang?: LearningLanguageId;
+    sourceLevel?: string;
     sourceDurationMinutes?: number;
     creatorTopicHint?: string;
     creatorFormat?: CreatorFormatCategory;

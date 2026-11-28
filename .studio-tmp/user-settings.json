@@ -39,17 +39,17 @@
     "inlineRate": 1,
     "inlineWhisperSync": true
   },
-  "updatedAt": 1795873382406,
+  "updatedAt": 1795877848874,
   "reels": {
-    "reelCreationMode": "creator",
+    "reelCreationMode": "source",
     "creatorTopicHint": "",
     "creatorFormat": "podcast_duo",
     "creatorLearningLang": "en",
     "creatorLevel": "N5",
     "creatorDurationMinutes": 30,
     "creatorItemCount": 60,
-    "lessonTitle": "Ordering Coffee | English A2",
-    "rawText": "Q1. 次の言葉を並べ替えて正しい文を作りなさい: コーヒー / を / 飲みます / 毎朝\nA) 毎朝コーヒーを飲みます。\nB) コーヒー毎朝を飲みます。\nC) を飲みますコーヒー毎朝。\nD) 飲みます毎朝をコーヒー。",
+    "lessonTitle": "Trợ từ は và が qua đoạn ngắn | 初中級者向け (日本語 N4)",
+    "rawText": "",
     "includeQuizInPrompt": "auto",
     "mode": "vocab",
     "targetLang": "English",
@@ -96,7 +96,7 @@
     "byMode": {
       "source": {
         "includeQuizInPrompt": "auto",
-        "mode": "vocab",
+        "mode": "reading",
         "targetLang": "Tiếng Việt",
         "ttsProvider": "auto",
         "ttsVoice": "ja-JP-NanamiNeural",
@@ -104,7 +104,7 @@
         "splitAudioByRole": true,
         "explanationTtsVoice": "en-US-JennyNeural",
         "ttsRate": 1,
-        "reelsAspectRatio": "16:9",
+        "reelsAspectRatio": "9:16",
         "selectedTheme": "pastel-sunrise",
         "selectedComposition": "cartoon-host",
         "subtitlePosition": "bottom",
@@ -130,7 +130,8 @@
         "layoutOverridesByAspect": {},
         "enableLearningAudio": true,
         "enableCountdownSfx": true,
-        "descriptionStyle": "auto"
+        "descriptionStyle": "auto",
+        "ttsRateManuallyEdited": false
       },
       "creator": {
         "includeQuizInPrompt": "auto",
@@ -226,7 +227,8 @@
     },
     "creatorAutoItemCount": true,
     "translationAutoItemCount": true,
-    "sourceLearningLang": "ja"
+    "sourceLearningLang": "ja",
+    "sourceLevel": "N5"
   },
   "eduStudio": {
     "subTab": "align",

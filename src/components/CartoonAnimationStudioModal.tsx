@@ -74,29 +74,47 @@ const GESTURE_OPTIONS: { id: CartoonGestureMode; label: string }[] = [
   { id: 'hold-mic', label: 'Cầm micro thuyết trình (Hold Mic)' },
   { id: 'explain', label: 'Mở tay giải thích (Explain)' },
   { id: 'present', label: 'Đứng chào chỉnh tề (Present)' },
-  { id: 'clap-jump', label: 'Khuỵu gối bật nhảy & Vỗ tay 5-Frame (Clap & Jump)' },
+  { id: 'clap-jump', label: 'Nhún gối bám sàn & Vỗ tay 5-Frame 👏 (Clap Cheer)' },
+  { id: 'peace-sign', label: 'Giơ chữ V thân thiện ✌️ (Peace Sign)' },
+  { id: 'salute', label: 'Chào điều lệnh sẵn sàng 🫡 (Salute)' },
+  { id: 'shush', label: 'Đặt ngón tay suỵt bí mật 🤫 (Shush)' },
+  { id: 'bow-polite', label: 'Cúi chào lễ phép 🙇 (Polite Bow)' },
+  { id: 'heart-hands', label: 'Chắp / ghép tim trước ngực 🫶 (Heart Hands)' },
+  { id: 'cross-arms', label: 'Khoanh tay nghiêm túc 😤 (Cross Arms)' },
+  { id: 'open-welcome', label: 'Mở rộng hai tay chào đón 👐 (Open Welcome)' },
+  { id: 'writing-note', label: 'Cầm sổ ghi chú ✍️ (Writing Note)' },
+  { id: 'snap-idea', label: 'Búng tay bật mí 😉 (Snap Idea)' },
 ];
 
 const EYE_OPTIONS: { id: CartoonEyeStyle; label: string }[] = [
   { id: 'normal', label: 'Mắt tròn tự nhiên' },
   { id: 'happy-arc', label: 'Mắt cười cong ^^' },
-  { id: 'wide-surprised', label: 'Mở to ngạc nhiên' },
-  { id: 'wink', label: 'Nháy mắt tinh nghịch' },
-  { id: 'star', label: 'Mắt sao lấp lánh' },
+  { id: 'wide-surprised', label: 'Mở to ngạc nhiên 👀' },
+  { id: 'wink', label: 'Nháy mắt tinh nghịch 😉' },
+  { id: 'star', label: 'Mắt sao lấp lánh ★' },
   { id: 'focused', label: 'Tập trung nghiêm túc' },
-  { id: 'sleepy', label: 'Thư giãn / lim dim' },
-  { id: 'heart', label: 'Mắt trái tim' },
-  { id: 'cool-shades', label: 'Đeo kính ngầu' },
+  { id: 'sleepy', label: 'Thư giãn / lim dim 😴' },
+  { id: 'heart', label: 'Mắt trái tim 😍' },
+  { id: 'cool-shades', label: 'Đeo kính ngầu 😎' },
+  { id: 'laugh-squint', label: 'Mắt híp cười tít 😂' },
+  { id: 'determined', label: 'Ánh mắt quyết tâm 💪' },
+  { id: 'pleading', label: 'Mắt long lanh năn nỉ 🥺' },
+  { id: 'dizzy', label: 'Mắt xoáy choáng váng 😵' },
 ];
 
 const MOUTH_OPTIONS: { id: CartoonMouthStyle; label: string }[] = [
   { id: 'lip-sync', label: 'Nhép miệng nói (Lip-sync)' },
   { id: 'smile', label: 'Cười tươi' },
   { id: 'big-grin', label: 'Cười rạng rỡ (Grin)' },
-  { id: 'o-shock', label: 'Chữ O bất ngờ' },
+  { id: 'o-shock', label: 'Chữ O bất ngờ 😮' },
   { id: 'wavy-nervous', label: 'Môi lượn sóng lo lắng' },
   { id: 'flat-serious', label: 'Môi ngang suy tư' },
-  { id: 'smirk', label: 'Cười nhếch tự tin' },
+  { id: 'smirk', label: 'Cười nhếch tự tin 😏' },
+  { id: 'laugh-open', label: 'Cười mở lớn sảng khoái 😂' },
+  { id: 'cat-smile', label: 'Miệng mèo dễ thương :3' },
+  { id: 'whistle-o', label: 'Chúm môi nhỏ / ngái ngủ 🤫' },
+  { id: 'grit-teeth', label: 'Nghiến răng quyết tâm 💪' },
+  { id: 'pout', label: 'Bĩu môi hờn dỗi / năn nỉ 🥺' },
 ];
 
 const FX_OPTIONS: { id: CartoonFxOverlay; label: string }[] = [
@@ -110,16 +128,26 @@ const FX_OPTIONS: { id: CartoonFxOverlay; label: string }[] = [
   { id: 'sweat-drop', label: 'Giọt mồ hôi 💧' },
   { id: 'check-burst', label: 'Dấu tích ✅' },
   { id: 'fire-aura', label: 'Nhiệt huyết 🔥' },
+  { id: 'confetti-pop', label: 'Pháo giấy ăn mừng 🥳' },
+  { id: 'angry-vein', label: 'Gân nổi bực nhẹ 💢' },
+  { id: 'sleep-zzz', label: 'Chữ ngủ Zzz 😴' },
+  { id: 'mind-blown', label: 'Bùng nổ ý tưởng 🤯' },
+  { id: 'target-bull', label: 'Hồng tâm chính xác 🎯' },
+  { id: 'hundred-score', label: 'Điểm tuyệt đối 💯' },
+  { id: 'clap-waves', label: 'Sóng vỗ tay 👏' },
 ];
 
 const ACCESSORY_OPTIONS: { id: CartoonAccessory; label: string }[] = [
   { id: 'none', label: 'Không phụ kiện' },
-  { id: 'mic', label: 'Micro cầm tay' },
-  { id: 'pointer-stick', label: 'Que chỉ bảng' },
-  { id: 'megaphone', label: 'Loa cầm tay' },
-  { id: 'graduation-cap', label: 'Mũ tốt nghiệp' },
-  { id: 'sunglasses', label: 'Kính râm ngầu' },
-  { id: 'badge-card', label: 'Bảng tên giáo viên' },
+  { id: 'mic', label: 'Micro cầm tay 🎤' },
+  { id: 'pointer-stick', label: 'Que chỉ bảng ☝️' },
+  { id: 'megaphone', label: 'Loa cầm tay 📢' },
+  { id: 'graduation-cap', label: 'Mũ tốt nghiệp 🎓' },
+  { id: 'sunglasses', label: 'Kính râm ngầu 😎' },
+  { id: 'badge-card', label: 'Bảng tên giáo viên 🪪' },
+  { id: 'notebook', label: 'Sổ tay ghi chú 📒' },
+  { id: 'trophy', label: 'Cúp chiến thắng 🏆' },
+  { id: 'coffee-cup', label: 'Cốc cà phê ☕' },
 ];
 
 const PreviewCanvas: React.FC<{
@@ -203,7 +231,7 @@ export const CartoonAnimationStudioModal: React.FC<CartoonAnimationStudioModalPr
     bounceIntensity: 1,
     headTiltDeg: 0,
     blushIntensity: 0.45,
-    bodySquashStretch: 0.04,
+    bodySquashStretch: 0,
   });
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -299,7 +327,7 @@ export const CartoonAnimationStudioModal: React.FC<CartoonAnimationStudioModalPr
       bounceIntensity: 1.35,
       headTiltDeg: 8,
       blushIntensity: 0.75,
-      bodySquashStretch: 0.08,
+      bodySquashStretch: 0,
     });
     setStatusMsg(null);
     setErrorMsg(null);

@@ -521,3 +521,79 @@ test('cartoonHost scene continuity, mood guard, @Gimmys prompts, translation car
     );
   }
 });
+
+test('cartoonHostAnimator & DB: expanded emoji presets map cleanly and strictly forbid jumping or body squash/stretch', () => {
+  const expectedNewIds = [
+    'laugh-joy',
+    'love-adore',
+    'wink-secret',
+    'party-celebrate',
+    'muscle-determined',
+    'shush-secret',
+    'eyes-notice',
+    'target-focus',
+    'perfect-100',
+    'plead-soft',
+    'proud-huff',
+    'bow-polite',
+    'thank-you',
+    'peace-friendly',
+    'take-note',
+    'salute-ready',
+    'sleepy-break',
+    'coffee-chat',
+    'trophy-winner',
+    'heart-hands',
+  ];
+
+  for (const id of expectedNewIds) {
+    const found = BUILTIN_CARTOON_ANIMATIONS.find((a) => a.id === id);
+    assert.ok(found, `Expected built-in preset "${id}"`);
+    assert.ok(found.params.badgeEmoji, `Expected badgeEmoji on "${id}"`);
+  }
+
+  const cues: TranscriptCue[] = [
+    { id: 'c1', start: 0, end: 4, text: 'Great work team!', words: [] },
+  ];
+
+  // Every built-in preset must keep jumpOffsetY === 0 and bodySquashX/Y === 1 at all timestamps
+  for (const def of BUILTIN_CARTOON_ANIMATIONS) {
+    assert.equal(def.params.bodySquashStretch, 0, `${def.id} bodySquashStretch must be 0`);
+    for (const t of [0.2, 0.85, 1.4]) {
+      const frame = computeSpeechLipSyncState(cues, t, { actionId: def.id });
+      assert.equal(frame.jumpOffsetY, 0, `${def.id} @ ${t}s must NOT jump (jumpOffsetY === 0)`);
+      assert.equal(frame.bodySquashX, 1, `${def.id} @ ${t}s must NOT stretch horizontally`);
+      assert.equal(frame.bodySquashY, 1, `${def.id} @ ${t}s must NOT stretch vertically`);
+    }
+  }
+
+  // Even legacy AI payloads requesting bodySquashStretch or keyframe jumpOffsetY must be clamped/zeroed
+  const clampedParsed = parseCartoonAnimationAiJson(
+    JSON.stringify({
+      cartoonAnimations: [
+        {
+          id: 'legacy-jump-payload',
+          name: 'Legacy jump',
+          gesture: 'celebrate-jump',
+          bodySquashStretch: 0.9,
+          keyframes: [{ t: 0.5, jumpOffsetY: -60, bodySquashX: 0.7, bodySquashY: 1.4 }],
+        },
+      ],
+    }),
+  );
+  assert.equal(clampedParsed.length, 1);
+  assert.equal(clampedParsed[0].params.bodySquashStretch, 0);
+  const clampedFrame = computeSpeechLipSyncState(cues, 1.0, {
+    customSpec: clampedParsed[0].params,
+  });
+  assert.equal(clampedFrame.jumpOffsetY, 0);
+  assert.equal(clampedFrame.bodySquashX, 1);
+  assert.equal(clampedFrame.bodySquashY, 1);
+
+  const webPrompt = buildCartoonActionWebAiPrompt('Cười lớn & chỉ mục tiêu');
+  assert.match(webPrompt, /peace-sign/);
+  assert.match(webPrompt, /laugh-squint/);
+  assert.match(webPrompt, /confetti-pop/);
+  assert.match(webPrompt, /KHÔNG nhảy/i);
+});
+
