@@ -171,7 +171,9 @@ export function estimateElementHalfExtents(el: SceneElement): {
       } else if (variant === 'avatar-speech') {
         baseHalfH = 116;
       } else if (variant === 'podcast-studio') {
-        baseHalfH = 192;
+        baseHalfH = 214;
+      } else if (variant === 'css-chat-thread') {
+        baseHalfH = 150;
       } else if (variant === 'cartoon-host') {
         baseHalfH = 335;
       } else if (
@@ -204,9 +206,13 @@ export function estimateElementHalfExtents(el: SceneElement): {
         variant === 'bs-badge-cluster' ||
         variant === 'css-roadmap-steps' ||
         variant === 'bs-breadcrumb-path' ||
-        variant === 'bs-list-group'
+        variant === 'bs-list-group' ||
+        variant === 'bs-pricing-tier' ||
+        variant === 'bs-accordion-faq' ||
+        variant === 'css-bento-stats' ||
+        variant === 'bs-toast-notify'
       ) {
-        baseHalfH = 144;
+        baseHalfH = 148;
       } else if (variant === 'css-browser-mockup') {
         const bodyTxt = data?.speechText || data?.subtitle || '';
         const bodyFont = bodyTxt.length > 145 ? 30 : 32;
@@ -216,13 +222,27 @@ export function estimateElementHalfExtents(el: SceneElement): {
         const cardH = Math.max(250, 90 + titleLines * 42 + estLines * bodyLineH + 38);
         baseHalfH = Math.ceil(cardH / 2) + 8;
       } else if (variant === 'bs-progress-meter') {
-        baseHalfH = 116;
-      } else if (variant === 'bs-alert-tip' || variant === 'bs-card-header') {
-        baseHalfH = 152;
+        baseHalfH = 120;
+      } else if (variant === 'bs-alert-tip') {
+        const titleStr = data?.title || 'Key Note';
+        const bodyStr = data?.speechText || data?.subtitle || '';
+        const tagStr = (data?.highlightWord || data?.formula || '').trim();
+        const tLines = estimateWrappedLineCount(titleStr, 590, 34);
+        const bLines = bodyStr ? estimateWrappedLineCount(bodyStr, 590, 30) : 0;
+        const cardH = Math.max(224, (tagStr ? 48 : 0) + tLines * 42 + bLines * 38 + 52);
+        baseHalfH = Math.ceil(cardH / 2) + 8;
+      } else if (variant === 'bs-card-header') {
+        const titleStr = data?.title || 'Key Lesson';
+        const subStr = data?.subtitle || data?.speechText || '';
+        const tLines = estimateWrappedLineCount(titleStr, 600, 38);
+        const sLines = subStr ? estimateWrappedLineCount(subStr, 600, 30) : 0;
+        const textBlockH = tLines * 46 + (sLines > 0 ? 8 + sLines * 38 : 0);
+        const cardH = Math.max(264, 72 + textBlockH + 64);
+        baseHalfH = Math.ceil(cardH / 2) + 8;
       } else if (isCustom && el.layout.height && el.layout.height > 20) {
         baseHalfH = Math.ceil(el.layout.height / 2) + 4;
       } else {
-        baseHalfH = 132;
+        baseHalfH = 136;
       }
 
       if (!hasNativeLabels && !data?.customPrimitives?.length && data?.labels?.length) {
@@ -673,6 +693,7 @@ export function findVisualOverlaps(
 
       for (let j = i + 1; j < active.length; j++) {
         const b = active[j];
+        if (!intervalsOverlap(a, b, 0.02)) continue;
         const bb = estimateElementBounds(b);
         if (!horizontalOverlap(ba, bb)) continue;
         const overlapY = Math.min(ba.bottom, bb.bottom) - Math.max(ba.top, bb.top);
@@ -769,6 +790,7 @@ export function detectActiveStageOverlaps(
     const ba = resolveBoxFromLayout(a, resolvedMap.get(a.id));
     for (let j = i + 1; j < active.length; j++) {
       const b = active[j];
+      if (!intervalsOverlap(a, b, 0.02)) continue;
       const bb = resolveBoxFromLayout(b, resolvedMap.get(b.id));
       const overlapX = Math.min(ba.right, bb.right) - Math.max(ba.left, bb.left);
       const overlapY = Math.min(ba.bottom, bb.bottom) - Math.max(ba.top, bb.top);
@@ -796,127 +818,362 @@ export function reflowElementsAvoidingOverlap(
     stageHeight?: number;
     gapPx?: number;
     titleBox?: TitleBoundsBox | null;
+    pinStrict?: boolean;
   },
 ): Map<string, ElementLayout> {
   const stageW = options?.stageWidth ?? 1080;
   const stageH = options?.stageHeight ?? 1920;
   const gapPx = options?.gapPx ?? 18;
+  const pinStrict = options?.pinStrict ?? true;
 
   const working = new Map<string, ElementLayout>();
   for (const el of elements) {
-    working.set(el.id, { ...(resolvedMap.get(el.id) || el.layout) });
+    const baseLay = { ...(resolvedMap.get(el.id) || el.layout) };
+    const box = resolveBoxFromLayout(el, baseLay);
+    const minX = box.halfW + 18;
+    const maxX = stageW - box.halfW - 18;
+    const clampedX =
+      minX > maxX
+        ? Math.round(stageW / 2)
+        : Math.round(Math.max(minX, Math.min(maxX, baseLay.x)));
+    working.set(el.id, { ...baseLay, x: clampedX });
   }
 
   const ordered = elements
     .map((el) => ({ el, lay: working.get(el.id)! }))
     .filter((item) => item.el.type !== 'karaoke-card');
 
-  const isPinnedTitle = pinnedId === '__title__' && options?.titleBox;
-  const pinnedEl = ordered.find((item) => item.el.id === pinnedId);
+  const karaokeFixed = elements.filter((el) => el.type === 'karaoke-card');
+  const titleRect = options?.titleBox
+    ? {
+        left: options.titleBox.x - options.titleBox.width / 2,
+        right: options.titleBox.x + options.titleBox.width / 2,
+        top: options.titleBox.y - options.titleBox.height / 2,
+        bottom: options.titleBox.y + options.titleBox.height / 2,
+      }
+    : null;
 
-  const pushDownOrUp = (
-    blockerBox: { left: number; right: number; top: number; bottom: number },
-    el: SceneElement,
-    lay: ElementLayout,
-  ): ElementLayout | null => {
-    const box = resolveBoxFromLayout(el, lay);
-    const overlapX = Math.min(blockerBox.right, box.right) - Math.max(blockerBox.left, box.left);
-    const overlapY = Math.min(blockerBox.bottom, box.bottom) - Math.max(blockerBox.top, box.top);
-    if (overlapX <= 10 || overlapY <= -gapPx + 1) return null;
+  const sampleTimes = Array.from(
+    new Set(
+      ordered.flatMap((item) => [
+        Number((item.el.startTime + 0.04).toFixed(3)),
+        Number(((item.el.startTime + item.el.endTime) * 0.5).toFixed(3)),
+      ]),
+    ),
+  )
+    .filter((t) => Number.isFinite(t) && t >= 0)
+    .sort((a, b) => a - b);
 
-    const minSafeY = Math.round(box.halfH + 40);
-    const maxSafeY = Math.round(stageH - box.halfH - 90);
-
-    // Prefer pushing sibling downward below the blocker
-    const downY = Math.round(blockerBox.bottom + gapPx + box.halfH);
-    if (downY <= maxSafeY) {
-      return { ...lay, y: downY, manualPosition: true };
+  const isVisualColumnCandidate = (el: SceneElement): boolean => {
+    if (el.type === 'word-stack' || el.type === 'shape-3d') return true;
+    if (el.type === 'illustration-prop') {
+      const v = el.props.kind === 'illustration-prop' ? el.props.variant : '';
+      return v !== 'bs-progress-meter';
     }
+    return false;
+  };
 
-    // Fallback: push upward if downward runs off stage bottom
-    const upY = Math.round(blockerBox.top - gapPx - box.halfH);
-    if (upY >= minSafeY) {
-      return { ...lay, y: upY, manualPosition: true };
+  const getSliceSafeBounds = (t: number) => {
+    let safeTop = 36;
+    let safeBottom = stageH - 44;
+    for (const k of karaokeFixed) {
+      if (t < k.startTime - 0.01 || t > k.endTime + 0.01) continue;
+      const kb = resolveBoxFromLayout(k, working.get(k.id));
+      if (kb.bottom < stageH * 0.42) {
+        safeTop = Math.max(safeTop, Math.round(kb.bottom + gapPx));
+      } else if (kb.top > stageH * 0.56) {
+        safeBottom = Math.min(safeBottom, Math.round(kb.top - gapPx));
+      }
     }
+    return { safeTop, safeBottom };
+  };
 
-    // Last resort: clamp horizontally away in wide stages
-    if (stageW > stageH) {
-      const shiftRightX = Math.min(stageW - box.halfW - 40, blockerBox.right + gapPx + box.halfW);
-      if (shiftRightX > blockerBox.right + 12) {
-        return { ...lay, x: Math.round(shiftRightX), manualPosition: true };
+  const getColumnTopWithTitle = (
+    items: SceneElement[],
+    baseSafeTop: number,
+  ): number => {
+    if (!titleRect) return baseSafeTop;
+    let top = baseSafeTop;
+    for (const el of items) {
+      if (el.id === pinnedId && pinStrict) continue;
+      const b = resolveBoxFromLayout(el, working.get(el.id));
+      const xOverlap = Math.min(titleRect.right, b.right) - Math.max(titleRect.left, b.left);
+      if (xOverlap > 10) {
+        top = Math.max(top, Math.round(titleRect.bottom + gapPx));
+      }
+    }
+    return top;
+  };
+
+  // Phase 1: On wide/square viewports (16:9 or 1:1), if a slice stacks taller than available height,
+  // intelligently distribute visual vs card into crisp 2-column side-by-side placement.
+  if (stageW >= stageH) {
+    for (const t of sampleTimes) {
+      const active = ordered
+        .map((o) => o.el)
+        .filter((el) => t >= el.startTime - 0.01 && t <= el.endTime + 0.01);
+      if (active.length < 2) continue;
+      const { safeTop, safeBottom } = getSliceSafeBounds(t);
+      const colTop = getColumnTopWithTitle(active, safeTop);
+      const availH = Math.max(180, safeBottom - colTop);
+
+      const nonStrip = active.filter(
+        (el) => !(el.type === 'comparison-strip' && !el.id.includes('-quiz-opts-')),
+      );
+      if (nonStrip.length < 2) continue;
+
+      const sumH =
+        nonStrip.reduce((acc, el) => acc + resolveBoxFromLayout(el, working.get(el.id)).height, 0) +
+        gapPx * (nonStrip.length - 1);
+      if (sumH <= availH) continue;
+
+      const visuals = nonStrip.filter(isVisualColumnCandidate);
+      const cards = nonStrip.filter((el) => !isVisualColumnCandidate(el));
+      if (visuals.length === 0 || cards.length === 0) continue;
+
+      const leftX = Math.round(stageW * 0.27);
+      const rightX = Math.round(stageW * 0.73);
+      const maxColW = Math.round(stageW * 0.44);
+
+      const pinnedIsRight =
+        cards.some((c) => c.id === pinnedId) &&
+        (working.get(pinnedId)?.x ?? stageW / 2) >= stageW * 0.48;
+      const pinnedIsLeft =
+        visuals.some((v) => v.id === pinnedId) &&
+        (working.get(pinnedId)?.x ?? stageW / 2) <= stageW * 0.52;
+
+      for (const v of visuals) {
+        if (v.id === pinnedId && (pinStrict || pinnedIsLeft)) continue;
+        const cur = working.get(v.id)!;
+        const targetX = pinnedIsLeft ? rightX : leftX;
+        const nextW = Math.min(cur.width || maxColW, maxColW);
+        working.set(v.id, { ...cur, x: targetX, width: nextW, manualPosition: true });
+      }
+      for (const c of cards) {
+        if (c.id === pinnedId && (pinStrict || pinnedIsRight)) continue;
+        const cur = working.get(c.id)!;
+        const targetX = pinnedIsLeft ? leftX : rightX;
+        const nextW = Math.min(cur.width || maxColW, maxColW);
+        working.set(c.id, { ...cur, x: targetX, width: nextW, manualPosition: true });
+      }
+    }
+  }
+
+  // Phase 2: Multi-pass per-slice constraint solver across ALL cards/segments (1..N)
+  const packCluster = (
+    cluster: SceneElement[],
+    clusterTop: number,
+    clusterBottom: number,
+  ) => {
+    if (cluster.length === 0) return;
+    cluster.sort((a, b) => {
+      const ya = working.get(a.id)?.y ?? a.layout.y;
+      const yb = working.get(b.id)?.y ?? b.layout.y;
+      if (Math.abs(ya - yb) > 4) return ya - yb;
+      const td = getZoneTier(a) - getZoneTier(b);
+      if (td !== 0) return td;
+      return a.startTime - b.startTime;
+    });
+
+    const pinnedIdx = cluster.findIndex((el) => el.id === pinnedId);
+    const hasStrictPin = pinnedIdx >= 0 && pinStrict;
+
+    // If strict pinned element overlaps karaoke bounds, gently nudge it inside [clusterTop, clusterBottom]
+    if (hasStrictPin) {
+      const pEl = cluster[pinnedIdx];
+      const pLay = working.get(pEl.id)!;
+      const pBox = resolveBoxFromLayout(pEl, pLay);
+      if (pBox.bottom > clusterBottom) {
+        const clampedY = Math.max(
+          Math.round(pBox.halfH + 36),
+          Math.round(clusterBottom - pBox.halfH),
+        );
+        working.set(pEl.id, { ...pLay, y: clampedY, manualPosition: true });
+      } else if (pBox.top < clusterTop && !titleRect) {
+        const clampedY = Math.min(
+          Math.round(clusterBottom - pBox.halfH),
+          Math.round(clusterTop + pBox.halfH),
+        );
+        working.set(pEl.id, { ...pLay, y: clampedY, manualPosition: true });
       }
     }
 
-    return { ...lay, y: Math.max(minSafeY, Math.min(maxSafeY, downY)), manualPosition: true };
-  };
+    if (hasStrictPin) {
+      const pEl = cluster[pinnedIdx];
+      const pLay = working.get(pEl.id)!;
+      const pBox = resolveBoxFromLayout(pEl, pLay);
 
-  const karaokeFixed = elements
-    .filter((el) => el.type === 'karaoke-card')
-    .map((el) => ({ el, lay: working.get(el.id)! }));
+      // Partition unpinned items into those staying above pinned vs pushed below pinned
+      const above = cluster.filter((el, i) => i < pinnedIdx);
+      const below = cluster.filter((el, i) => i > pinnedIdx);
 
-  const avoidKaraokeForItem = (item: { el: SceneElement; lay: ElementLayout }) => {
-    for (const k of karaokeFixed) {
-      if (!intervalsOverlap(k.el, item.el)) continue;
-      const kBox = resolveBoxFromLayout(k.el, working.get(k.el.id));
-      const currLay = working.get(item.el.id)!;
-      const box = resolveBoxFromLayout(item.el, currLay);
-      const overlapX = Math.min(kBox.right, box.right) - Math.max(kBox.left, box.left);
-      const overlapY = Math.min(kBox.bottom, box.bottom) - Math.max(kBox.top, box.top);
-      if (overlapX <= 12 || overlapY <= 0) continue;
-      const isBottomKaraoke = kBox.top >= stageH * 0.5;
-      const minSafeY = Math.round(box.halfH + 40);
-      const maxSafeY = Math.round(stageH - box.halfH - 40);
-      const targetY = isBottomKaraoke
-        ? Math.max(minSafeY, Math.round(kBox.top - gapPx - box.halfH))
-        : Math.min(maxSafeY, Math.round(kBox.bottom + gapPx + box.halfH));
-      working.set(item.el.id, { ...currLay, y: targetY, manualPosition: true });
+      // Try placing `above` tightly between clusterTop and pBox.top - gapPx
+      const aboveAvail = pBox.top - gapPx - clusterTop;
+      const aboveNeed =
+        above.reduce((acc, el) => acc + resolveBoxFromLayout(el, working.get(el.id)).height, 0) +
+        gapPx * Math.max(0, above.length - 1);
+
+      const finalBelow: SceneElement[] = [...below];
+      const finalAbove: SceneElement[] = [];
+      if (above.length > 0) {
+        if (aboveNeed <= aboveAvail && aboveAvail > 40) {
+          finalAbove.push(...above);
+        } else {
+          // If items above don't fit above pinned, try scaling `above` slightly or move colliding ones below pinned
+          let runningNeed = 0;
+          for (let ai = 0; ai < above.length; ai++) {
+            const el = above[ai];
+            const h = resolveBoxFromLayout(el, working.get(el.id)).height;
+            if (runningNeed + h <= aboveAvail) {
+              finalAbove.push(el);
+              runningNeed += h + gapPx;
+            } else {
+              finalBelow.unshift(el);
+            }
+          }
+        }
+      }
+
+      if (finalAbove.length > 0) {
+        let cursorBottom = pBox.top - gapPx;
+        for (let ai = finalAbove.length - 1; ai >= 0; ai--) {
+          const el = finalAbove[ai];
+          const cur = working.get(el.id)!;
+          const b = resolveBoxFromLayout(el, cur);
+          const desiredBottom = Math.min(cursorBottom, b.bottom);
+          const nextY = Math.max(Math.round(clusterTop + b.halfH), Math.round(desiredBottom - b.halfH));
+          working.set(el.id, { ...cur, y: nextY, manualPosition: true });
+          cursorBottom = nextY - b.halfH - gapPx;
+        }
+      }
+
+      if (finalBelow.length > 0) {
+        const belowStart = pBox.bottom + gapPx;
+        const belowAvail = Math.max(90, clusterBottom - belowStart);
+        const belowGap = Math.max(10, Math.min(gapPx, 16));
+        const rawNeed =
+          finalBelow.reduce((acc, el) => acc + resolveBoxFromLayout(el, working.get(el.id)).height, 0) +
+          belowGap * Math.max(0, finalBelow.length - 1);
+        if (rawNeed > belowAvail) {
+          const ratio = Math.max(0.45, Math.min(1, (belowAvail - belowGap * Math.max(0, finalBelow.length - 1)) / Math.max(1, rawNeed - belowGap * Math.max(0, finalBelow.length - 1))));
+          for (const el of finalBelow) {
+            const cur = working.get(el.id)!;
+            working.set(el.id, {
+              ...cur,
+              scale: Number(Math.max(0.42, (cur.scale || 1) * ratio).toFixed(3)),
+              manualPosition: true,
+            });
+          }
+        }
+        let cursorTop = belowStart;
+        for (const el of finalBelow) {
+          const cur = working.get(el.id)!;
+          const b = resolveBoxFromLayout(el, cur);
+          const nextY = Math.round(Math.max(cur.y, cursorTop + b.halfH));
+          const maxY = Math.round(clusterBottom - b.halfH);
+          const placedY = cursorTop + b.halfH <= maxY ? Math.min(nextY, maxY) : Math.round(cursorTop + b.halfH);
+          working.set(el.id, { ...cur, y: placedY, manualPosition: true });
+          cursorTop = placedY + b.halfH + belowGap;
+        }
+      }
+      return;
+    }
+
+    // Unpinned / global smart pack inside [clusterTop, clusterBottom]
+    const availH = Math.max(140, clusterBottom - clusterTop);
+    const totalGap = gapPx * Math.max(0, cluster.length - 1);
+    const rawHeightSum = cluster.reduce(
+      (acc, el) => acc + resolveBoxFromLayout(el, working.get(el.id)).height,
+      0,
+    );
+
+    if (rawHeightSum + totalGap > availH) {
+      const compactGap = Math.max(10, gapPx - 6);
+      const compactTotalGap = compactGap * Math.max(0, cluster.length - 1);
+      if (rawHeightSum + compactTotalGap > availH) {
+        const ratio = Math.max(
+          0.44,
+          Math.min(1, (availH - compactTotalGap) / Math.max(1, rawHeightSum)),
+        );
+        for (const el of cluster) {
+          const cur = working.get(el.id)!;
+          const nextScale = Number(Math.max(0.44, (cur.scale || 1) * ratio).toFixed(3));
+          working.set(el.id, { ...cur, scale: nextScale, manualPosition: true });
+        }
+      }
+      let cursor = clusterTop;
+      for (const el of cluster) {
+        const cur = working.get(el.id)!;
+        const b = resolveBoxFromLayout(el, cur);
+        const ny = Math.round(cursor + b.halfH);
+        working.set(el.id, { ...cur, y: ny, manualPosition: true });
+        cursor = ny + b.halfH + compactGap;
+      }
+    } else {
+      // Preserve natural Y order unless items overlap or exceed clusterBottom/clusterTop
+      let cursor = clusterTop;
+      const firstBox = resolveBoxFromLayout(cluster[0], working.get(cluster[0].id));
+      const slack = availH - (rawHeightSum + totalGap);
+      if (firstBox.top > clusterTop && firstBox.top - clusterTop <= slack) {
+        cursor = firstBox.top;
+      }
+      for (const el of cluster) {
+        const cur = working.get(el.id)!;
+        const b = resolveBoxFromLayout(el, cur);
+        const ny = Math.round(Math.max(cursor + b.halfH, Math.max(clusterTop + b.halfH, cur.y)));
+        working.set(el.id, { ...cur, y: ny, manualPosition: true });
+        cursor = ny + b.halfH + gapPx;
+      }
+      // If greedy preservation pushed the bottom item past clusterBottom, pull cluster cleanly top-down from clusterTop
+      const lastEl = cluster[cluster.length - 1];
+      const lastBottom = resolveBoxFromLayout(lastEl, working.get(lastEl.id)).bottom;
+      if (lastBottom > clusterBottom) {
+        let tightCursor = clusterTop;
+        for (const el of cluster) {
+          const cur = working.get(el.id)!;
+          const b = resolveBoxFromLayout(el, cur);
+          const ny = Math.round(tightCursor + b.halfH);
+          working.set(el.id, { ...cur, y: ny, manualPosition: true });
+          tightCursor = ny + b.halfH + gapPx;
+        }
+      }
     }
   };
 
-  if (isPinnedTitle && options?.titleBox) {
-    const tb = {
-      left: options.titleBox.x - options.titleBox.width / 2,
-      right: options.titleBox.x + options.titleBox.width / 2,
-      top: options.titleBox.y - options.titleBox.height / 2,
-      bottom: options.titleBox.y + options.titleBox.height / 2,
-    };
-    for (const item of ordered) {
-      const updated = pushDownOrUp(tb, item.el, working.get(item.el.id)!);
-      if (updated) working.set(item.el.id, updated);
-    }
-  } else if (pinnedEl) {
-    const pinnedBox = resolveBoxFromLayout(pinnedEl.el, working.get(pinnedEl.el.id));
-    for (const item of ordered) {
-      if (item.el.id === pinnedId) continue;
-      if (!intervalsOverlap(pinnedEl.el, item.el)) continue;
-      const updated = pushDownOrUp(pinnedBox, item.el, working.get(item.el.id)!);
-      if (updated) working.set(item.el.id, updated);
-    }
-    // If the pinned element itself overlaps a fixed karaoke-card, nudge it clear of the subtitle bar
-    avoidKaraokeForItem(pinnedEl);
-  }
+  for (let pass = 0; pass < 2; pass++) {
+    for (const t of sampleTimes) {
+      const active = ordered
+        .map((o) => o.el)
+        .filter((el) => t >= el.startTime - 0.01 && t <= el.endTime + 0.01);
+      if (active.length === 0) continue;
 
-  // Cascade pass: resolve any domino overlaps among shifted cards sorted by Y
-  const sortedByY = [...ordered].sort(
-    (a, b) => (working.get(a.el.id)?.y ?? a.el.layout.y) - (working.get(b.el.id)?.y ?? b.el.layout.y),
-  );
-  for (let i = 0; i < sortedByY.length; i++) {
-    const prev = sortedByY[i];
-    const prevLay = working.get(prev.el.id)!;
-    const prevBox = resolveBoxFromLayout(prev.el, prevLay);
-    for (let j = i + 1; j < sortedByY.length; j++) {
-      const next = sortedByY[j];
-      if (next.el.id === pinnedId) continue;
-      if (!intervalsOverlap(prev.el, next.el)) continue;
-      const updated = pushDownOrUp(prevBox, next.el, working.get(next.el.id)!);
-      if (updated) working.set(next.el.id, updated);
-    }
-  }
+      const { safeTop, safeBottom } = getSliceSafeBounds(t);
 
-  // Ensure shifted non-karaoke elements stay clear of fixed karaoke-card subtitle bands
-  for (const item of ordered) {
-    if (item.el.id === pinnedId) continue;
-    avoidKaraokeForItem(item);
+      // Partition active elements into horizontal-overlap connected clusters
+      const visited = new Set<string>();
+      for (const seed of active) {
+        if (visited.has(seed.id)) continue;
+        const cluster: SceneElement[] = [];
+        const queue: SceneElement[] = [seed];
+        visited.add(seed.id);
+        while (queue.length > 0) {
+          const cur = queue.shift()!;
+          cluster.push(cur);
+          const cb = resolveBoxFromLayout(cur, working.get(cur.id));
+          for (const cand of active) {
+            if (visited.has(cand.id)) continue;
+            const kb = resolveBoxFromLayout(cand, working.get(cand.id));
+            const xOverlap = Math.min(cb.right, kb.right) - Math.max(cb.left, kb.left);
+            if (xOverlap > 10) {
+              visited.add(cand.id);
+              queue.push(cand);
+            }
+          }
+        }
+        const clusterTop = getColumnTopWithTitle(cluster, safeTop);
+        packCluster(cluster, clusterTop, safeBottom);
+      }
+    }
   }
 
   return working;

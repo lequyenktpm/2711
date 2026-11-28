@@ -16,7 +16,7 @@ import {
   type CartoonHostContext,
   type CartoonLipSyncFrame,
 } from './cartoonHostAnimator';
-import { estimateElementHalfExtents } from './layoutSolver';
+import { estimateElementHalfExtents, type TitleBoundsBox } from './layoutSolver';
 import type { ExportAspectRatioId } from './mp4Config';
 import {
   BackgroundFitMode,
@@ -105,10 +105,11 @@ function enforceNonOverlappingResolvedLayouts(
   time: number,
   aspectRatio: ExportAspectRatioId,
   subtitleConfig?: SubtitleDisplayConfig,
+  titleBox?: TitleBoundsBox | null,
 ): Map<string, ElementLayout> {
   const stage = getStageDimensionsForAspect(aspectRatio);
   const visible = elements.filter((el) => time >= el.startTime - 0.01 && time <= el.endTime + 0.01);
-  if (visible.length <= 1) return layoutMap;
+  if (visible.length === 0) return layoutMap;
 
   const getBounds = (el: SceneElement, l: ElementLayout) => {
     const ext = estimateElementHalfExtents({ ...el, layout: l });
@@ -130,17 +131,26 @@ function enforceNonOverlappingResolvedLayouts(
   );
   const pos = subtitleConfig?.position;
 
-  let safeTop = 58;
-  let safeBottom = stage.height - 64;
+  let safeTop = 44;
+  let safeBottom = stage.height - 52;
   for (const kEl of karaokeEls) {
     const kLay = layoutMap.get(kEl.id) || kEl.layout;
     const kb = getBounds(kEl, kLay);
     if (pos === 'top' || kLay.y < stage.height * 0.34) {
-      safeTop = Math.max(safeTop, kb.bottom + 14);
+      safeTop = Math.max(safeTop, Math.round(kb.bottom + 14));
     } else if (!pos || pos === 'bottom' || kLay.y > stage.height * 0.66) {
-      safeBottom = Math.min(safeBottom, kb.top - 14);
+      safeBottom = Math.min(safeBottom, Math.round(kb.top - 14));
     }
   }
+
+  const titleRect = titleBox
+    ? {
+        left: titleBox.x - titleBox.width / 2,
+        right: titleBox.x + titleBox.width / 2,
+        top: titleBox.y - titleBox.height / 2,
+        bottom: titleBox.y + titleBox.height / 2,
+      }
+    : null;
 
   // Keep elements within horizontal bounds first (unless manually positioned)
   for (const el of visible) {
@@ -169,15 +179,24 @@ function enforceNonOverlappingResolvedLayouts(
       return la.y - lb.y;
     });
 
+  const getEffectiveMinTop = (b: { left: number; right: number }) => {
+    if (!titleRect) return safeTop;
+    const titleXOverlap = Math.min(titleRect.right, b.right) - Math.max(titleRect.left, b.left);
+    if (titleXOverlap > 10) {
+      return Math.max(safeTop, Math.round(titleRect.bottom + 14));
+    }
+    return safeTop;
+  };
+
   const minGap = 14;
   for (let i = 0; i < stackables.length; i++) {
     const currEl = stackables[i];
     let currLay = layoutMap.get(currEl.id) || currEl.layout;
     let currB = getBounds(currEl, currLay);
 
-    // Clamp top within safeTop
-    if (currB.top < safeTop) {
-      currLay = { ...currLay, y: Math.round(currLay.y + (safeTop - currB.top)) };
+    const effTop = getEffectiveMinTop(currB);
+    if (currB.top < effTop) {
+      currLay = { ...currLay, y: Math.round(currLay.y + (effTop - currB.top)) };
       layoutMap.set(currEl.id, currLay);
       currB = getBounds(currEl, currLay);
     }
@@ -187,7 +206,7 @@ function enforceNonOverlappingResolvedLayouts(
       const prevLay = layoutMap.get(prevEl.id) || prevEl.layout;
       const prevB = getBounds(prevEl, prevLay);
       const xOverlap = Math.min(currB.right, prevB.right) - Math.max(currB.left, prevB.left);
-      if (xOverlap > 28 && currB.top < prevB.bottom + minGap) {
+      if (xOverlap > 24 && currB.top < prevB.bottom + minGap) {
         const pushDown = prevB.bottom + minGap - currB.top;
         currLay = { ...currLay, y: Math.round(currLay.y + pushDown) };
         layoutMap.set(currEl.id, currLay);
@@ -201,7 +220,6 @@ function enforceNonOverlappingResolvedLayouts(
       const hostTop = hostLay.y - Math.round(335 * (hostLay.scale || 1));
       const hostMaxBottom = Math.min(stage.height - 40, safeBottom);
       if (currB.bottom + 14 > hostTop) {
-        // Compress host slightly if needed, or gently shrink current card
         const newHostTop = currB.bottom + 16;
         const availForHost = hostMaxBottom - newHostTop;
         if (availForHost >= 320) {
@@ -219,28 +237,85 @@ function enforceNonOverlappingResolvedLayouts(
     }
   }
 
-  // Final pass: keep bottom of stackables inside safeBottom by scaling down only if overflowing bottom
-  for (const el of stackables) {
-    let lay = layoutMap.get(el.id) || el.layout;
-    let b = getBounds(el, lay);
-    const maxBottomLimit =
-      hostEl && (aspectRatio === '9:16' || aspectRatio === '4:5')
-        ? Math.min(
-            safeBottom,
-            (layoutMap.get(hostEl.id) || hostEl.layout).y -
-              Math.round(335 * ((layoutMap.get(hostEl.id) || hostEl.layout).scale || 1)) -
-              12,
-          )
-        : safeBottom;
-    if (b.bottom > maxBottomLimit && maxBottomLimit > safeTop + 120) {
-      const currentH = Math.max(40, b.bottom - b.top);
-      const availH = Math.max(64, maxBottomLimit - Math.max(safeTop, b.top));
-      const ratio = Math.max(0.54, Math.min(1, availH / currentH));
-      const nextScale = Number(((lay.scale || 1) * ratio).toFixed(3));
-      const nextHalfH = Math.round(b.halfH * ratio);
-      const nextY = Math.max(safeTop + nextHalfH, Math.min(maxBottomLimit - nextHalfH, lay.y));
-      lay = { ...lay, scale: nextScale, y: Math.round(nextY) };
-      layoutMap.set(el.id, lay);
+  // Final pass: pack overflowing horizontal-overlap chains top-down inside [clusterTop, maxBottomLimit]
+  // by uniformly scaling the chain instead of clamping bottom items backward onto items above them.
+  const hostUpperLimit =
+    hostEl && (aspectRatio === '9:16' || aspectRatio === '4:5')
+      ? (layoutMap.get(hostEl.id) || hostEl.layout).y -
+        Math.round(335 * ((layoutMap.get(hostEl.id) || hostEl.layout).scale || 1)) -
+        12
+      : safeBottom;
+  const maxBottomLimit = Math.min(safeBottom, hostUpperLimit);
+
+  const visited = new Set<string>();
+  for (let i = 0; i < stackables.length; i++) {
+    const seed = stackables[i];
+    if (visited.has(seed.id)) continue;
+    const chain: SceneElement[] = [seed];
+    visited.add(seed.id);
+    let expanded = true;
+    while (expanded) {
+      expanded = false;
+      for (const cand of stackables) {
+        if (visited.has(cand.id)) continue;
+        const cb = getBounds(cand, layoutMap.get(cand.id) || cand.layout);
+        if (
+          chain.some((member) => {
+            const mb = getBounds(member, layoutMap.get(member.id) || member.layout);
+            return Math.min(cb.right, mb.right) - Math.max(cb.left, mb.left) > 24;
+          })
+        ) {
+          chain.push(cand);
+          visited.add(cand.id);
+          expanded = true;
+        }
+      }
+    }
+
+    chain.sort((a, b) => (layoutMap.get(a.id) || a.layout).y - (layoutMap.get(b.id) || b.layout).y);
+    const hasBottomOverflow = chain.some((el) => {
+      const b = getBounds(el, layoutMap.get(el.id) || el.layout);
+      return b.bottom > maxBottomLimit + 2;
+    });
+    if (!hasBottomOverflow || maxBottomLimit <= safeTop + 100) continue;
+
+    let clusterTop = safeTop;
+    for (const el of chain) {
+      const b = getBounds(el, layoutMap.get(el.id) || el.layout);
+      clusterTop = Math.max(clusterTop, getEffectiveMinTop(b));
+    }
+    const firstB = getBounds(chain[0], layoutMap.get(chain[0].id) || chain[0].layout);
+    clusterTop = Math.max(clusterTop, Math.min(firstB.top, clusterTop + 40));
+
+    const packGap = Math.max(10, Math.min(minGap, 12));
+    const totalGaps = packGap * Math.max(0, chain.length - 1);
+    const availH = Math.max(80, maxBottomLimit - clusterTop);
+    const sumRawH = chain.reduce((acc, el) => {
+      const b = getBounds(el, layoutMap.get(el.id) || el.layout);
+      return acc + Math.max(36, b.bottom - b.top);
+    }, 0);
+
+    if (sumRawH + totalGaps > availH) {
+      const ratio = Math.max(
+        0.48,
+        Math.min(1, (availH - totalGaps) / Math.max(1, sumRawH)),
+      );
+      for (const el of chain) {
+        const lay = layoutMap.get(el.id) || el.layout;
+        layoutMap.set(el.id, {
+          ...lay,
+          scale: Number(Math.max(0.45, (lay.scale || 1) * ratio).toFixed(3)),
+        });
+      }
+    }
+
+    let cursorY = clusterTop;
+    for (const el of chain) {
+      const lay = layoutMap.get(el.id) || el.layout;
+      const b = getBounds(el, lay);
+      const nextY = Math.round(cursorY + b.halfH);
+      layoutMap.set(el.id, { ...lay, y: nextY });
+      cursorY = nextY + b.halfH + packGap;
     }
   }
 
@@ -484,6 +559,7 @@ export function resolveElementLayoutForAspect(
   aspectRatio: ExportAspectRatioId = '9:16',
   subtitleConfig?: SubtitleDisplayConfig,
   compositionId?: LayoutCompositionId,
+  titleBox?: TitleBoundsBox | null,
 ): Map<string, ElementLayout> {
   const out = new Map<string, ElementLayout>();
   const explicitPos = subtitleConfig?.position ?? (compositionId === 'plain' ? 'center' : undefined);
@@ -610,7 +686,14 @@ export function resolveElementLayoutForAspect(
       }
       out.set(el.id, el.layout);
     }
-    return enforceNonOverlappingResolvedLayouts(elements, out, time, aspectRatio, subtitleConfig);
+    return enforceNonOverlappingResolvedLayouts(
+      elements,
+      out,
+      time,
+      aspectRatio,
+      subtitleConfig,
+      titleBox,
+    );
   }
 
   const visible = elements.filter((el) => time >= el.startTime - 0.01 && time <= el.endTime + 0.01);
@@ -763,7 +846,14 @@ export function resolveElementLayoutForAspect(
           scale: 0.76,
         });
       }
-      return enforceNonOverlappingResolvedLayouts(elements, out, time, aspectRatio, subtitleConfig);
+      return enforceNonOverlappingResolvedLayouts(
+        elements,
+        out,
+        time,
+        aspectRatio,
+        subtitleConfig,
+        titleBox,
+      );
     }
 
     // 1:1 Square (1080 x 1080): Two-column split (Gimmy left pointing right, cards right)
@@ -841,10 +931,128 @@ export function resolveElementLayoutForAspect(
         scale: 0.72,
       });
     }
-    return enforceNonOverlappingResolvedLayouts(elements, out, time, aspectRatio, subtitleConfig);
+    return enforceNonOverlappingResolvedLayouts(
+      elements,
+      out,
+      time,
+      aspectRatio,
+      subtitleConfig,
+      titleBox,
+    );
   }
 
   if (aspectRatio === '1:1' || aspectRatio === '4:5') {
+    const isSquareSplit =
+      aspectRatio === '1:1' &&
+      ((midVisuals.length > 0 &&
+        (midCards.length > 0 || midQuizOpts.length > 0 || midMeters.length > 0)) ||
+        mid3dBlocks.length >= 2);
+    const hasTitleOnLeft11 = Boolean(titleBox && titleBox.x < stage.width * 0.48);
+
+    if (isSquareSplit) {
+      const hasRightLower = midQuizOpts.length > 0 || midMeters.length > 0 || visible.some((v) => v.type === 'tone-meter');
+      for (const el of elements) {
+        if (el.layout.manualPosition) {
+          out.set(el.id, el.layout);
+          continue;
+        }
+        if (el.type === 'karaoke-card') {
+          out.set(el.id, {
+            ...el.layout,
+            x: 540,
+            y: resolveKaraokeTargetY(explicitPos || 'bottom', '1:1', stage.height),
+            width: 940,
+            scale: 0.9,
+          });
+          continue;
+        }
+        if (el.type === 'comparison-strip' && !isQuizOptStrip(el)) {
+          out.set(el.id, {
+            ...el.layout,
+            x: hasTitleOnLeft11 ? 775 : 540,
+            y: hasTopSubCollision ? 285 : 84,
+            width: hasTitleOnLeft11 ? 540 : 920,
+            scale: hasTitleOnLeft11 ? 0.68 : 0.78,
+          });
+          continue;
+        }
+        if (isTopPill(el)) {
+          out.set(el.id, {
+            ...el.layout,
+            x: 775,
+            y: hasTopSubCollision ? 345 : hasTopStrip ? 168 : 112,
+            width: 480,
+            scale: 0.78,
+          });
+          continue;
+        }
+        if (isLeftVisual(el)) {
+          const vIdx = Math.max(0, midVisuals.findIndex((v) => v.id === el.id));
+          const baseVisualY = midVisuals.length > 1 ? 330 + vIdx * 240 : hasTopSubCollision ? 540 : 485;
+          out.set(el.id, {
+            ...el.layout,
+            x: 285,
+            y: hasTitleOnLeft11 ? Math.max(baseVisualY, 390) : baseVisualY,
+            width: 480,
+            scale: Math.min(0.72, el.layout.scale || 1),
+          });
+          continue;
+        }
+        if (isQuizOptStrip(el)) {
+          out.set(el.id, {
+            ...el.layout,
+            x: 775,
+            y: midMeters.length > 0 ? 525 : 585,
+            width: 490,
+            scale: 0.7,
+          });
+          continue;
+        }
+        if (isCountdownMeter(el)) {
+          out.set(el.id, {
+            ...el.layout,
+            x: 775,
+            y: midQuizOpts.length > 0 ? 700 : 620,
+            width: 480,
+            scale: 0.56,
+          });
+          continue;
+        }
+        if (isRightFocal(el)) {
+          const isTone = el.type === 'tone-meter' && visible.some((v) => v.type === 'sentence-card');
+          out.set(el.id, {
+            ...el.layout,
+            x: 775,
+            y: isTone
+              ? 645
+              : hasRightLower
+                ? 335
+                : hasTopStrip
+                  ? 465
+                  : 435,
+            width: 490,
+            scale: hasRightLower ? 0.72 : 0.78,
+          });
+          continue;
+        }
+        out.set(el.id, {
+          ...el.layout,
+          x: 775,
+          y: 465,
+          width: 480,
+          scale: 0.74,
+        });
+      }
+      return enforceNonOverlappingResolvedLayouts(
+        elements,
+        out,
+        time,
+        aspectRatio,
+        subtitleConfig,
+        titleBox,
+      );
+    }
+
     const yScale = stage.height / STAGE_HEIGHT;
     const xOffset = (stage.width - STAGE_WIDTH) / 2;
     for (const el of elements) {
@@ -883,13 +1091,20 @@ export function resolveElementLayoutForAspect(
       out.set(el.id, {
         ...el.layout,
         x: Math.round(el.layout.x + xOffset),
-        y: Math.round(70 + ((el.layout.y - 120) / Math.max(1, STAGE_HEIGHT - 240)) * (stage.height - 150)),
+        y: Math.round(64 + ((el.layout.y - 120) / Math.max(1, STAGE_HEIGHT - 240)) * (stage.height - 170)),
         width: Math.min(stage.width - 48, el.layout.width),
         height: scaledHeight,
-        scale: Number((el.layout.scale * Math.max(0.8, Math.sqrt(yScale))).toFixed(3)),
+        scale: Number((el.layout.scale * Math.max(aspectRatio === '1:1' ? 0.68 : 0.78, Math.sqrt(yScale))).toFixed(3)),
       });
     }
-    return enforceNonOverlappingResolvedLayouts(elements, out, time, aspectRatio, subtitleConfig);
+    return enforceNonOverlappingResolvedLayouts(
+      elements,
+      out,
+      time,
+      aspectRatio,
+      subtitleConfig,
+      titleBox,
+    );
   }
 
   // 16:9 Widescreen (1920 x 1080) dedicated responsive choreography for Cartoon Host (@Gimmys)
@@ -1004,13 +1219,21 @@ export function resolveElementLayoutForAspect(
         scale: 0.88,
       });
     }
-    return enforceNonOverlappingResolvedLayouts(elements, out, time, aspectRatio, subtitleConfig);
+    return enforceNonOverlappingResolvedLayouts(
+      elements,
+      out,
+      time,
+      aspectRatio,
+      subtitleConfig,
+      titleBox,
+    );
   }
 
   // 16:9 Widescreen (1920 x 1080) adaptive layout for standard compositions
   const hasSplitColumns =
     (midVisuals.length > 0 && (midCards.length > 0 || midQuizOpts.length > 0 || midMeters.length > 0)) ||
     mid3dBlocks.length >= 2;
+  const hasTitleOnLeft169 = Boolean(titleBox && titleBox.x < stage.width * 0.48);
 
   for (const el of elements) {
     if (el.layout.manualPosition) {
@@ -1020,10 +1243,10 @@ export function resolveElementLayoutForAspect(
     if (el.type === 'comparison-strip' && !isQuizOptStrip(el)) {
       out.set(el.id, {
         ...el.layout,
-        x: 960,
-        y: hasTopSubCollision ? 58 : 72,
-        width: 1460,
-        scale: hasTopSubCollision ? 0.78 : 0.92,
+        x: hasTitleOnLeft169 ? 1365 : 960,
+        y: hasTopSubCollision ? 295 : hasTitleOnLeft169 ? 98 : 72,
+        width: hasTitleOnLeft169 ? 920 : 1460,
+        scale: hasTopSubCollision ? 0.78 : hasTitleOnLeft169 ? 0.86 : 0.92,
       });
       continue;
     }
@@ -1031,11 +1254,11 @@ export function resolveElementLayoutForAspect(
     if (isTopPill(el)) {
       out.set(el.id, {
         ...el.layout,
-        x: 960,
-        y: hasTopSubCollision ? 295 : hasTopStrip ? 162 : 96,
-        width: Math.min(1180, Math.max(660, el.layout.width)),
+        x: hasTitleOnLeft169 ? 1365 : 960,
+        y: hasTopSubCollision ? (hasTopStrip ? 375 : 295) : hasTopStrip ? 182 : 108,
+        width: hasTitleOnLeft169 ? 740 : Math.min(1180, Math.max(660, el.layout.width)),
         height: el.layout.height ? Math.min(96, el.layout.height) : undefined,
-        scale: 0.94,
+        scale: hasTitleOnLeft169 ? 0.88 : 0.94,
       });
       continue;
     }
@@ -1192,7 +1415,67 @@ export function resolveElementLayoutForAspect(
     });
   }
 
-  return enforceNonOverlappingResolvedLayouts(elements, out, time, aspectRatio, subtitleConfig);
+  return enforceNonOverlappingResolvedLayouts(
+    elements,
+    out,
+    time,
+    aspectRatio,
+    subtitleConfig,
+    titleBox,
+  );
+}
+
+/**
+ * Resolves the responsive layout for ALL elements across ALL card/segment slices in the project
+ * by evaluating each slice at its midpoint rather than a single playback timestamp.
+ */
+export function resolveFullProjectLayoutsForAspect(
+  project: LessonProject,
+  aspectRatio: ExportAspectRatioId = project.aspectRatio || '9:16',
+): Map<string, ElementLayout> {
+  const fullMap = new Map<string, ElementLayout>();
+  const elements = project.elements;
+  if (elements.length === 0) return fullMap;
+
+  const introSec = getEffectiveIntroSeconds(project);
+  const bySliceKey = new Map<string, { mid: number; els: SceneElement[] }>();
+  for (const el of elements) {
+    const mid = Number(((el.startTime + el.endTime) * 0.5).toFixed(3));
+    const key = mid.toFixed(3);
+    const entry = bySliceKey.get(key);
+    if (entry) {
+      entry.els.push(el);
+    } else {
+      bySliceKey.set(key, { mid, els: [el] });
+    }
+  }
+
+  const slices = Array.from(bySliceKey.values()).sort((a, b) => a.mid - b.mid);
+  for (const slice of slices) {
+    const tAbs = introSec + slice.mid;
+    const tb = resolveLessonTitleBox(project, aspectRatio, tAbs);
+    const sliceMap = resolveElementLayoutForAspect(
+      elements,
+      slice.mid,
+      aspectRatio,
+      project.subtitleConfig,
+      project.compositionId,
+      tb ? { x: tb.x, y: tb.y, width: tb.width, height: tb.height } : null,
+    );
+    for (const el of slice.els) {
+      const resolved = sliceMap.get(el.id);
+      if (resolved) {
+        fullMap.set(el.id, resolved);
+      }
+    }
+  }
+
+  for (const el of elements) {
+    if (!fullMap.has(el.id)) {
+      fullMap.set(el.id, el.layout);
+    }
+  }
+  return fullMap;
 }
 
 const FONT_DISPLAY = '"Outfit", "Plus Jakarta Sans", "Noto Sans JP", "Noto Sans SC", "Noto Sans KR", "Hiragino Sans", "Yu Gothic", "Meiryo", system-ui, sans-serif';
@@ -4085,7 +4368,23 @@ function drawIllustrationProp(
 ) {
   const elElapsed = Math.max(0, time - elStartTime);
   const floatRamp = easeOutCubic(clamp01(elElapsed / 0.5));
-  const floatOffset = props.variant === 'cartoon-host' ? 0 : Math.sin(elElapsed * 2.1) * 6 * floatRamp;
+  const isSteadyStudioVariant =
+    props.variant === 'cartoon-host' ||
+    props.variant === 'podcast-studio' ||
+    props.variant === 'bs-progress-meter' ||
+    props.variant === 'dialogue-upgrade' ||
+    props.variant === 'checklist-card' ||
+    props.variant === 'flow-diagram' ||
+    props.variant === 'timeline-track' ||
+    props.variant === 'tense-timeline' ||
+    props.variant === 'gauge-arc' ||
+    props.variant === 'degree-scale' ||
+    props.variant === 'avatar-speech' ||
+    props.variant === 'spatial-boxes' ||
+    props.variant.startsWith('bs-') ||
+    props.variant.startsWith('css-') ||
+    props.variant.startsWith('p168-');
+  const floatOffset = isSteadyStudioVariant ? 0 : Math.sin(time * 2.0) * 5 * floatRamp;
   ctx.save();
   ctx.translate(0, floatOffset);
 
@@ -5725,9 +6024,17 @@ function drawIllustrationProp(
     }
   } else if (props.variant === 'bs-progress-meter') {
     const targetPct = clamp01(props.data?.value ?? 0.78);
-    const fillEase = easeOutQuint(clamp01((time - 0.08) / 0.65));
-    const pct = targetPct * fillEase;
-    const pctLabel = `${Math.round(targetPct * fillEase * 100)}%`;
+    let pct: number;
+    if (typeof props.data?.prevValue === 'number') {
+      const prevPct = clamp01(props.data.prevValue);
+      const stepDur = Math.max(0.25, props.data.stepDurationSec ?? 1);
+      const stepProgress = clamp01(elElapsed / stepDur);
+      pct = prevPct + (targetPct - prevPct) * stepProgress;
+    } else {
+      const fillEase = easeOutQuint(clamp01((time - 0.08) / 0.65));
+      pct = targetPct * fillEase;
+    }
+    const pctLabel = `${Math.round(pct * 100)}%`;
     fillCardWithShadow(ctx, -420, -112, 840, 224, 28, '#FFFFFF', 0.09);
     ctx.strokeStyle = '#E2E8F0';
     ctx.lineWidth = 2;
@@ -9117,12 +9424,21 @@ export function renderProjectFrame(
 
   // 2. Sort elements by zIndex & resolve aspect layout
   const sorted = [...project.elements].sort((a, b) => a.layout.zIndex - b.layout.zIndex);
+  const activeTitleBox = resolveLessonTitleBox(project, project.aspectRatio || '9:16', time);
   const layoutMap = resolveElementLayoutForAspect(
     sorted,
     lessonTime,
     project.aspectRatio,
     project.subtitleConfig,
     project.compositionId,
+    activeTitleBox
+      ? {
+          x: activeTitleBox.x,
+          y: activeTitleBox.y,
+          width: activeTitleBox.width,
+          height: activeTitleBox.height,
+        }
+      : null,
   );
 
   const isCartoonStage =
@@ -9147,8 +9463,22 @@ export function renderProjectFrame(
   for (const el of sorted) {
     const frame = computeElementFrameState(el, lessonTime);
     if (!frame.visible) continue;
-
     const activeLayout = layoutMap.get(el.id) || el.layout;
+    // Prevent 1-frame double-draw at exact handoff millisecond when successor replaces the same slot
+    if (
+      Math.abs(lessonTime - el.endTime) < 0.002 &&
+      sorted.some((other) => {
+        if (other.id === el.id || other.type !== el.type) return false;
+        if (Math.abs(other.startTime - el.endTime) >= 0.002 || other.endTime <= other.startTime) {
+          return false;
+        }
+        const oLay = layoutMap.get(other.id) || other.layout;
+        return Math.abs(oLay.x - activeLayout.x) < 160;
+      })
+    ) {
+      continue;
+    }
+
     const activeScale = frame.scale * ((activeLayout.scale || 1) / Math.max(0.1, el.layout.scale || 1));
 
     const isCartoonHostEl =

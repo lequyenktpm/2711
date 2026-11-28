@@ -430,6 +430,8 @@ export interface IllustrationPropData {
   nodes?: IllustrationFlowNode[];
   labels?: string[];
   value?: number; // 0..1 for gauge / timeline-track / degree-scale
+  prevValue?: number; // 0..1 previous tick value for seamless continuous progress fill
+  stepDurationSec?: number; // tick duration in seconds for continuous meter interpolation
   timeHour?: number;
   timeMinute?: number;
   formula?: string;
