@@ -115,6 +115,8 @@ export interface ComparisonStripProps {
   items: ComparisonItem[];
   /** Force all items onto one compact horizontal row instead of stacking vertically */
   singleRow?: boolean;
+  /** Distinguish top step/category tabs from quiz option cards/grids */
+  layoutStyle?: 'tabs' | 'quiz-options';
 }
 
 export interface TopicPillProps {

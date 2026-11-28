@@ -82,22 +82,64 @@ export function estimateElementHalfExtents(el: SceneElement): {
   halfH: number;
 } {
   const scale = el.layout.scale > 0 ? el.layout.scale : 1;
-  const clampedWidth = Math.min(1040, Math.max(120, el.layout.width || 600));
+  const maxWidthCap =
+    el.props.kind === 'comparison-strip' ||
+    el.props.kind === 'sentence-card' ||
+    el.props.kind === 'karaoke-card' ||
+    (el.props.kind === 'illustration-prop' && el.props.variant === 'css-browser-mockup')
+      ? 1680
+      : 1040;
+  const clampedWidth = Math.min(maxWidthCap, Math.max(120, el.layout.width || 600));
   const baseHalfW = clampedWidth / 2;
   let baseHalfH = 90;
 
   switch (el.props.kind) {
     case 'comparison-strip': {
       const items = el.props.items || [];
+      const isQuizOpts = el.props.layoutStyle === 'quiz-options' && !el.props.singleRow;
+      const anyCjkOpts = items.some((i) => hasCjk(i.label));
+      const isQuiz2x2 =
+        isQuizOpts &&
+        items.length === 4 &&
+        items.every((i) => i.label.trim().length <= (anyCjkOpts ? 16 : 22));
       const isLongStack =
         !el.props.singleRow &&
-        (items.some((i) => i.label.trim().length > 16) || items.length > 4);
-      if (isLongStack && items.length > 0) {
+        !isQuiz2x2 &&
+        (isQuizOpts || items.some((i) => i.label.trim().length > 16) || items.length > 4);
+      if (isQuiz2x2) {
+        const colGap = 18;
+        const rowGap = 18;
+        const colW = Math.max(160, Math.floor((clampedWidth - colGap) / 2));
+        const maxLen = Math.max(...items.map((i) => i.label.trim().length), 0);
+        const fSize = maxLen <= 10 ? 38 : maxLen <= 18 ? 34 : 30;
+        const cellTextW = Math.max(110, colW - 76);
+        const cellHeights = items.map((item) => {
+          const lines = Math.min(3, estimateWrappedLineCount(item.label, cellTextW, fSize));
+          return Math.max(122, lines * Math.round(fSize * 1.24) + 46);
+        });
+        const row1H = Math.max(cellHeights[0] ?? 122, cellHeights[1] ?? 122);
+        const row2H = Math.max(cellHeights[2] ?? 122, cellHeights[3] ?? 122);
+        baseHalfH = Math.ceil((row1H + rowGap + row2H) / 2) + 8;
+      } else if (isLongStack && items.length > 0) {
+        const rowW = Math.min(1360, clampedWidth);
+        const widthBoost = Math.min(1.12, Math.max(0.94, rowW / 900));
+        const rowGap = isQuizOpts ? 14 : 12;
         const totalH = items.reduce((acc, item, idx) => {
-          const fSize = item.label.length > 78 ? 25 : 28;
-          const lines = Math.min(3, estimateWrappedLineCount(item.label, Math.max(200, clampedWidth - 190), fSize));
-          const rowH = Math.max(76, lines * Math.round(fSize * 1.26) + 28);
-          return acc + rowH + (idx > 0 ? 12 : 0);
+          const rawOptFont = isQuizOpts
+            ? item.label.length > 110
+              ? 29
+              : item.label.length > 72
+                ? 32
+                : 35
+            : item.label.length > 78
+              ? 26
+              : 28;
+          const fSize = Math.round(rawOptFont * widthBoost);
+          const hasCustomSub = Boolean(item.sublabel);
+          const textReserve = hasCustomSub ? 236 : isQuizOpts ? 104 : 68;
+          const lines = Math.min(4, estimateWrappedLineCount(item.label, Math.max(200, rowW - textReserve), fSize));
+          const rowH = Math.max(isQuizOpts ? 88 : 76, lines * Math.round(fSize * 1.24) + (isQuizOpts ? 34 : 28));
+          return acc + rowH + (idx > 0 ? rowGap : 0);
         }, 0);
         baseHalfH = Math.ceil(totalH / 2) + 8;
       } else {
@@ -214,13 +256,35 @@ export function estimateElementHalfExtents(el: SceneElement): {
       ) {
         baseHalfH = 148;
       } else if (variant === 'css-browser-mockup') {
+        const cardW = Math.min(1320, Math.max(820, clampedWidth));
+        const innerW = Math.max(660, cardW - 84);
+        const wScale = Math.min(1.12, Math.max(0.95, cardW / 920));
         const bodyTxt = data?.speechText || data?.subtitle || '';
-        const bodyFont = bodyTxt.length > 145 ? 30 : 32;
+        const cleanPassage = !data?.title?.trim() && !data?.formula?.trim();
+        const bodyFont = Math.round(
+          (cleanPassage
+            ? bodyTxt.length > 280
+              ? 29
+              : bodyTxt.length > 180
+                ? 32
+                : 35
+            : bodyTxt.length > 210
+              ? 26
+              : bodyTxt.length > 145
+                ? 29
+                : 32) * wScale,
+        );
         const bodyLineH = Math.round(bodyFont * 1.28);
-        const estLines = Math.min(7, Math.max(2, estimateWrappedLineCount(bodyTxt, 760, bodyFont)));
-        const titleLines = Math.min(2, estimateWrappedLineCount(data?.title || 'Reading Context', 760, 34));
-        const cardH = Math.max(250, 90 + titleLines * 42 + estLines * bodyLineH + 38);
-        baseHalfH = Math.ceil(cardH / 2) + 8;
+        const estLines = Math.min(10, Math.max(2, estimateWrappedLineCount(bodyTxt, innerW, bodyFont)));
+        if (cleanPassage) {
+          const hasTag = Boolean(data?.reactionText?.trim());
+          const cardH = Math.max(196, (hasTag ? 68 : 38) + estLines * bodyLineH + 38);
+          baseHalfH = Math.ceil(cardH / 2) + 8;
+        } else {
+          const titleLines = Math.min(2, estimateWrappedLineCount(data?.title || 'Reading Context', innerW, 34));
+          const cardH = Math.max(250, 90 + titleLines * 42 + estLines * bodyLineH + 38);
+          baseHalfH = Math.ceil(cardH / 2) + 8;
+        }
       } else if (variant === 'bs-progress-meter') {
         baseHalfH = 120;
       } else if (variant === 'bs-alert-tip') {
@@ -269,24 +333,32 @@ export function estimateElementHalfExtents(el: SceneElement): {
       const innerW = Math.max(180, clampedWidth - 88);
       const hasSections = Array.isArray(el.props.sections) && el.props.sections.length > 0;
       const textLen = (el.props.text || '').trim().length;
-      const widthScale = Math.min(1, clampedWidth / 760);
+      const widthScale = Math.min(1.18, Math.max(0.84, clampedWidth / 820));
+      const noSub =
+        !el.props.subtext && (el.props.badge === 'question' || clampedWidth >= 900);
       const baseFont = hasSections
         ? textLen > 120
           ? 30
           : textLen > 65
             ? 34
             : 38
-        : textLen > 95
-          ? 36
-          : textLen > 52
-            ? 40
-            : 46;
-      const headFontSize = Math.max(20, Math.round(baseFont * widthScale));
-      const lineH = Math.round(headFontSize * 1.28);
+        : textLen > 125
+          ? noSub
+            ? 38
+            : 34
+          : textLen > 75
+            ? noSub
+              ? 42
+              : 38
+            : textLen > 48
+              ? 44
+              : 48;
+      const headFontSize = Math.max(22, Math.round(baseFont * widthScale));
+      const lineH = Math.round(headFontSize * 1.26);
       const rawLines = (el.props.text || '')
         .split(/\r?\n/)
         .reduce((acc, part) => acc + estimateWrappedLineCount(part, innerW, headFontSize), 0);
-      const lines = Math.min(hasSections ? 9 : 6, Math.max(1, rawLines));
+      const lines = Math.min(hasSections ? 9 : 8, Math.max(1, rawLines));
       const subFont = Math.max(18, Math.round((hasSections ? 22 : 30) * widthScale));
       const subLineH = Math.round(subFont * 1.26);
       const subLines = el.props.subtext
@@ -534,19 +606,28 @@ export function resolveProjectOverlaps(
 
     if (activeIndices.length === 0) continue;
 
-    const maxBottom = Math.max(
-      ...activeIndices.map((idx) => estimateElementBounds(placed[idx]).bottom),
-    );
-    if (maxBottom <= STAGE_SAFE_BOTTOM) continue;
-
-    // Repack this active slice tightly from STAGE_SAFE_TOP to STAGE_SAFE_BOTTOM
+    const activeBounds = activeIndices.map((idx) => estimateElementBounds(placed[idx]));
+    const maxBottom = Math.max(...activeBounds.map((b) => b.bottom));
+    let hasTightSliceConflict = false;
+    for (let a = 0; a < activeBounds.length && !hasTightSliceConflict; a++) {
+      for (let b = a + 1; b < activeBounds.length; b++) {
+        if (!horizontalOverlap(activeBounds[a], activeBounds[b])) continue;
+        if (
+          activeBounds[a].bottom + TIGHT_MIN_VERTICAL_GAP > activeBounds[b].top &&
+          activeBounds[b].bottom + TIGHT_MIN_VERTICAL_GAP > activeBounds[a].top
+        ) {
+          hasTightSliceConflict = true;
+          break;
+        }
+      }
+    }
     const totalGap = TIGHT_MIN_VERTICAL_GAP * Math.max(0, activeIndices.length - 1);
     const availableH = STAGE_SAFE_BOTTOM - STAGE_SAFE_TOP - totalGap;
-    const rawHeights = activeIndices.map((idx) => {
-      const b = estimateElementBounds(placed[idx]);
-      return b.height;
-    });
+    const rawHeights = activeBounds.map((b) => b.height);
     const sumH = rawHeights.reduce((acc, h) => acc + h, 0);
+    if (maxBottom <= STAGE_SAFE_BOTTOM && !hasTightSliceConflict) {
+      continue;
+    }
 
     if (sumH > availableH && availableH > 200) {
       const shrinkRatio = Math.max(0.7, Math.min(1, availableH / sumH));
@@ -632,7 +713,7 @@ export function resolveProjectOverlaps(
       } else {
         const roomH = Math.max(60, STAGE_SAFE_BOTTOM - targetTop);
         const curFullH = Math.max(1, curBounds.halfH * 2);
-        const fitFactor = Math.min(0.9, roomH / curFullH);
+        const fitFactor = Math.min(0.99, Math.max(0.44, (roomH - 2) / curFullH));
         const nextScale = Number(Math.max(0.44, (current.layout.scale || 1) * fitFactor).toFixed(3));
         const updated: SceneElement = {
           ...current,

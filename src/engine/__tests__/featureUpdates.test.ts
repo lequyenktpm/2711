@@ -15,16 +15,20 @@ import {
   buildSpeakerVoiceMap,
   buildStarterLessonForLanguage,
   buildTranslationChallengePrompt,
+  cardLeavesRoomForIllustration,
   CREATOR_FORMAT_OPTIONS,
+  detectQuizCategoryLabel,
   getQuizCardSpeechParts,
   parseEnglishReelsAiJson,
   recommendCreatorItemCount,
   recommendTranslationItemCount,
   reelCardsToLessonProject,
+  SOURCE_QUIZ_FOCUS_OPTIONS,
 } from '../englishReelsEngine';
 import { buildSceneGenerationPrompt } from '../aiPromptBuilder';
 import {
   detectActiveStageOverlaps,
+  estimateElementHalfExtents,
   reflowElementsAvoidingOverlap,
 } from '../layoutSolver';
 import { estimateMp4FileSize, formatMegabytesLabel } from '../mp4Config';
@@ -1403,7 +1407,7 @@ test('buildEnglishReelsWebAiPrompt handles empty sourceText by instructing AI to
 });
 
 test('Từ Bài / Link silent-quiz workflow enforces 1s wait + 5s countdown + post-reveal explanation audio, verbatim copy vs short reading prompts, and batch alignment', () => {
-  // 1. Prompt with pasted sourceText enforces verbatim copy + typo-fix only + 1s/5s silent quiz + 1-right/3-wrong/traps + time-not-important
+  // 1. Prompt with pasted sourceText enforces verbatim copy + typo-fix only + 1s/5s silent quiz + 1-right/3-wrong/traps + unconstrained reference time (even when 0 passed)
   const pastedPrompt = buildEnglishReelsWebAiPrompt({
     sourceText: 'Q1. 昨日、駅で友達（　）会いました。\nA) が B) に C) を D) で',
     mode: 'auto',
@@ -1413,22 +1417,27 @@ test('Từ Bài / Link silent-quiz workflow enforces 1s wait + 5s countdown + po
     durationMinutes: 0,
   });
   assert.match(pastedPrompt, /CHÉP NGUYÊN VĂN|CHỈ SỬA LỖI CHÍNH TẢ/i);
-  assert.match(pastedPrompt, /TIME \(THỜI LƯỢNG\) KHÔNG QUAN TRỌNG/i);
+  assert.doesNotMatch(pastedPrompt, /TIME \(THỜI LƯỢNG\) KHÔNG QUAN TRỌNG/i);
+  assert.match(pastedPrompt, /MỐC THỜI LƯỢNG THAM KHẢO \(10 phút/i);
+  assert.match(pastedPrompt, /KHÔNG bị bó cứng bởi thời gian đó/i);
   assert.match(pastedPrompt, /"silentQuestion": true/);
   assert.match(pastedPrompt, /"questionWaitSec": 1/);
-  assert.match(pastedPrompt, /3 ĐÁP ÁN CÒN LẠI SAI|3 phương án sai còn lại/i);
-  assert.match(pastedPrompt, /CHỈ nói ngắn gọn hôm nay học nội dung gì/i);
+  assert.match(pastedPrompt, /3 đáp án còn lại sai/i);
+  assert.match(pastedPrompt, /CHỈ NÓI LÀM NHỮNG DẠNG ĐỀ NÀO & MẤY CÂU/i);
+  assert.match(pastedPrompt, /CHỈ NÓI HÔM NAY ĐÃ HỌC ĐƯỢC GÌ/i);
 
-  // 2. Prompt with empty sourceText emphasizes short reading (1-3 sentences) + grammar/vocab MCQs
+  // 2. Prompt with empty sourceText + random focus emphasizes short reading (1-3 sentences) + vocab/grammar/sentence-order MCQs
   const emptyPrompt = buildEnglishReelsWebAiPrompt({
     sourceText: '',
     mode: 'auto',
+    quizFocus: 'random',
     targetLang: 'Tiếng Việt',
     learningLanguage: 'ja',
     level: 'N5',
+    durationMinutes: 10,
   });
   assert.match(emptyPrompt, /BÀI ĐỌC NGẮN.*1–3 câu/is);
-  assert.match(emptyPrompt, /trắc nghiệm Ngữ pháp, Từ vựng/i);
+  assert.match(emptyPrompt, /Trắc nghiệm Từ vựng.*Trắc nghiệm Ngữ pháp.*Sắp xếp 4 từ/is);
 
   // 3. Parse AI JSON with silentQuestion and verify getQuizCardSpeechParts + reelCardsToLessonProject timeline
   const parsed = parseEnglishReelsAiJson(
@@ -1569,6 +1578,311 @@ test('Từ Bài / Link silent-quiz workflow enforces 1s wait + 5s countdown + po
     assert.ok((qc.explanationSpeech || '').length > 20);
   }
 });
+
+test('Từ Bài / Link quiz focus options, sentence-order prompt rule, 2-item stage strip, and non-overlapping 9:16 + 16:9 quiz layouts', () => {
+  // 1. Focus options contain random + core quiz types and ZERO no-quiz options
+  assert.ok(SOURCE_QUIZ_FOCUS_OPTIONS.some((o) => o.id === 'random'));
+  assert.ok(SOURCE_QUIZ_FOCUS_OPTIONS.some((o) => o.id === 'sentence-order'));
+  assert.ok(SOURCE_QUIZ_FOCUS_OPTIONS.some((o) => o.id === 'vocab-mcq'));
+  assert.ok(SOURCE_QUIZ_FOCUS_OPTIONS.some((o) => o.id === 'grammar-mcq'));
+  assert.equal(SOURCE_QUIZ_FOCUS_OPTIONS.length, 6);
+
+  // 2. Sentence-ordering prompt explicitly instructs NOT explaining 3 wrong options and explains positions 1->2->3->4
+  const orderPrompt = buildEnglishReelsWebAiPrompt({
+    sourceText: '',
+    mode: 'quiz',
+    quizFocus: 'sentence-order',
+    targetLang: 'Tiếng Việt',
+    learningLanguage: 'ja',
+    level: 'N4',
+    durationMinutes: 10,
+  });
+  assert.match(orderPrompt, /KHÔNG giải thích tại sao 3 phương án kia sai|KHÔNG nói tại sao 3 phương án kia sai/i);
+  assert.match(orderPrompt, /Vị trí 1.*Vị trí 2.*Vị trí 3.*Vị trí 4/i);
+
+  // 3. Quiz starter & parsed project: 2-item reel-stage strip, no duplicate answer cards, large quiz-options layout
+  const orderStarter = buildStarterLessonForLanguage('ja', 'Tiếng Việt', 'N4', {
+    creationMode: 'source',
+    quizFocus: 'sentence-order',
+  });
+  const quizCards = orderStarter.cards.filter((c) => c.type === 'quiz');
+  assert.ok(quizCards.length >= 1);
+  assert.equal(detectQuizCategoryLabel(quizCards[0], 'vi'), 'Sắp xếp câu');
+
+  const proj = reelCardsToLessonProject(orderStarter.cards, {
+    title: orderStarter.title,
+    targetLang: 'Tiếng Việt',
+    learningLanguage: 'ja',
+    compositionId: 'story-scenes',
+  });
+
+  // Duplicate / redundant answer components are completely removed
+  assert.equal(proj.elements.some((e) => e.id.startsWith('reel-q-ans-prop-')), false);
+  assert.equal(proj.elements.some((e) => e.id.startsWith('reel-q-ask-prop-')), false);
+  assert.equal(proj.elements.some((e) => e.id.startsWith('reel-qcard-post-')), false);
+
+  const stageStrip = proj.elements.find((e) => e.id === 'reel-stage-1');
+  assert.ok(stageStrip && stageStrip.props.kind === 'comparison-strip');
+  assert.equal(stageStrip.props.singleRow, true);
+  assert.equal(stageStrip.props.items.length, 2);
+  assert.equal(stageStrip.props.items[0].label, 'Sắp xếp câu');
+  assert.match(stageStrip.props.items[1].label, /^Câu 1 \/ \d+$/);
+
+  const qCard = proj.elements.find((e) => e.id === 'reel-qcard-1');
+  const qOpts = proj.elements.find((e) => e.id === 'reel-quiz-opts-1');
+  assert.ok(qCard && qCard.props.kind === 'sentence-card');
+  assert.ok(qOpts && qOpts.props.kind === 'comparison-strip');
+  assert.equal(qOpts.props.layoutStyle, 'quiz-options');
+  assert.equal(qCard.startTime, stageStrip.startTime);
+  assert.equal(qCard.endTime, stageStrip.endTime);
+  assert.equal(qOpts.startTime, stageStrip.startTime);
+  assert.equal(qOpts.endTime, stageStrip.endTime);
+
+  // 4. Verify zero overlaps across 9:16 (1080x1920) & 16:9 (1920x1080) during question & reveal timestamps
+  //    for BOTH regular sentence-order/MCQ AND reading-quiz (with contextExcerpt)
+  const readingStarter = buildStarterLessonForLanguage('ja', 'Tiếng Việt', 'N4', {
+    creationMode: 'source',
+    quizFocus: 'reading-quiz',
+  });
+  const compositions = ['story-scenes', 'cartoon-host'] as const;
+  const aspects = [
+    { ratio: '9:16' as const, w: 1080, h: 1920, label: '9:16' },
+    { ratio: '16:9' as const, w: 1920, h: 1080, label: '16:9' },
+  ] as const;
+
+  for (const starterSample of [
+    { name: 'sentence-order', cards: orderStarter.cards },
+    { name: 'reading-quiz', cards: readingStarter.cards },
+  ]) {
+    for (const comp of compositions) {
+      const compProj = reelCardsToLessonProject(starterSample.cards, {
+        title: 'Chọn đúng trợ từ chỉ nơi gặp gỡ? | 初中級者向け (日本語 N4)',
+        targetLang: 'Tiếng Việt',
+        learningLanguage: 'ja',
+        compositionId: comp,
+      });
+      const sampleStageStrip = compProj.elements.find((e) => e.id === 'reel-stage-1')!;
+      const firstQuizStart = sampleStageStrip.startTime;
+      const checkTimes = [firstQuizStart + 2.2, firstQuizStart + 7.5];
+
+      for (const aspect of aspects) {
+        for (const t of checkTimes) {
+          const titleBox = resolveLessonTitleBox(compProj, aspect.ratio, t);
+          const resolvedMap = resolveElementLayoutForAspect(
+            compProj.elements,
+            t,
+            aspect.ratio,
+            undefined,
+            comp,
+            titleBox,
+          );
+
+          // Ensure top stage strip clears wrapped lesson title box whenever their horizontal spans overlap
+          if (titleBox) {
+            const stripLayout = resolvedMap.get('reel-stage-1')!;
+            const stripHalf = estimateElementHalfExtents(sampleStageStrip);
+            const sScale = stripLayout.scale || 1;
+            const stripLeft = stripLayout.x - stripHalf.halfW * sScale;
+            const stripRight = stripLayout.x + stripHalf.halfW * sScale;
+            const titleLeft = titleBox.x - titleBox.width / 2;
+            const titleRight = titleBox.x + titleBox.width / 2;
+            const horizOverlap = stripRight > titleLeft && stripLeft < titleRight;
+            if (horizOverlap) {
+              const stripTop = stripLayout.y - stripHalf.halfH * sScale;
+              const titleBottom = titleBox.y + titleBox.height / 2;
+              assert.ok(
+                stripTop >= titleBottom - 4,
+                `${starterSample.name} ${comp} ${aspect.label}: stage strip top (${stripTop}) overlapped title bottom (${titleBottom})`,
+              );
+            }
+          }
+
+          const overlaps = detectActiveStageOverlaps(compProj.elements, resolvedMap, t, titleBox);
+          assert.equal(
+            overlaps.length,
+            0,
+            `${starterSample.name} ${comp} ${aspect.label} @t=${t.toFixed(1)}s had overlaps: ${JSON.stringify(overlaps)}`,
+          );
+        }
+      }
+    }
+  }
+});
+
+test('dense N1 reading quiz enlarges full-width components, drops redundant translation/pills/chrome, omits host when cramped, and keeps intro concise', () => {
+  // 1. cardLeavesRoomForIllustration distinguishes compact vs dense cards
+  assert.equal(cardLeavesRoomForIllustration({ type: 'intro', content: 'Hôm nay làm 5 câu Đọc hiểu.' }), true);
+  assert.equal(cardLeavesRoomForIllustration({ type: 'outro', content: 'Tổng kết bài học.' }), true);
+  assert.equal(
+    cardLeavesRoomForIllustration({
+      type: 'quiz',
+      content: '正しい助詞はどれですか。',
+      options: ['に', 'で', 'へ', 'を'],
+    }),
+    true,
+  );
+  assert.equal(
+    cardLeavesRoomForIllustration({
+      type: 'quiz',
+      content: '筆者の主張として最も適切なものはどれか。',
+      contextExcerpt:
+        '在宅勤務は通勤時間の削減など多くの利点がある一方で、業務負担の偏りが見えにくくなる盲点がある。',
+      options: [
+        '通勤時間が削減される以上、負担の偏りを問題にする必要はない。',
+        '各家庭の事情を各自で調整することこそ、最善の方法だ。',
+        '在宅勤務の利点を活かしつつ負担の偏りを防ぐには、組織全体で業務配分を見直す必要がある。',
+        '育児や介護を担う者は、在宅勤務を利用しない方がよい。',
+      ],
+    }),
+    false,
+  );
+
+  // 2. Concise Intro & non-translated quiz rules in rule-based, starter & prompt builders
+  const rb = buildReelCardsRuleBased(
+    `在宅勤務の利点を活かしつつ負担の偏りを防ぐには、組織全体で業務配分を見直す必要がある。
+Q1. 筆者の主張として最も適切なものはどれか。
+A) 通勤時間が削減される以上、問題にする必要はない。
+B) 各家庭の事情を各自で調整することこそ最善の方法だ。
+C) 在宅勤務の利点を活かしつつ、組織全体で業務配分を見直す必要がある。
+D) 在宅勤務を利用しないことで仕事と生活の均衡を保つべきだ。
+Answer: C`,
+    { mode: 'reading', targetLang: 'vi', learningLanguage: 'ja', silentQuiz: true },
+  );
+  const rbIntro = rb.cards.find((c) => c.type === 'intro')!;
+  assert.ok(rbIntro);
+  assert.match(rbIntro.content, /1 câu/);
+  assert.doesNotMatch(rbIntro.content, /Tóm tắt/i);
+  const rbQuiz = rb.cards.find((c) => c.type === 'quiz')!;
+  assert.ok(rbQuiz);
+  assert.equal(rbQuiz.translation, undefined);
+
+  const starterReading = buildStarterLessonForLanguage('ja', 'Tiếng Việt', 'N1', {
+    creationMode: 'source',
+    quizFocus: 'reading-quiz',
+  });
+  const starterIntro = starterReading.cards.find((c) => c.type === 'intro')!;
+  assert.equal(starterIntro.translation, undefined);
+  assert.ok(starterIntro.content.length <= 90, `Intro too verbose: ${starterIntro.content}`);
+  const starterQuiz = starterReading.cards.find((c) => c.type === 'quiz')!;
+  assert.equal(starterQuiz.translation, undefined);
+
+  const sourcePrompt = buildEnglishReelsWebAiPrompt({
+    sourceText: 'Sample text',
+    mode: 'reading',
+    quizFocus: 'reading-quiz',
+    targetLang: 'Tiếng Việt',
+    learningLanguage: 'ja',
+    level: 'N1',
+  });
+  assert.match(sourcePrompt, /KHÔNG giải thích chi tiết nội dung hay tóm tắt bài đọc/);
+  assert.match(sourcePrompt, /CÂU HỎI QUIZ KHÔNG CẦN DỊCH/);
+
+  // 3. Parse pasted AI N1 JSON (even if it contains spurious quiz translation) and build project with cartoon-host
+  const pastedN1Json = JSON.stringify({
+    title: '在宅勤務の盲点とは？負担の偏りを見抜けるか | 日本語上級者向け (N1)',
+    cards: [
+      {
+        type: 'intro',
+        badge: 'INTRO',
+        title: 'Đọc hiểu N1',
+        content: 'Hôm nay chúng ta sẽ cùng làm 1 câu Đọc hiểu.',
+        explanationSpeech: 'Hôm nay chúng ta sẽ cùng làm 1 câu Đọc hiểu.',
+      },
+      {
+        type: 'quiz',
+        quizCategory: 'Đọc hiểu',
+        badge: 'QUIZ',
+        title: 'Câu 1',
+        contextExcerpt:
+          '在宅勤務は柔軟な働き方として導入される例が増えたが、業務が見えにくい環境では一部に負荷が偏りやすい。在宅勤務の利点を活かしつつ負担の偏りを防ぐには、個人の努力だけに頼らず、組織全体で業務配分を見直す仕組みが欠かせない。',
+        content: '筆者の主張として最も適切なものはどれか。',
+        translation: 'Which statement best captures the author’s main argument?',
+        options: [
+          '通勤時間が削減される以上、在宅勤務に伴う負担の偏りを問題にする必要はない。',
+          '業務負荷の判断を各人の裁量に委ねることこそ、負担の偏りを解消する最も有効な方法だ。',
+          '在宅勤務の利点を活かしつつ負担の偏りを防ぐには、組織全体で業務配分を見直す必要がある。',
+          '育児や介護を担う者は、在宅勤務を利用しないことで仕事と生活の均衡を保つべきだ。',
+        ],
+        answerIndex: 2,
+        silentQuestion: true,
+        questionWaitSec: 1,
+        explanationSpeech:
+          'Đáp án đúng là C. Tác giả nhấn mạnh cần rà soát lại phân bổ công việc trong toàn tổ chức.',
+      },
+      {
+        type: 'outro',
+        badge: 'OUTRO',
+        title: 'Tổng kết',
+        content: 'Bạn vừa hoàn thành 1 câu Đọc hiểu N1!',
+        explanationSpeech: 'Bạn vừa hoàn thành 1 câu Đọc hiểu N1!',
+      },
+    ],
+  });
+
+  const parsed = parseEnglishReelsAiJson(pastedN1Json);
+  assert.equal(parsed.cards.length, 3);
+  assert.equal(parsed.cards[1].translation, undefined, 'Quiz translation should be stripped');
+
+  const proj = reelCardsToLessonProject(parsed.cards, {
+    title: parsed.title,
+    targetLang: 'English',
+    learningLanguage: 'ja',
+    compositionId: 'cartoon-host',
+    aspectRatio: '9:16',
+  });
+
+  // Cartoon-host present on Intro & Outro, OMITTED during cramped Reading Quiz card
+  const hostEls = proj.elements.filter(
+    (e) => e.props.kind === 'illustration-prop' && e.props.variant === 'cartoon-host',
+  );
+  assert.equal(hostEls.length, 2, `Expected intro & outro host segments, got ${hostEls.length}`);
+  const qCardEl = proj.elements.find((e) => e.id === 'reel-qcard-1')!;
+  assert.ok(qCardEl);
+  for (const h of hostEls) {
+    const overlapsQuizTime = h.startTime < qCardEl.endTime - 0.05 && h.endTime > qCardEl.startTime + 0.05;
+    assert.equal(overlapsQuizTime, false, `Cartoon host ${h.id} should not appear during dense reading quiz`);
+  }
+
+  // No ✓ CORRECT: C pill, no countdown-meter on dense reading quiz, no question subtext, no Correct Answer pill
+  assert.equal(proj.elements.find((e) => e.id === 'reel-q-pill-ans-1'), undefined);
+  assert.equal(
+    proj.elements.filter((e) => e.id.startsWith('reel-q-countdown-meter-1-')).length,
+    0,
+  );
+  assert.equal((qCardEl.props as { subtext?: string }).subtext, undefined);
+  assert.ok(qCardEl.layout.width >= 960);
+
+  const contextEl = proj.elements.find((e) => e.id === 'reel-q-context-1')!;
+  assert.ok(contextEl);
+  assert.ok(contextEl.layout.width >= 960);
+  if (contextEl.props.kind === 'illustration-prop') {
+    assert.equal(contextEl.props.data?.title || '', '');
+    assert.equal(contextEl.props.data?.formula || '', '');
+  }
+
+  const optsEl = proj.elements.find((e) => e.id === 'reel-quiz-opts-1')!;
+  assert.ok(optsEl);
+  assert.ok(optsEl.layout.width >= 960);
+  assert.ok(optsEl.layout.scale >= 0.9, `Expected uncramped scale >= 0.9, got ${optsEl.layout.scale}`);
+  if (optsEl.props.kind === 'comparison-strip') {
+    for (const item of optsEl.props.items) {
+      assert.equal(item.sublabel, undefined, `Should not emit overlapping sublabel pill: ${item.sublabel}`);
+    }
+  }
+
+  // Zero overlaps in both 9:16 and 16:9 across countdown & reveal
+  const testTimes = [qCardEl.startTime + 2.2, qCardEl.endTime - 1.5];
+  for (const ratio of ['9:16', '16:9'] as const) {
+    for (const t of testTimes) {
+      const titleBox = resolveLessonTitleBox(proj, ratio, t);
+      const map = resolveElementLayoutForAspect(proj.elements, t, ratio, undefined, 'cartoon-host', titleBox);
+      const overlaps = detectActiveStageOverlaps(proj.elements, map, t, titleBox);
+      assert.equal(overlaps.length, 0, `${ratio} @t=${t.toFixed(1)}s had overlaps: ${JSON.stringify(overlaps)}`);
+    }
+  }
+});
+
+
 
 
 

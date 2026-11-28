@@ -103,6 +103,8 @@ import {
   reelCardsToLessonProject,
   isStarterSampleTitle,
   sanitizeTtsSpeech,
+  SOURCE_QUIZ_FOCUS_OPTIONS,
+  SourceQuizFocusId,
   STARTER_SAMPLE_TITLE_PREFIX,
 } from '../engine/englishReelsEngine';
 import { LAYOUT_COMPOSITIONS } from '../engine/illustrationLayouts';
@@ -448,9 +450,15 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     if (saved && valid.some((l) => l.id === saved)) return saved;
     return LEARNING_LANGUAGE_OPTIONS.find((l) => l.id === initLang)?.defaultLevel || valid[0]?.id || 'B1';
   });
-  const [sourceDurationMinutes, setSourceDurationMinutes] = useState<number>(
-    () => initialReelsSaved?.sourceDurationMinutes ?? 0,
-  );
+  const [sourceDurationMinutes, setSourceDurationMinutes] = useState<number>(() => {
+    const saved = initialReelsSaved?.sourceDurationMinutes;
+    return typeof saved === 'number' && Number.isFinite(saved) && saved > 0 ? saved : 10;
+  });
+  const [sourceQuizFocus, setSourceQuizFocus] = useState<SourceQuizFocusId>(() => {
+    const saved = initialReelsSaved?.sourceQuizFocus;
+    if (saved && SOURCE_QUIZ_FOCUS_OPTIONS.some((o) => o.id === saved)) return saved;
+    return 'random';
+  });
   const [creatorTopicHint, setCreatorTopicHint] = useState(
     () => initialReelsSaved?.creatorTopicHint || '',
   );
@@ -582,11 +590,16 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         initialReelsSaved?.sourceLevel ||
         LEARNING_LANGUAGE_OPTIONS.find((l) => l.id === initLang)?.defaultLevel ||
         'B1';
+      const initFocus: SourceQuizFocusId =
+        initialReelsSaved?.sourceQuizFocus &&
+        SOURCE_QUIZ_FOCUS_OPTIONS.some((o) => o.id === initialReelsSaved.sourceQuizFocus)
+          ? initialReelsSaved.sourceQuizFocus
+          : 'random';
       return buildStarterLessonForLanguage(
         initLang,
         initialModeSaved.targetLang || 'Tiếng Việt',
         initLvl,
-        { creationMode: initialCreationMode },
+        { creationMode: initialCreationMode, quizFocus: initFocus },
       ).cards;
     }
     return buildReelCardsRuleBased(textToBuild, {
@@ -594,7 +607,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       mode: initialModeSaved.mode || 'auto',
       targetLang: initialModeSaved.targetLang || 'Tiếng Việt',
       learningLanguage: initialReelsSaved?.sourceLearningLang || 'en',
-      includeQuiz: (initialModeSaved.includeQuizInPrompt || 'auto') !== 'none',
+      includeQuiz: initialCreationMode === 'source' ? true : (initialModeSaved.includeQuizInPrompt || 'auto') !== 'none',
       silentQuiz: initialCreationMode === 'source',
     }).cards;
   });
@@ -1025,8 +1038,13 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         setSourceLevel(nextSrcLvl);
       }
       if (typeof r.sourceDurationMinutes === 'number') {
-        setSourceDurationMinutes(r.sourceDurationMinutes);
+        setSourceDurationMinutes(r.sourceDurationMinutes > 0 ? r.sourceDurationMinutes : 10);
       }
+      const hydratedFocus: SourceQuizFocusId =
+        r.sourceQuizFocus && SOURCE_QUIZ_FOCUS_OPTIONS.some((o) => o.id === r.sourceQuizFocus)
+          ? r.sourceQuizFocus
+          : 'random';
+      setSourceQuizFocus(hydratedFocus);
       if (typeof r.creatorDurationMinutes === 'number') {
         setCreatorDurationMinutes(r.creatorDurationMinutes);
       }
@@ -1106,7 +1124,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       setMp4Resolution(m.mp4Resolution || DEFAULT_MP4_EXPORT_SETTINGS.resolution);
       setMp4Quality(m.mp4Quality || DEFAULT_MP4_EXPORT_SETTINGS.quality);
       setMp4Fps(m.mp4Fps || DEFAULT_MP4_EXPORT_SETTINGS.fps);
-      setIncludeQuizInPrompt(m.includeQuizInPrompt || 'auto');
+      setIncludeQuizInPrompt(hydratedMode === 'source' ? 'always' : (m.includeQuizInPrompt || 'auto'));
       setPreviewViewMode(m.previewViewMode || 'video');
       setLayoutOverridesByAspect(m.layoutOverridesByAspect || {});
       if (r.lessonTitle) setLessonTitle(r.lessonTitle);
@@ -1154,7 +1172,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           mode: m.mode || 'auto',
           targetLang: m.targetLang || 'Tiếng Việt',
           learningLanguage: r.sourceLearningLang || 'en',
-          includeQuiz: (m.includeQuizInPrompt || 'auto') !== 'none',
+          includeQuiz: hydratedMode === 'source' ? true : (m.includeQuizInPrompt || 'auto') !== 'none',
           silentQuiz: hydratedMode === 'source',
         });
         setCards(rebuilt.cards);
@@ -1166,7 +1184,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           srcLang,
           m.targetLang || 'Tiếng Việt',
           srcLvl,
-          { creationMode: 'source' },
+          { creationMode: 'source', quizFocus: hydratedFocus },
         );
         setCards(starter.cards);
         setActiveCardIdx(0);
@@ -1186,7 +1204,8 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       setReelCreationMode('source');
       setSourceLearningLang('en');
       setSourceLevel('B1');
-      setSourceDurationMinutes(0);
+      setSourceDurationMinutes(10);
+      setSourceQuizFocus('random');
       setCreatorTopicHint('');
       setCreatorFormat('auto');
       setCreatorLearningLang('en');
@@ -1204,7 +1223,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       setTranslationItemCount(6);
       setTranslationAutoItemCount(true);
       setTranslationIncludeNuance(true);
-      setIncludeQuizInPrompt('auto');
+      setIncludeQuizInPrompt('always');
       setMode('auto');
       setTargetLang('Tiếng Việt');
       setTtsProvider('auto');
@@ -1242,7 +1261,10 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       setPastedAiJson('');
       setSceneJsonOverride(null);
       setCards(
-        buildStarterLessonForLanguage('en', 'Tiếng Việt', 'B1', { creationMode: 'source' }).cards,
+        buildStarterLessonForLanguage('en', 'Tiếng Việt', 'B1', {
+          creationMode: 'source',
+          quizFocus: 'random',
+        }).cards,
       );
       setActiveCardIdx(0);
     };
@@ -1308,6 +1330,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         sourceLearningLang,
         sourceLevel,
         sourceDurationMinutes,
+        sourceQuizFocus,
         creatorTopicHint,
         creatorFormat,
         creatorLearningLang,
@@ -1337,6 +1360,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     sourceLearningLang,
     sourceLevel,
     sourceDurationMinutes,
+    sourceQuizFocus,
     creatorTopicHint,
     creatorFormat,
     creatorLearningLang,
@@ -1886,18 +1910,20 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
               sourceUrl: urlInput.trim() || undefined,
               title: lessonTitle,
               mode,
+              quizFocus: sourceQuizFocus,
               learningLanguage: sourceLearningLang,
               level: sourceLevel,
               targetLang,
               durationMinutes: sourceDurationMinutes,
               compositionId: selectedComposition,
-              includeQuiz: includeQuizInPrompt,
+              includeQuiz: 'always',
             }),
     [
       reelCreationMode,
       sourceLearningLang,
       sourceLevel,
       sourceDurationMinutes,
+      sourceQuizFocus,
       translationTopicHint,
       translationCustomLines,
       translationLearningLang,
@@ -1986,7 +2012,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           mode: result.detectedMode || 'auto',
           targetLang,
           learningLanguage: sourceLearningLang,
-          includeQuiz: includeQuizInPrompt !== 'none',
+          includeQuiz: reelCreationMode === 'source' ? true : includeQuizInPrompt !== 'none',
           silentQuiz: reelCreationMode === 'source',
         });
         setCards(built.cards);
@@ -2084,7 +2110,10 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         sourceLearningLang,
         targetLang,
         sourceLevel,
-        { creationMode: reelCreationMode === 'source' ? 'source' : undefined },
+        {
+          creationMode: reelCreationMode === 'source' ? 'source' : undefined,
+          quizFocus: sourceQuizFocus,
+        },
       );
       setCards(starter.cards);
       hasCustomCardsRef.current = false;
@@ -2109,7 +2138,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       mode,
       targetLang,
       learningLanguage: sourceLearningLang,
-      includeQuiz: includeQuizInPrompt !== 'none',
+      includeQuiz: reelCreationMode === 'source' ? true : includeQuizInPrompt !== 'none',
       silentQuiz: reelCreationMode === 'source',
     });
     if (built.title && !useManualTitle) {
@@ -2548,7 +2577,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         ? true
         : (persistedNext.enableDualTts ?? true);
 
-    setIncludeQuizInPrompt(nextIncludeQuiz);
+    setIncludeQuizInPrompt(nextMode === 'source' ? 'always' : nextIncludeQuiz);
     setTargetLang(nextTargetLang);
     setTtsProvider(nextProvider);
     setEnableLearningAudio(nextModeLearningAudio);
@@ -2632,6 +2661,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       setCards(
         buildStarterLessonForLanguage(sourceLearningLang, nextTargetLang, sourceLevel, {
           creationMode: 'source',
+          quizFocus: sourceQuizFocus,
         }).cards,
       );
     } else if (nextMode === 'creator') {
@@ -4257,7 +4287,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                         mode: ex.mode,
                         targetLang,
                         learningLanguage: sourceLearningLang,
-                        includeQuiz: includeQuizInPrompt !== 'none',
+                        includeQuiz: true,
                         silentQuiz: reelCreationMode === 'source',
                       });
                       setCards(built.cards);
@@ -4335,7 +4365,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                               nextLang,
                               targetLang,
                               nextLvl,
-                              { creationMode: 'source' },
+                              { creationMode: 'source', quizFocus: sourceQuizFocus },
                             );
                             setCards(starter.cards);
                           } else {
@@ -4345,7 +4375,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                               mode,
                               targetLang,
                               learningLanguage: nextLang,
-                              includeQuiz: includeQuizInPrompt !== 'none',
+                              includeQuiz: true,
                               silentQuiz: true,
                             });
                             setCards(built.cards);
@@ -4385,7 +4415,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                             sourceLearningLang,
                             targetLang,
                             nextLvl,
-                            { creationMode: 'source' },
+                            { creationMode: 'source', quizFocus: sourceQuizFocus },
                           );
                           setCards(starter.cards);
                           invalidateSynthesizedAudio();
@@ -4406,26 +4436,38 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                     </label>
                     <select
                       aria-label="Dạng bài trọng tâm & Quiz"
-                      value={`${mode}:${includeQuizInPrompt}`}
+                      value={sourceQuizFocus}
                       onChange={(e) => {
-                        const [nextMode, nextQuiz] = e.target.value.split(':');
-                        setMode((nextMode as ReelMode) || 'auto');
-                        setIncludeQuizInPrompt(
-                          (nextQuiz as 'auto' | 'always' | 'none') || 'auto',
-                        );
+                        const nextFocus = e.target.value as SourceQuizFocusId;
+                        const opt =
+                          SOURCE_QUIZ_FOCUS_OPTIONS.find((o) => o.id === nextFocus) ||
+                          SOURCE_QUIZ_FOCUS_OPTIONS[0];
+                        setSourceQuizFocus(opt.id);
+                        setMode(opt.mode);
+                        setIncludeQuizInPrompt('always');
+                        if (
+                          !pastedAiJson.trim() &&
+                          !sceneJsonOverride &&
+                          (!rawText.trim() || rawText.trim() === SAMPLE_ARTICLE_TEXT.trim())
+                        ) {
+                          const starter = buildStarterLessonForLanguage(
+                            sourceLearningLang,
+                            targetLang,
+                            sourceLevel,
+                            { creationMode: 'source', quizFocus: opt.id },
+                          );
+                          setCards(starter.cards);
+                          setActiveCardIdx(0);
+                          invalidateSynthesizedAudio();
+                        }
                       }}
                       className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg"
                     >
-                      <option value="auto:auto">Trắc nghiệm Ngữ pháp / Từ vựng &amp; Bài đọc ngắn (Tự động 5s)</option>
-                      <option value="quiz:always">Quiz tương tác 5s (Ngữ pháp / Từ vựng / Sắp xếp / Đọc ngắn)</option>
-                      <option value="auto:always">Tự động + Luôn kèm Quiz 5s cuối mỗi phần</option>
-                      <option value="reading:always">Đọc hiểu bài ngắn (1–3 câu) + Quiz 5s</option>
-                      <option value="vocab:always">Từ vựng &amp; Ngữ pháp + Luôn kèm Quiz 5s</option>
-                      <option value="reading:auto">Bài đọc ngắn (Reading + Quiz nếu có)</option>
-                      <option value="vocab:auto">Từ vựng / Ngữ pháp (Vocab + Quiz nếu có)</option>
-                      <option value="auto:none">Chỉ chép bài học (Không thêm Quiz)</option>
-                      <option value="reading:none">Đọc ngắn thuần (Không thêm Quiz)</option>
-                      <option value="vocab:none">Từ vựng thuần (Không Quiz)</option>
+                      {SOURCE_QUIZ_FOCUS_OPTIONS.map((opt) => (
+                        <option key={opt.id} value={opt.id}>
+                          {opt.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div>
@@ -4437,21 +4479,20 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                       value={String(sourceDurationMinutes)}
                       onChange={(e) => {
                         const val = Number(e.target.value);
-                        setSourceDurationMinutes(Number.isFinite(val) ? val : 0);
+                        setSourceDurationMinutes(Number.isFinite(val) && val > 0 ? val : 10);
                       }}
                       className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg tabular-nums"
                     >
-                      <option value="0">Ưu tiên chiều sâu câu hỏi &amp; giải thích (Time không quan trọng)</option>
-                      <option value="0.5">0.5 phút (tham khảo)</option>
-                      <option value="1">1 phút (tham khảo)</option>
-                      <option value="2">2 phút (tham khảo)</option>
-                      <option value="3">3 phút (tham khảo)</option>
-                      <option value="5">5 phút (tham khảo)</option>
-                      <option value="10">10 phút (tham khảo)</option>
-                      <option value="15">15 phút (tham khảo)</option>
-                      <option value="20">20 phút (tham khảo)</option>
-                      <option value="25">25 phút (tham khảo)</option>
-                      <option value="30">30 phút (tham khảo)</option>
+                      <option value="0.5">0.5 phút (tham khảo — AI tự do theo level)</option>
+                      <option value="1">1 phút (tham khảo — AI tự do theo level)</option>
+                      <option value="2">2 phút (tham khảo — AI tự do theo level)</option>
+                      <option value="3">3 phút (tham khảo — AI tự do theo level)</option>
+                      <option value="5">5 phút (tham khảo — AI tự do theo level)</option>
+                      <option value="10">10 phút (tham khảo — AI tự do theo level)</option>
+                      <option value="15">15 phút (tham khảo — AI tự do theo level)</option>
+                      <option value="20">20 phút (tham khảo — AI tự do theo level)</option>
+                      <option value="25">25 phút (tham khảo — AI tự do theo level)</option>
+                      <option value="30">30 phút (tham khảo — AI tự do theo level)</option>
                     </select>
                   </div>
                   <div>
@@ -4477,7 +4518,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                               sourceLearningLang,
                               nextLang,
                               sourceLevel,
-                              { creationMode: 'source' },
+                              { creationMode: 'source', quizFocus: sourceQuizFocus },
                             );
                             setCards(starter.cards);
                           } else {
@@ -4487,7 +4528,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                               mode,
                               targetLang: nextLang,
                               learningLanguage: sourceLearningLang,
-                              includeQuiz: includeQuizInPrompt !== 'none',
+                              includeQuiz: true,
                               silentQuiz: true,
                             });
                             setCards(built.cards);

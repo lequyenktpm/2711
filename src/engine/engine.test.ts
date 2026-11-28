@@ -4611,7 +4611,8 @@ test('AI prompt builders enforce knowledge depth and target duration as minimum 
     targetLang: 'vi',
     durationMinutes: 3,
   });
-  assert.ok(reelsSourcePrompt.includes('CHỈ ĐƯỢC DÀI HƠN, KHÔNG ĐƯỢC THẤP HƠN'));
+  assert.ok(reelsSourcePrompt.includes('KHÔNG bị bó cứng bởi thời gian đó'));
+  assert.ok(reelsSourcePrompt.includes('3 phút'));
 
   const creatorPrompt = buildAiCreatorWebAiPrompt({
     learningLanguage: 'en',

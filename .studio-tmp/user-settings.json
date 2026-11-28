@@ -39,7 +39,7 @@
     "inlineRate": 1,
     "inlineWhisperSync": true
   },
-  "updatedAt": 1795877848874,
+  "updatedAt": 1795882325743,
   "reels": {
     "reelCreationMode": "source",
     "creatorTopicHint": "",
@@ -48,7 +48,7 @@
     "creatorLevel": "N5",
     "creatorDurationMinutes": 30,
     "creatorItemCount": 60,
-    "lessonTitle": "Trợ từ は và が qua đoạn ngắn | 初中級者向け (日本語 N4)",
+    "lessonTitle": "在宅勤務の盲点とは？負担の偏りを見抜けるか | 日本語上級者向け（N1）",
     "rawText": "",
     "includeQuizInPrompt": "auto",
     "mode": "vocab",
@@ -87,7 +87,7 @@
     "translationThinkSec": 5,
     "translationRepeatCount": 2,
     "translationIncludeNuance": true,
-    "sourceDurationMinutes": 0,
+    "sourceDurationMinutes": 1,
     "subtitlePosition": "bottom",
     "subtitleSize": "md",
     "subtitleBoxStyle": "card",
@@ -95,16 +95,16 @@
     "learningScrimOpacity": 0.42,
     "byMode": {
       "source": {
-        "includeQuizInPrompt": "auto",
-        "mode": "reading",
-        "targetLang": "Tiếng Việt",
+        "includeQuizInPrompt": "always",
+        "mode": "quiz",
+        "targetLang": "English",
         "ttsProvider": "auto",
         "ttsVoice": "ja-JP-NanamiNeural",
         "enableDualTts": true,
         "splitAudioByRole": true,
         "explanationTtsVoice": "en-US-JennyNeural",
         "ttsRate": 1,
-        "reelsAspectRatio": "9:16",
+        "reelsAspectRatio": "16:9",
         "selectedTheme": "pastel-sunrise",
         "selectedComposition": "cartoon-host",
         "subtitlePosition": "bottom",
@@ -228,7 +228,8 @@
     "creatorAutoItemCount": true,
     "translationAutoItemCount": true,
     "sourceLearningLang": "ja",
-    "sourceLevel": "N5"
+    "sourceLevel": "N1",
+    "sourceQuizFocus": "reading-quiz"
   },
   "eduStudio": {
     "subTab": "align",

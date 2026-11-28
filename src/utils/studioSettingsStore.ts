@@ -10,6 +10,7 @@ import {
   LearningLanguageId,
   ReelCreationMode,
   ReelMode,
+  SourceQuizFocusId,
 } from '../engine/englishReelsEngine';
 import {
   ExportAspectRatioId,
@@ -98,6 +99,7 @@ export interface PersistedStudioSettings {
     sourceLearningLang?: LearningLanguageId;
     sourceLevel?: string;
     sourceDurationMinutes?: number;
+    sourceQuizFocus?: SourceQuizFocusId;
     creatorTopicHint?: string;
     creatorFormat?: CreatorFormatCategory;
     creatorLearningLang?: LearningLanguageId;
