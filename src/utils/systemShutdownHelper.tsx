@@ -104,7 +104,7 @@ export const ShutdownCountdownBanner: React.FC<{
       aria-modal="true"
       aria-label="Hẹn giờ tự tắt máy sau khi render"
       data-testid="shutdown-countdown-banner"
-      className="fixed bottom-4 right-4 z-50 max-w-md w-[calc(100vw-2rem)] rounded-2xl border border-amber-300 bg-white shadow-2xl p-4 space-y-3 text-xs text-slate-800"
+      className="fixed bottom-4 right-4 z-[70] max-w-md w-[calc(100vw-2rem)] rounded-2xl border border-amber-300 bg-white shadow-2xl p-4 space-y-3 text-xs text-slate-800"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">

@@ -13,6 +13,7 @@ import {
   buildEnglishReelsWebAiPrompt,
   buildReelCardsRuleBased,
   buildSpeakerVoiceMap,
+  buildStarterLessonForLanguage,
   buildTranslationChallengePrompt,
   CREATOR_FORMAT_OPTIONS,
   parseEnglishReelsAiJson,
@@ -1124,6 +1125,203 @@ test('podcast-duo, dialogue-stage & full-study-cards layouts render cleanly with
     assert.ok(!jaReelsPrompt.includes(leakedEn), `Reels JA+VI prompt leaked English "${leakedEn}"`);
   }
 });
+
+test('strict 2-language purity across stage components, zero dialogue/study-card truncation, and responsive 4-aspect bounds', () => {
+  const longJaLine1 =
+    '賛成です。加えて、入力した指示、参照資料、生成結果、修正履歴を必ずチーム全体で共有フォルダに保存しましょう。';
+  const longJaLine2 =
+    '根拠を後から追跡できれば、顧客への説明や社内監査で問題が起きてもすぐ検証できますね。';
+  const longVocab =
+    '修正履歴（しゅうせいりれき）: lịch sử chỉnh sửa để kiểm chứng thay đổi; 共有フォルダ: thư mục dùng chung nội bộ.';
+  const longGrammar =
+    '〜ておけば: làm sẵn từ trước để sau này có thể đối chiếu và xử lý nhanh khi phát sinh sự cố.';
+
+  const jaViParsed = parseEnglishReelsAiJson(
+    JSON.stringify({
+      title: '会議でAIの記録を残す？ | 中級者向け (日本語 N3)',
+      level: 'N3',
+      mode: 'podcast_duo',
+      cards: [
+        {
+          type: 'intro',
+          badge: 'PODCAST · N3',
+          title: 'Tranh luận dùng AI trong họp nhóm',
+          content: 'Nghe hội thoại giữa hai kỹ sư Nhật về cách lưu dấu vết kiểm chứng AI.',
+        },
+        {
+          type: 'dialogue',
+          speaker: 'Yuki',
+          speakerGender: 'female',
+          speakerRole: 'PM',
+          title: '提案：履歴保存',
+          content: longJaLine1,
+          translation: 'Tôi đồng ý. Ngoài ra hãy lưu cả chỉ dẫn, tài liệu tham chiếu và lịch sử sửa vào thư mục chung.',
+          vocabNotes: longVocab,
+          grammarNote: longGrammar,
+          explanation: 'Dùng trong cuộc họp dự án để thống nhất quy trình lưu trữ dấu vết AI minh bạch.',
+          ttsText: longJaLine1,
+        },
+        {
+          type: 'dialogue',
+          speaker: 'Ken',
+          speakerGender: 'male',
+          speakerRole: 'Lead',
+          title: '確認：後から追跡',
+          content: longJaLine2,
+          translation: 'Nếu truy vết được căn cứ sau này thì khi giải thích khách hàng hay kiểm toán đều xác minh ngay.',
+          ttsText: longJaLine2,
+        },
+        {
+          type: 'vocab',
+          title: '❌ AIに全部任せる vs ✅ 根拠を残す',
+          content: longJaLine1,
+          translation: 'Đừng giao phó hoàn toàn; hãy giữ lại căn cứ kiểm chứng.',
+          vocabNotes: longVocab,
+          grammarNote: longGrammar,
+          ttsText: longJaLine1,
+        },
+      ],
+    }),
+    { targetLang: 'Tiếng Việt' },
+  );
+  assert.ok(jaViParsed);
+
+  // 1. Strict 2-language purity (JA + VI must contain ZERO leaked English labels like PODCAST STUDIO / AVOID / NATURAL / ON MIC / Host)
+  for (const comp of ['full-study-cards', 'podcast-duo', 'dialogue-stage', 'spatial-contrast', 'dialogue-upgrade'] as const) {
+    const proj = reelCardsToLessonProject(jaViParsed.cards, {
+      title: jaViParsed.title,
+      compositionId: comp,
+      learningLanguage: 'ja',
+      targetLang: 'Tiếng Việt',
+    });
+    const textDump = JSON.stringify(proj.elements);
+    for (const leakedEn of ['PODCAST STUDIO', '● ON MIC', 'AVOID', 'NATURAL', 'Host A', 'Co-Host']) {
+      assert.ok(
+        !textDump.includes(leakedEn),
+        `JA+VI project (${comp}) leaked English label "${leakedEn}"`,
+      );
+    }
+  }
+
+  // 2. JA + Japanese self-explanation (targetLang = 'learning') must contain ZERO leaked Vietnamese labels ('Từ vựng', 'Ngữ pháp', 'Giải thích', 'Chi tiết')
+  const jaSelfStudy = reelCardsToLessonProject(jaViParsed.cards, {
+    title: jaViParsed.title,
+    compositionId: 'full-study-cards',
+    learningLanguage: 'ja',
+    targetLang: 'learning',
+  });
+  const selfDump = JSON.stringify(jaSelfStudy.elements);
+  for (const leakedVi of ['Từ vựng', 'Ngữ pháp', 'Giải thích', 'Chi tiết', 'NÊN TRÁNH', 'TỰ NHIÊN']) {
+    assert.ok(
+      !selfDump.includes(leakedVi),
+      `JA-only project leaked Vietnamese label "${leakedVi}"`,
+    );
+  }
+  assert.match(selfDump, /語彙|文法|解説/);
+
+  // 3. Zero mid-sentence ellipsis truncation in dialogue-stage (css-chat-thread) and full-study-cards
+  const dialogueProj = reelCardsToLessonProject(jaViParsed.cards, {
+    title: jaViParsed.title,
+    compositionId: 'dialogue-stage',
+    learningLanguage: 'ja',
+    targetLang: 'Tiếng Việt',
+  });
+  const threadProps = dialogueProj.elements
+    .map((e) => e.props)
+    .filter((p) => p.kind === 'illustration-prop' && p.variant === 'css-chat-thread');
+  assert.ok(threadProps.length > 0, 'Expected css-chat-thread prop in dialogue-stage');
+  const threadJson = JSON.stringify(threadProps);
+  assert.ok(threadJson.includes(longJaLine1), 'Expected full uncut line 1 in dialogue-stage');
+  assert.ok(threadJson.includes(longJaLine2), 'Expected full uncut line 2 in dialogue-stage');
+
+  // 4. Responsive full-study-cards across all 4 aspect ratios (9:16, 16:9, 1:1, 4:5) fits cleanly with zero overlaps
+  for (const aspect of ['9:16', '16:9', '1:1', '4:5'] as const) {
+    const studyProj = reelCardsToLessonProject(jaViParsed.cards, {
+      title: jaViParsed.title,
+      compositionId: 'full-study-cards',
+      aspectRatio: aspect,
+      learningLanguage: 'ja',
+      targetLang: 'Tiếng Việt',
+    });
+    const fullCardEl = studyProj.elements.find(
+      (e) => e.type === 'sentence-card' && e.props.kind === 'sentence-card' && (e.props.sections?.length || 0) >= 3,
+    );
+    assert.ok(fullCardEl, `Expected >=3 study sections on full-study-cards (${aspect})`);
+    if (fullCardEl?.props.kind === 'sentence-card') {
+      const joined = fullCardEl.props.sections?.map((s) => `${s.label}: ${s.text}`).join('\n') || '';
+      assert.ok(joined.includes(longVocab), `Expected full vocab note in ${aspect}`);
+      assert.ok(joined.includes(longGrammar), `Expected full grammar note in ${aspect}`);
+    }
+    const midTime = studyProj.cues[1] ? (studyProj.cues[1].start + studyProj.cues[1].end) / 2 : 3.5;
+    const resolved = resolveElementLayoutForAspect(
+      studyProj.elements,
+      midTime,
+      aspect,
+      studyProj.subtitleConfig,
+      studyProj.compositionId,
+    );
+    assert.equal(
+      detectActiveStageOverlaps(studyProj.elements, resolved, midTime).length,
+      0,
+      `Expected 0 stage overlaps on full-study-cards (${aspect})`,
+    );
+  }
+});
+
+test('starter lessons and outro bento/composition cards stay pure in target language when targetLang=learning', () => {
+  for (const lang of ['ja', 'zh', 'ko', 'fr', 'es'] as const) {
+    const starter = buildStarterLessonForLanguage(lang, 'learning');
+    const starterDump = JSON.stringify({ title: starter.title, cards: starter.cards });
+    for (const leakedViOrEn of [
+      'Hoàn thành bài học',
+      'Luyện đọc to',
+      'Từ vựng',
+      'Ngữ pháp',
+      'Tiếng Việt',
+      'Thử ngay',
+      'exciting / prize',
+      'be going to + V',
+      'Quiz Ready',
+      'PODCAST STUDIO',
+      'KEY TAKEAWAY',
+    ]) {
+      assert.ok(
+        !starterDump.includes(leakedViOrEn),
+        `Starter (${lang} self-mode) leaked "${leakedViOrEn}"`,
+      );
+    }
+
+    for (const comp of ['full-study-cards', 'podcast-duo', 'flow-steps', 'dialogue-upgrade'] as const) {
+      const proj = reelCardsToLessonProject(starter.cards, {
+        title: starter.title,
+        compositionId: comp,
+        learningLanguage: lang,
+        targetLang: 'learning',
+      });
+      const projDump = JSON.stringify(proj.elements);
+      for (const leaked of [
+        'Hoàn thành bài học',
+        'exciting / prize',
+        'be going to + V',
+        'Quiz Ready',
+        'Smart Upgrade',
+        'Key Point',
+        'Natural Use',
+        'PODCAST STUDIO',
+        '● ON MIC',
+        'Từ vựng',
+        'Ngữ pháp',
+      ]) {
+        assert.ok(
+          !projDump.includes(leaked),
+          `Starter project (${lang}, comp=${comp}, targetLang=learning) leaked "${leaked}"`,
+        );
+      }
+    }
+  }
+});
+
+
 
 
 

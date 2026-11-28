@@ -1,6 +1,7 @@
 import { buildSceneGenerationPrompt, PromptVideoStyle } from './aiPromptBuilder';
 import type { VectorPrimitive } from './customComponentTypes';
 import { normalizeCustomComponent } from './customComponentStore';
+import { getLocalizedStageChrome } from './illustrationLayouts';
 import { resolveProjectOverlaps } from './layoutSolver';
 import type { ExportAspectRatioId } from './mp4Config';
 import { formatAudienceLevelLabel } from './outputNaming';
@@ -350,7 +351,13 @@ export function inferLearningLangFromCards(
   if (perCardExplicit) return perCardExplicit;
 
   const targetSample = cards
-    .filter((c) => c.type === 'vocab' || c.type === 'quiz' || c.type === 'translation')
+    .filter(
+      (c) =>
+        c.type === 'vocab' ||
+        c.type === 'quiz' ||
+        c.type === 'translation' ||
+        c.type === 'transition',
+    )
     .map((c) => `${c.title || ''} ${c.content || ''} ${c.ttsText || ''}`)
     .join(' ')
     .trim();
@@ -504,6 +511,19 @@ export interface ReelLocaleStrings {
   lessonOverviewFormula: string;
   vocabPrefix: string;
   grammarPrefix: string;
+  vocabSectionLabel: string;
+  grammarSectionLabel: string;
+  explanationSectionLabel: string;
+  detailSectionLabel: string;
+  avoidStamp: string;
+  naturalStamp: string;
+  podcastLiveLabel: string;
+  podcastStudioLabel: string;
+  speakerLabelDefault: string;
+  hostPrefix: string;
+  coHostLabel: string;
+  onMicLabel: string;
+  conversationLabel: string;
   promptExampleBadge: string;
   promptExampleIntroContent: string;
   promptExampleTranslation: string;
@@ -566,6 +586,19 @@ export function getReelLocaleStrings(
       lessonOverviewFormula: "TODAY'S GOAL",
       vocabPrefix: 'Key Words:',
       grammarPrefix: 'Grammar:',
+      vocabSectionLabel: 'Vocabulary',
+      grammarSectionLabel: 'Grammar',
+      explanationSectionLabel: 'Explanation',
+      detailSectionLabel: 'Details',
+      avoidStamp: 'AVOID',
+      naturalStamp: 'NATURAL',
+      podcastLiveLabel: 'PODCAST · LIVE',
+      podcastStudioLabel: 'PODCAST STUDIO',
+      speakerLabelDefault: 'Speaker',
+      hostPrefix: 'Host',
+      coHostLabel: 'Co-Host',
+      onMicLabel: '● ON MIC',
+      conversationLabel: 'Conversation',
       promptExampleBadge: '<Badge bằng đúng learningLang>',
       promptExampleIntroContent: '<Mục tiêu bài học viết bằng đúng learningLang>',
       promptExampleTranslation: '<Tóm tắt lộ trình viết bằng đúng learningLang>',
@@ -618,6 +651,19 @@ export function getReelLocaleStrings(
       lessonOverviewFormula: '今日の目標',
       vocabPrefix: '重要語彙:',
       grammarPrefix: '文法:',
+      vocabSectionLabel: '語彙',
+      grammarSectionLabel: '文法',
+      explanationSectionLabel: '解説',
+      detailSectionLabel: '詳細',
+      avoidStamp: 'NG表現',
+      naturalStamp: '自然',
+      podcastLiveLabel: 'ポッドキャスト · 収録',
+      podcastStudioLabel: 'ポッドキャスト収録',
+      speakerLabelDefault: '話者',
+      hostPrefix: '司会',
+      coHostLabel: '対談相手',
+      onMicLabel: '● 発言中',
+      conversationLabel: '会話',
       promptExampleBadge: '今日のレッスン',
       promptExampleIntroContent: '今日の学習: サバイバル読解 & be going to の使い方',
       promptExampleTranslation: '構成: 1. 導入 → 2. 読解と重要語彙 → 3. クイズ5秒',
@@ -626,7 +672,7 @@ export function getReelLocaleStrings(
       promptExampleExplanation: '本文に live in the mountains for ten days と書かれています。',
       promptExampleOutroContent: '重要語彙と be going to を声に出して復習しよう！',
       promptExampleOutroTranslation: '毎日音読して定着させましょう！',
-      promptExampleOutroLabels: ['exciting / prize', 'be going to + V', 'クイズ完了'],
+      promptExampleOutroLabels: ['重要語彙', '表現ポイント', 'クイズ完了'],
       promptExampleStickyLabels: ['exciting = ワクワクする', 'programme = 番組'],
     };
   }
@@ -667,6 +713,19 @@ export function getReelLocaleStrings(
       lessonOverviewFormula: '今日目标',
       vocabPrefix: '重点词汇：',
       grammarPrefix: '语法要点：',
+      vocabSectionLabel: '词汇',
+      grammarSectionLabel: '语法',
+      explanationSectionLabel: '解析',
+      detailSectionLabel: '详情',
+      avoidStamp: '避免',
+      naturalStamp: '地道',
+      podcastLiveLabel: '播客 · 对话',
+      podcastStudioLabel: '播客录音室',
+      speakerLabelDefault: '说话人',
+      hostPrefix: '主持',
+      coHostLabel: '嘉宾',
+      onMicLabel: '● 发言中',
+      conversationLabel: '对话',
       promptExampleBadge: '今日课程',
       promptExampleIntroContent: '今日学习：用更地道的中文表达日常需求与礼貌用语',
       promptExampleTranslation: '流程：1. 导入 → 2. 核心表达与语境辨析 → 3. 课后总结',
@@ -716,6 +775,19 @@ export function getReelLocaleStrings(
       lessonOverviewFormula: '오늘의 목표',
       vocabPrefix: '핵심 어휘:',
       grammarPrefix: '문법 포인트:',
+      vocabSectionLabel: '어휘',
+      grammarSectionLabel: '문법',
+      explanationSectionLabel: '설명',
+      detailSectionLabel: '상세',
+      avoidStamp: '주의',
+      naturalStamp: '자연스러움',
+      podcastLiveLabel: '팟캐스트 · 녹음',
+      podcastStudioLabel: '팟캐스트 스튜디오',
+      speakerLabelDefault: '화자',
+      hostPrefix: '진행',
+      coHostLabel: '공동 진행',
+      onMicLabel: '● 발언 중',
+      conversationLabel: '대화',
       promptExampleBadge: '오늘의 레슨',
       promptExampleIntroContent: '오늘의 주제: 식당과 카페에서 쓰는 자연스러운 한국어 표현',
       promptExampleTranslation: '흐름: 1. 도입 → 2. 핵심 표현과 상황 설명 → 3. 마무리',
@@ -765,6 +837,19 @@ export function getReelLocaleStrings(
       lessonOverviewFormula: 'OBJECTIF DU JOUR',
       vocabPrefix: 'Mots clés :',
       grammarPrefix: 'Grammaire :',
+      vocabSectionLabel: 'Vocabulaire',
+      grammarSectionLabel: 'Grammaire',
+      explanationSectionLabel: 'Explication',
+      detailSectionLabel: 'Détails',
+      avoidStamp: 'À ÉVITER',
+      naturalStamp: 'NATUREL',
+      podcastLiveLabel: 'PODCAST · DIRECT',
+      podcastStudioLabel: 'STUDIO PODCAST',
+      speakerLabelDefault: 'Intervenant',
+      hostPrefix: 'Animateur',
+      coHostLabel: 'Co-animateur',
+      onMicLabel: '● EN ONDE',
+      conversationLabel: 'Dialogue',
       promptExampleBadge: 'LEÇON DU JOUR',
       promptExampleIntroContent: 'Expressions naturelles en français au quotidien',
       promptExampleTranslation: 'Plan : 1. Intro → 2. Nuances & exemples → 3. Bilan',
@@ -814,6 +899,19 @@ export function getReelLocaleStrings(
       lessonOverviewFormula: 'OBJETIVO DE HOY',
       vocabPrefix: 'Palabras clave:',
       grammarPrefix: 'Gramática:',
+      vocabSectionLabel: 'Vocabulario',
+      grammarSectionLabel: 'Gramática',
+      explanationSectionLabel: 'Explicación',
+      detailSectionLabel: 'Detalles',
+      avoidStamp: 'EVITAR',
+      naturalStamp: 'NATURAL',
+      podcastLiveLabel: 'PODCAST · EN VIVO',
+      podcastStudioLabel: 'ESTUDIO PODCAST',
+      speakerLabelDefault: 'Hablante',
+      hostPrefix: 'Anfitrión',
+      coHostLabel: 'Coanfitrión',
+      onMicLabel: '● AL AIRE',
+      conversationLabel: 'Diálogo',
       promptExampleBadge: 'LECCIÓN DE HOY',
       promptExampleIntroContent: 'Expresiones naturales en español para usar hoy mismo',
       promptExampleTranslation: 'Plan: 1. Intro → 2. Matices y ejemplos → 3. Resumen',
@@ -866,6 +964,19 @@ export function getReelLocaleStrings(
       lessonOverviewFormula: "TODAY'S GOAL",
       vocabPrefix: 'Key Words:',
       grammarPrefix: 'Grammar:',
+      vocabSectionLabel: 'Vocabulary',
+      grammarSectionLabel: 'Grammar',
+      explanationSectionLabel: 'Explanation',
+      detailSectionLabel: 'Details',
+      avoidStamp: 'AVOID',
+      naturalStamp: 'NATURAL',
+      podcastLiveLabel: 'PODCAST · LIVE',
+      podcastStudioLabel: 'PODCAST STUDIO',
+      speakerLabelDefault: 'Speaker',
+      hostPrefix: 'Host',
+      coHostLabel: 'Co-Host',
+      onMicLabel: '● ON MIC',
+      conversationLabel: 'Conversation',
       promptExampleBadge: "TODAY'S LESSON",
       promptExampleIntroContent: "Today's Goal: Outdoor survival story & be going to for plans",
       promptExampleTranslation: 'Plan: 1. Intro → 2. Reading & Key Words → 3. Interactive Quiz',
@@ -905,7 +1016,7 @@ export function getReelLocaleStrings(
     correctAnswerPill: (letter, opt) => `✓ ĐÁP ÁN ĐÚNG: ${letter}. ${opt}`,
     correctAnswerCardTitle: (letter, opt) => `Đáp án đúng: ${letter}. ${opt}`,
     correctBadge: 'ĐÁP ÁN ĐÚNG',
-    correctStamp: 'CORRECT!',
+    correctStamp: 'CHÍNH XÁC!',
     correctOptionSublabel: 'Đáp án đúng',
     contextPassageTitle: 'ĐOẠN VĂN BÀI ĐỌC',
     contextPassageUrl: 'https://english.practice/reading-context',
@@ -914,15 +1025,28 @@ export function getReelLocaleStrings(
     lessonOverviewFormula: 'MỤC TIÊU BÀI HỌC',
     vocabPrefix: 'Từ khó:',
     grammarPrefix: 'Ngữ pháp:',
+    vocabSectionLabel: 'Từ vựng',
+    grammarSectionLabel: 'Ngữ pháp',
+    explanationSectionLabel: 'Giải thích',
+    detailSectionLabel: 'Chi tiết',
+    avoidStamp: 'TRÁNH DÙNG',
+    naturalStamp: 'TỰ NHIÊN',
+    podcastLiveLabel: 'PODCAST · TRỰC TIẾP',
+    podcastStudioLabel: 'PHÒNG THU PODCAST',
+    speakerLabelDefault: 'Người nói',
+    hostPrefix: 'Người dẫn',
+    coHostLabel: 'Đồng dẫn',
+    onMicLabel: '● ĐANG NÓI',
+    conversationLabel: 'Hội thoại',
     promptExampleBadge: 'BÀI HỌC HÔM NAY',
     promptExampleIntroContent: 'Hôm nay học gì? Đọc hiểu về thử thách sinh tồn & cấu trúc be going to',
     promptExampleTranslation: 'Lộ trình: 1. Giới thiệu → 2. Đọc & Từ khó → 3. Quiz có đoạn văn đối chiếu',
     promptExampleVocabTranslation: 'Từ khó: exciting (thú vị) · programme (chương trình)\\nNgữ pháp: Hiện tại đơn kể nội dung phim/TV',
     promptExampleContextTitle: 'ĐOẠN VĂN ĐỐI CHIẾU',
     promptExampleExplanation: 'Đoạn văn nêu rõ: live in the mountains for ten days.',
-    promptExampleOutroContent: 'Review vocabulary & practice be going to!',
+    promptExampleOutroContent: 'Cùng ôn lại từ vựng & cấu trúc vừa học!',
     promptExampleOutroTranslation: 'Ôn lại từ khó & luyện đọc to mỗi ngày nhé!',
-    promptExampleOutroLabels: ['exciting / prize', 'be going to + V', 'Quiz Ready'],
+    promptExampleOutroLabels: ['Từ vựng trọng tâm', 'Cấu trúc câu', 'Sẵn sàng áp dụng'],
     promptExampleStickyLabels: ['exciting = thú vị', 'programme = chương trình'],
   };
 }
@@ -959,9 +1083,19 @@ const COMMON_GLOSSARY_MULTI: Array<{ re: RegExp; vi: string; en: string; ja: str
 export function extractVocabAndGrammarNote(
   sentence: string,
   targetLang = 'Tiếng Việt',
+  learningLang?: LearningLanguageId,
 ): { vocabNote?: string; grammarNote?: string } {
   const s = sentence.trim();
-  const locale = getReelLocaleStrings(targetLang);
+  const inferredLang =
+    learningLang ||
+    (/[\u3040-\u30ff]/.test(s)
+      ? 'ja'
+      : /[\uac00-\ud7af]/.test(s)
+        ? 'ko'
+        : /[\u4e00-\u9faf]/.test(s)
+          ? 'zh'
+          : 'en');
+  const locale = getReelLocaleStrings(targetLang, inferredLang);
   if (!s || locale.code === 'none') return {};
 
   const vocabHits: string[] = [];
@@ -1198,8 +1332,10 @@ function defaultVisualForCard(
   total: number,
   targetLang?: string,
   prevVariant?: IllustrationVariant | null,
+  learningLang?: LearningLanguageId,
 ): ReelCardVisualConfig {
-  const locale = getReelLocaleStrings(targetLang);
+  const resolvedLearningLang = learningLang || card.learningLang || inferLearningLangFromCards([card]);
+  const locale = getReelLocaleStrings(targetLang, resolvedLearningLang);
   if (card.visual?.variant || card.visual?.customPrimitives?.length) {
     const chosen = card.visual.variant
       ? pickNonRepeatingVariant(card.visual.variant, prevVariant, idx)
@@ -1272,11 +1408,8 @@ function defaultVisualForCard(
       prevVariant,
       idx,
     );
-    const shortTurnLine = card.content.length > 72 ? `${card.content.slice(0, 69)}…` : card.content;
-    const shortMeaning =
-      card.translation && card.translation.length > 56
-        ? `${card.translation.slice(0, 53)}…`
-        : card.translation || 'Natural conversation';
+    const shortTurnLine = card.content;
+    const shortMeaning = card.translation || locale.conversationLabel;
     return {
       variant: chosen,
       title: card.speakerRole ? `${card.speaker} · ${card.speakerRole}` : card.speaker,
@@ -1333,7 +1466,7 @@ function defaultVisualForCard(
       variant: pickNonRepeatingVariant(idx % 2 === 0 ? 'p168-grammar-formula' : 'css-grammar-equation', prevVariant, idx),
       title: card.title,
       subtitle: [card.phonetic, card.translation].filter(Boolean).join(' · ') || card.content,
-      formula: card.indexLabel || card.badge || 'KEY RULE',
+      formula: card.indexLabel || card.badge || locale.grammarSectionLabel,
       speechText: card.example || card.content,
       sceneIcon: 'book',
     };
@@ -1344,7 +1477,7 @@ function defaultVisualForCard(
       variant: pickNonRepeatingVariant('degree-scale', prevVariant, idx),
       title: card.title,
       subtitle: [card.phonetic, card.translation].filter(Boolean).join(' · ') || card.content,
-      labels: ['Basic', 'Better', 'Natural'],
+      labels: [locale.avoidStamp, locale.detailSectionLabel, locale.naturalStamp],
       value: 0.85,
       sceneIcon: 'sparkles',
     };
@@ -1386,7 +1519,7 @@ function defaultVisualForCard(
     return {
       variant: picked,
       title: card.title || card.content,
-      subtitle: [card.phonetic, card.translation].filter(Boolean).join(' · ') || 'Key Vocabulary',
+      subtitle: [card.phonetic, card.translation].filter(Boolean).join(' · ') || locale.vocabSectionLabel,
       speechText: card.example || card.content,
       highlightWord: card.title,
       sceneIcon: ctx.sceneIcon,
@@ -1420,10 +1553,10 @@ function defaultVisualForCard(
       prevVariant,
       idx,
     ),
-    title: card.title || `Lesson Part ${idx}/${Math.max(1, total - 1)}`,
+    title: card.title || `${locale.readingBadgePrefix} ${idx}/${Math.max(1, total - 1)}`,
     subtitle: card.translation || card.content,
     speechText: card.content,
-    labels: ['Listen', 'Understand', 'Speak'],
+    labels: locale.outroLabels,
     sceneIcon: 'book',
   };
 }
@@ -1437,7 +1570,6 @@ export function buildReelCardsRuleBased(
     includeQuiz?: boolean;
   },
 ): { title: string; mode: Exclude<ReelMode, 'auto'>; cards: ReelCard[] } {
-  const locale = getReelLocaleStrings(options?.targetLang);
   const normalizedRaw = String(rawText || '').replace(/\r\n/g, '\n').trim();
   const worksheet = cleanReadingWorksheetInput(normalizedRaw, options?.title);
   const cleaned = worksheet.bodyText || normalizedRaw;
@@ -1449,6 +1581,7 @@ export function buildReelCardsRuleBased(
   const detectedLang = inferLearningLangFromCards(
     [{ id: 'probe', type: 'vocab', badge: '', title: docTitle, content: cleaned, ttsText: cleaned }],
   );
+  const locale = getReelLocaleStrings(options?.targetLang, detectedLang);
   const allowQuiz = options?.includeQuiz !== false;
 
   const introSpeech =
@@ -1866,7 +1999,7 @@ export function buildReelCardsRuleBased(
     durationSec: estimateCardSpeechDuration(outroSpeech),
     visual: {
       variant: 'css-bento-stats',
-      title: 'Speak Fluently!',
+      title: locale.outroTitle,
       labels: locale.outroLabels,
       sceneIcon: 'sparkles',
     },
@@ -1875,7 +2008,7 @@ export function buildReelCardsRuleBased(
   // Ensure every card has a lively visual config
   const enrichedCards = cards.map((card, idx) => ({
     ...card,
-    visual: defaultVisualForCard(card, idx, cards.length, options?.targetLang),
+    visual: defaultVisualForCard(card, idx, cards.length, options?.targetLang, undefined, detectedLang),
   }));
 
   return { title: docTitle, mode, cards: enrichedCards };
@@ -4116,6 +4249,20 @@ export function buildTranslationCardsFromInput(params: {
 }
 
 export const STARTER_SAMPLE_TITLE_PREFIX = '【Thử ngay】';
+const STARTER_SAMPLE_PREFIXES = [
+  STARTER_SAMPLE_TITLE_PREFIX,
+  '【体験】',
+  '【试学】',
+  '【체험】',
+  '【Aperçu】',
+  '【Prueba】',
+  '【Sample】',
+];
+
+export function isStarterSampleTitle(title?: string): boolean {
+  const t = (title || '').trim();
+  return STARTER_SAMPLE_PREFIXES.some((p) => t.startsWith(p));
+}
 
 export function buildStarterLessonForLanguage(
   learningLang: LearningLanguageId,
@@ -4126,48 +4273,75 @@ export function buildStarterLessonForLanguage(
   const langMeta =
     LEARNING_LANGUAGE_OPTIONS.find((l) => l.id === learningLang) || LEARNING_LANGUAGE_OPTIONS[0];
   const chosenLevel = level || langMeta.defaultLevel;
+  const isEnExpl = locale.code === 'en' || locale.code === 'none';
 
   if (learningLang === 'zh') {
-    const title = `${STARTER_SAMPLE_TITLE_PREFIX} Mở lời tiếng Trung cho khéo (${chosenLevel})`;
+    const isSelf = locale.code === 'zh';
+    const title = isSelf
+      ? `【试学】这样开口说中文才地道（${chosenLevel}）`
+      : isEnExpl
+        ? `【Sample】Natural Chinese Openers (${chosenLevel})`
+        : `${STARTER_SAMPLE_TITLE_PREFIX} Mở lời tiếng Trung cho khéo (${chosenLevel})`;
     const cards: ReelCard[] = [
       {
         id: 'starter-zh-intro',
         type: 'intro',
-        badge: `${chosenLevel} TIẾNG TRUNG`,
-        kicker: `${chosenLevel} MANDARIN`,
+        badge: isSelf ? `${chosenLevel} 中文` : isEnExpl ? `${chosenLevel} MANDARIN` : `${chosenLevel} TIẾNG TRUNG`,
+        kicker: isSelf ? `${chosenLevel} 中文` : `${chosenLevel} MANDARIN`,
         title,
-        content: '4 mẫu câu tiếng Trung dùng ngay hàng ngày',
-        translation: locale.code === 'none' ? 'Practical daily Mandarin expressions' : 'Chào mừng bạn đến với bài học tiếng Trung thực tế',
-        ttsText: '今天我们来学习四个实用的中文表达。',
-        explanationSpeech:
-          locale.code === 'none'
-            ? 'Today we practice four essential Mandarin expressions.'
-            : 'Hôm nay chúng ta cùng học bốn mẫu câu tiếng Trung giao tiếp dùng được ngay hàng ngày.',
+        content: isSelf
+          ? '日常最常用的3句礼貌中文表达'
+          : isEnExpl
+            ? '3 polite Mandarin expressions for everyday life'
+            : '3 mẫu câu tiếng Trung dùng ngay hàng ngày',
+        translation: isSelf
+          ? locale.introVisualSubtitle
+          : isEnExpl
+            ? 'Practical daily Mandarin expressions'
+            : 'Chào mừng bạn đến với bài học tiếng Trung thực tế',
+        ttsText: '今天我们来学习三个实用的中文表达。',
+        explanationSpeech: isSelf
+          ? '今天我们来学习三个日常生活中非常自然的礼貌中文表达。'
+          : isEnExpl
+            ? 'Today we practice three essential Mandarin expressions.'
+            : 'Hôm nay chúng ta cùng học ba mẫu câu tiếng Trung giao tiếp dùng được ngay hàng ngày.',
         learningLang: 'zh',
         durationSec: 4.2,
         visual: {
           variant: 'bs-card-header',
           formula: chosenLevel,
-          title: '4 Mẫu Câu Tiếng Trung',
-          subtitle: 'Nghe · Đọc theo · Hiểu ngữ cảnh',
+          title: isSelf ? '3个高频礼貌表达' : isEnExpl ? '3 Essential Phrases' : '3 Mẫu Câu Tiếng Trung',
+          subtitle: isSelf ? '听懂语境 · 开口自然' : isEnExpl ? 'Listen · Understand · Speak' : 'Nghe · Đọc theo · Hiểu ngữ cảnh',
           sceneIcon: 'sparkles',
         },
       },
       {
         id: 'starter-zh-1',
         type: 'vocab',
-        badge: '01 / 04',
-        indexLabel: '01 / 04',
+        badge: '01 / 03',
+        indexLabel: '01 / 03',
         title: '不好意思',
         content: '不好意思，请问洗手间在哪里？',
         phonetic: 'bù hǎo yì si · qǐng wèn xǐ shǒu jiān zài nǎ lǐ',
-        translation:
-          locale.code === 'none'
+        translation: isSelf
+          ? '用于礼貌打扰别人、问路或请求帮忙时的开场白'
+          : isEnExpl
             ? 'Excuse me, where is the restroom?'
             : 'Xin lỗi, cho hỏi nhà vệ sinh ở đâu ạ?',
+        vocabNotes: isSelf
+          ? '不好意思：打扰别人前的礼貌开场'
+          : isEnExpl
+            ? '不好意思 = polite excuse me'
+            : '不好意思 = xin lỗi (mở lời lịch sự)',
+        grammarNote: isSelf
+          ? '请问 + 问题：比直接提问更客气'
+          : isEnExpl
+            ? '请问 + question = polite inquiry'
+            : '请问 + câu hỏi = hỏi lịch sự hơn',
         ttsText: '不好意思。不好意思，请问洗手间在哪里？',
-        explanationSpeech:
-          locale.code === 'none'
+        explanationSpeech: isSelf
+          ? '不好意思是最自然礼貌的开场白，在问路或请人帮忙前都可以用。'
+          : isEnExpl
             ? 'Use 不好意思 to politely get attention before asking a question.'
             : 'Dùng cụm 不好意思 khi muốn mở lời nhờ vả hoặc hỏi đường một cách lịch sự. Câu ví dụ nghĩa là: Xin lỗi, cho hỏi nhà vệ sinh ở đâu ạ?',
         learningLang: 'zh',
@@ -4175,8 +4349,8 @@ export function buildStarterLessonForLanguage(
         visual: {
           variant: 'css-magnifying-word',
           title: '不好意思',
-          subtitle: 'Mở lời lịch sự · Xin phép nhẹ nhàng',
-          labels: ['bù hǎo yì si', 'Hỏi đường & nhờ vả'],
+          subtitle: isSelf ? '礼貌开场 · 问路常用' : isEnExpl ? 'Polite opener for questions' : 'Mở lời lịch sự · Xin phép nhẹ nhàng',
+          labels: ['bù hǎo yì si', isSelf ? '礼貌开场' : isEnExpl ? 'Polite Opener' : 'Hỏi đường & nhờ vả'],
           highlightWord: '不好意思',
           sceneIcon: 'chat',
         },
@@ -4184,45 +4358,59 @@ export function buildStarterLessonForLanguage(
       {
         id: 'starter-zh-2',
         type: 'vocab',
-        badge: '02 / 04',
-        indexLabel: '02 / 04',
+        badge: '02 / 03',
+        indexLabel: '02 / 03',
         title: '麻烦您了',
         content: '麻烦您帮我拿一杯水。',
         phonetic: 'má fan nín bāng wǒ ná yì bēi shuǐ',
-        translation:
-          locale.code === 'none'
+        translation: isSelf
+          ? '请对方帮忙时表达感谢与体贴，语气柔和礼貌'
+          : isEnExpl
             ? 'Sorry to trouble you, please bring me a glass of water.'
             : 'Làm phiền anh chị lấy giúp tôi một cốc nước.',
+        vocabNotes: isSelf
+          ? '麻烦您了：向对方致谢并柔和请求'
+          : isEnExpl
+            ? '麻烦您了 = sorry to trouble you'
+            : '麻烦您了 = làm phiền bạn rồi',
+        grammarNote: isSelf
+          ? '麻烦您 + 帮我 + 动词：礼貌请求句式'
+          : isEnExpl
+            ? '麻烦您 + 帮我 + V = courteous request'
+            : '麻烦您 + 帮我 + V = nhờ vả nhẹ nhàng',
         ttsText: '麻烦您了。麻烦您帮我拿一杯水。',
-        explanationSpeech:
-          locale.code === 'none'
+        explanationSpeech: isSelf
+          ? '说麻烦您了可以让请求听起来更加客气，避免生硬下指令。'
+          : isEnExpl
             ? '麻烦您了 expresses warm politeness when asking someone for a favor.'
             : 'Cụm 麻烦您了 có nghĩa là làm phiền bạn rồi, rất hay dùng khi nhờ người khác giúp đỡ lịch sự.',
         learningLang: 'zh',
         durationSec: 5.2,
         visual: {
           variant: 'contrast-pair-cards',
-          title: 'Nhờ vả tự nhiên',
-          subtitle: 'Tránh ra lệnh trực tiếp',
-          labels: ['Cứng: 给我水', 'Lịch sự: 麻烦您了'],
+          title: isSelf ? '礼貌请求别人帮忙' : isEnExpl ? 'Natural Polite Requests' : 'Nhờ vả tự nhiên',
+          subtitle: isSelf ? '柔和表达更受欢迎' : isEnExpl ? 'Avoid sounding blunt' : 'Tránh ra lệnh trực tiếp',
+          labels: [isSelf ? '生硬：给我水' : isEnExpl ? 'Blunt: 给我水' : 'Cứng: 给我水', isSelf ? '礼貌：麻烦您了' : isEnExpl ? 'Polite: 麻烦您了' : 'Lịch sự: 麻烦您了'],
           sceneIcon: 'cup',
         },
       },
       {
         id: 'starter-zh-3',
         type: 'vocab',
-        badge: '03 / 04',
-        indexLabel: '03 / 04',
+        badge: '03 / 03',
+        indexLabel: '03 / 03',
         title: '没关系',
         content: '没关系，我们慢慢来。',
         phonetic: 'méi guān xi · wǒ men màn màn lái',
-        translation:
-          locale.code === 'none'
+        translation: isSelf
+          ? '回应他人道歉或缓解紧张气氛的温暖表达'
+          : isEnExpl
             ? 'No problem, let us take our time.'
             : 'Không sao đâu, chúng ta cứ từ từ làm.',
         ttsText: '没关系。没关系，我们慢慢来。',
-        explanationSpeech:
-          locale.code === 'none'
+        explanationSpeech: isSelf
+          ? '别人说抱歉或感到着急时，用没关系可以让对方放心。'
+          : isEnExpl
             ? '没关系 means it does not matter or no worries.'
             : 'Cụm 没关系 nghĩa là không sao đâu, dùng để trấn an người đối diện khi họ xin lỗi hoặc vội vàng.',
         learningLang: 'zh',
@@ -4230,29 +4418,34 @@ export function buildStarterLessonForLanguage(
         visual: {
           variant: 'css-sticky-note',
           title: '没关系',
-          subtitle: 'Không sao đâu · Trấn an nhẹ nhàng',
-          labels: ['méi guān xi', 'Phản hồi thân thiện'],
+          subtitle: isSelf ? '安抚对方 · 自然回应' : isEnExpl ? 'Reassuring reply' : 'Không sao đâu · Trấn an nhẹ nhàng',
+          labels: ['méi guān xi', isSelf ? '友好回应' : isEnExpl ? 'Warm Reply' : 'Phản hồi thân thiện'],
           sceneIcon: 'heart',
         },
       },
       {
         id: 'starter-zh-outro',
         type: 'outro',
-        badge: 'OUTRO',
-        title: 'Lưu lại & Luyện nói ngay',
-        content: 'Hãy luyện đọc to 3 mẫu câu này mỗi ngày!',
-        translation: locale.promptExampleOutroTranslation,
+        badge: locale.outroBadge,
+        title: locale.outroTitle,
+        content: isSelf
+          ? '每天大声跟读这3句地道中文！'
+          : isEnExpl
+            ? 'Practice these 3 phrases aloud every day!'
+            : 'Hãy luyện đọc to 3 mẫu câu này mỗi ngày!',
+        translation: locale.outroTranslation,
         ttsText: '记得收藏这节课，每天开口练习吧。',
-        explanationSpeech:
-          locale.code === 'none'
+        explanationSpeech: isSelf
+          ? '请收藏这节课，每天大声练习这些地道表达吧。'
+          : isEnExpl
             ? 'Save this lesson and practice speaking aloud every day!'
             : 'Hãy lưu lại bài học này và luyện đọc to mỗi ngày nhé!',
         learningLang: 'zh',
         durationSec: 3.6,
         visual: {
           variant: 'css-bento-stats',
-          title: 'Hoàn thành bài học!',
-          labels: locale.promptExampleOutroLabels,
+          title: locale.outroTitle,
+          labels: ['不好意思', '麻烦您了', '没关系'],
           sceneIcon: 'sparkles',
         },
       },
@@ -4261,7 +4454,12 @@ export function buildStarterLessonForLanguage(
   }
 
   if (learningLang === 'ja') {
-    const title = `${STARTER_SAMPLE_TITLE_PREFIX} 【このペースで言える？】Tiếng Nhật (${chosenLevel})`;
+    const isSelf = locale.code === 'ja';
+    const title = isSelf
+      ? `【体験】このペースで自然に言える？【日本語 ${chosenLevel}】`
+      : isEnExpl
+        ? `【Sample】Natural Japanese Phrases (${chosenLevel})`
+        : `${STARTER_SAMPLE_TITLE_PREFIX} 【このペースで言える？】Tiếng Nhật (${chosenLevel})`;
     const cards: ReelCard[] = [
       {
         id: 'starter-ja-intro',
@@ -4269,11 +4467,16 @@ export function buildStarterLessonForLanguage(
         badge: `JLPT ${chosenLevel}`,
         kicker: `JLPT ${chosenLevel}`,
         title,
-        content: '3 mẫu câu tiếng Nhật dùng ngay trong quán ăn & công sở',
+        content: isSelf
+          ? 'お店や職場でそのまま使える日本語の丁寧フレーズ'
+          : isEnExpl
+            ? 'Practical Japanese phrases for cafés and workplaces'
+            : '2 mẫu câu tiếng Nhật dùng ngay trong quán ăn & công sở',
         translation: locale.introVisualSubtitle,
         ttsText: '今日は毎日使える大切な日本語を学びましょう。',
-        explanationSpeech:
-          locale.code === 'none'
+        explanationSpeech: isSelf
+          ? '今日は、お店や日常会話ですぐに使える丁寧な日本語フレーズを一緒に練習しましょう。'
+          : isEnExpl
             ? 'Welcome to this practical Japanese mini lesson.'
             : 'Chào mừng bạn đến với bài học tiếng Nhật thực tế, gồm các mẫu câu giao tiếp dùng ngay hàng ngày.',
         learningLang: 'ja',
@@ -4281,23 +4484,38 @@ export function buildStarterLessonForLanguage(
         visual: {
           variant: 'bs-card-header',
           formula: chosenLevel,
-          title: '3 Mẫu Câu Tiếng Nhật',
-          subtitle: 'Nghe chuẩn · Hiểu ngay ngữ cảnh',
+          title: isSelf ? '自然な日本語フレーズ' : isEnExpl ? 'Practical Japanese' : 'Mẫu Câu Tiếng Nhật',
+          subtitle: isSelf ? '正しい音・自然な場面で練習' : isEnExpl ? 'Natural sound & context' : 'Nghe chuẩn · Hiểu ngay ngữ cảnh',
           sceneIcon: 'sparkles',
         },
       },
       {
         id: 'starter-ja-1',
         type: 'vocab',
-        badge: '01 / 03',
-        indexLabel: '01 / 03',
+        badge: '01 / 02',
+        indexLabel: '01 / 02',
         title: 'お願いします',
         content: 'お水をお願いします。',
         phonetic: 'おねがいします · onegaishimasu',
-        translation: locale.code === 'none' ? 'Water, please.' : 'Cho tôi một cốc nước ạ.',
+        translation: isSelf
+          ? '注文や依頼をするときに幅広く使える丁寧な表現'
+          : isEnExpl
+            ? 'Water, please.'
+            : 'Cho tôi một cốc nước ạ.',
+        vocabNotes: isSelf
+          ? 'お願いします：丁寧な注文・依頼の定番表現'
+          : isEnExpl
+            ? 'お願いします = polite please / request'
+            : 'お願いします = làm ơn / cho tôi (nhờ vả lịch sự)',
+        grammarNote: isSelf
+          ? '名詞 + を + お願いします：店での基本注文パターン'
+          : isEnExpl
+            ? 'Noun + を + お願いします = polite order pattern'
+            : 'Danh từ + を + お願いします = gọi món lịch sự',
         ttsText: 'お願いします。お水をお願いします。',
-        explanationSpeech:
-          locale.code === 'none'
+        explanationSpeech: isSelf
+          ? '「お願いします」は注文するときや、誰かに丁寧にお願いしたいときに必ず使える便利な表現です。'
+          : isEnExpl
             ? 'Use お願いします whenever ordering or making a polite request.'
             : 'Cụm từ お願いします dùng để gọi món hoặc nhờ vả lịch sự trong mọi tình huống.',
         learningLang: 'ja',
@@ -4305,8 +4523,8 @@ export function buildStarterLessonForLanguage(
         visual: {
           variant: 'css-magnifying-word',
           title: 'お願いします',
-          subtitle: 'Gọi món & nhờ vả lịch sự',
-          labels: ['onegaishimasu', 'Dùng hàng ngày'],
+          subtitle: isSelf ? '注文・依頼の丁寧な定番表現' : isEnExpl ? 'Polite orders & requests' : 'Gọi món & nhờ vả lịch sự',
+          labels: ['おねがいします', isSelf ? '毎日使える表現' : isEnExpl ? 'Everyday Polite Form' : 'Dùng hàng ngày'],
           highlightWord: 'お願いします',
           sceneIcon: 'cup',
         },
@@ -4314,15 +4532,30 @@ export function buildStarterLessonForLanguage(
       {
         id: 'starter-ja-2',
         type: 'vocab',
-        badge: '02 / 03',
-        indexLabel: '02 / 03',
+        badge: '02 / 02',
+        indexLabel: '02 / 02',
         title: 'すみません',
         content: 'すみません、駅はどこですか。',
-        phonetic: 'sumimasen · eki wa doko desu ka',
-        translation: locale.code === 'none' ? 'Excuse me, where is the station?' : 'Xin lỗi, nhà ga ở đâu vậy ạ?',
+        phonetic: 'すみません · sumimasen · eki wa doko desu ka',
+        translation: isSelf
+          ? '店員さんを呼ぶときや道を尋ねるときの自然な切り出し'
+          : isEnExpl
+            ? 'Excuse me, where is the station?'
+            : 'Xin lỗi, nhà ga ở đâu vậy ạ?',
+        vocabNotes: isSelf
+          ? 'すみません：謝罪・呼びかけ・感謝に使える万能表現'
+          : isEnExpl
+            ? 'すみません = excuse me / light apology'
+            : 'すみません = xin lỗi (gọi nhân viên / hỏi đường)',
+        grammarNote: isSelf
+          ? 'すみません、〜はどこですか：場所を聞く丁寧な疑問文'
+          : isEnExpl
+            ? 'Place + はどこですか = asking where a place is'
+            : 'Địa điểm + はどこですか = hỏi đường lịch sự',
         ttsText: 'すみません。すみません、駅はどこですか。',
-        explanationSpeech:
-          locale.code === 'none'
+        explanationSpeech: isSelf
+          ? '「すみません」は謝るときだけでなく、お店で店員さんを呼んだり道を尋ねたりするときの前置きにもよく使います。'
+          : isEnExpl
             ? 'すみません politely opens a conversation or apologizes lightly.'
             : 'Từ すみません vừa mang nghĩa xin lỗi nhẹ nhàng, vừa dùng để gọi nhân viên hoặc hỏi đường.',
         learningLang: 'ja',
@@ -4330,29 +4563,34 @@ export function buildStarterLessonForLanguage(
         visual: {
           variant: 'css-sticky-note',
           title: 'すみません',
-          subtitle: 'Xin lỗi · Mở lời hỏi đường',
-          labels: ['sumimasen', 'Giao tiếp cơ bản'],
+          subtitle: isSelf ? '呼びかけ・道を聞く前置き' : isEnExpl ? 'Calling staff & asking directions' : 'Xin lỗi · Mở lời hỏi đường',
+          labels: ['すみません', isSelf ? '会話の切り出し' : isEnExpl ? 'Polite Opener' : 'Giao tiếp cơ bản'],
           sceneIcon: 'map-pin',
         },
       },
       {
         id: 'starter-ja-outro',
         type: 'outro',
-        badge: 'OUTRO',
-        title: 'Lưu lại & Luyện nói ngay',
-        content: 'Luyện đọc to cùng giọng mẫu mỗi ngày!',
-        translation: locale.promptExampleOutroTranslation,
+        badge: locale.outroBadge,
+        title: locale.outroTitle,
+        content: isSelf
+          ? '学んだ表現を声に出して毎日練習しましょう！'
+          : isEnExpl
+            ? 'Read aloud with the model voice every day!'
+            : 'Luyện đọc to cùng giọng mẫu mỗi ngày!',
+        translation: locale.outroTranslation,
         ttsText: '今日学んだ表現をぜひ使ってみてください。',
-        explanationSpeech:
-          locale.code === 'none'
+        explanationSpeech: isSelf
+          ? '今日練習したフレーズを保存して、実際の会話でもぜひ声に出して使ってみてくださいね。'
+          : isEnExpl
             ? 'Save this lesson and review it again tomorrow!'
             : 'Hãy lưu lại bài học này và luyện đọc to mỗi ngày nhé!',
         learningLang: 'ja',
         durationSec: 3.6,
         visual: {
           variant: 'css-bento-stats',
-          title: 'Hoàn thành bài học!',
-          labels: locale.promptExampleOutroLabels,
+          title: locale.outroTitle,
+          labels: ['お願いします', 'すみません', locale.outroLabels[2]],
           sceneIcon: 'sparkles',
         },
       },
@@ -4361,18 +4599,28 @@ export function buildStarterLessonForLanguage(
   }
 
   if (learningLang === 'ko') {
-    const title = `${STARTER_SAMPLE_TITLE_PREFIX} Nói tiếng Hàn như bản xứ (${chosenLevel})`;
+    const isSelf = locale.code === 'ko';
+    const title = isSelf
+      ? `【체험】원어민처럼 자연스럽게 말하기 (${chosenLevel})`
+      : isEnExpl
+        ? `【Sample】Speak Korean Naturally (${chosenLevel})`
+        : `${STARTER_SAMPLE_TITLE_PREFIX} Nói tiếng Hàn như bản xứ (${chosenLevel})`;
     const cards: ReelCard[] = [
       {
         id: 'starter-ko-intro',
         type: 'intro',
         badge: chosenLevel,
         title,
-        content: '3 mẫu câu tiếng Hàn giao tiếp tự nhiên',
+        content: isSelf
+          ? '일상에서 바로 쓰는 자연스러운 한국어 표현'
+          : isEnExpl
+            ? 'Natural everyday Korean expressions'
+            : 'Mẫu câu tiếng Hàn giao tiếp tự nhiên',
         translation: locale.introVisualSubtitle,
         ttsText: '오늘은 매일 쓸 수 있는 핵심 한국어 표현을 배워볼게요.',
-        explanationSpeech:
-          locale.code === 'none'
+        explanationSpeech: isSelf
+          ? '오늘은 카페나 식당에서 바로 쓸 수 있는 자연스러운 한국어 표현을 연습해 볼게요.'
+          : isEnExpl
             ? 'Today we practice essential Korean expressions.'
             : 'Hôm nay chúng ta cùng học những mẫu câu tiếng Hàn dùng ngay trong đời sống.',
         learningLang: 'ko',
@@ -4380,23 +4628,28 @@ export function buildStarterLessonForLanguage(
         visual: {
           variant: 'bs-card-header',
           formula: chosenLevel,
-          title: '3 Mẫu Câu Tiếng Hàn',
-          subtitle: 'Phát âm chuẩn · Giải thích dễ hiểu',
+          title: isSelf ? '실전 한국어 표현' : isEnExpl ? 'Everyday Korean' : 'Mẫu Câu Tiếng Hàn',
+          subtitle: isSelf ? '자연스러운 발음과 상황 이해' : isEnExpl ? 'Clear sound & context' : 'Phát âm chuẩn · Giải thích dễ hiểu',
           sceneIcon: 'sparkles',
         },
       },
       {
         id: 'starter-ko-1',
         type: 'vocab',
-        badge: '01 / 02',
-        indexLabel: '01 / 02',
+        badge: '01 / 01',
+        indexLabel: '01 / 01',
         title: '잠시만요',
         content: '잠시만요, 메뉴판 좀 주시겠어요?',
         phonetic: 'jam-si-man-yo',
-        translation: locale.code === 'none' ? 'Excuse me, could I see the menu?' : 'Xin lỗi một chút, cho tôi xem thực đơn được không ạ?',
+        translation: isSelf
+          ? '직원을 정중하게 부르거나 양해를 구할 때 쓰는 표현'
+          : isEnExpl
+            ? 'Excuse me, could I see the menu?'
+            : 'Xin lỗi một chút, cho tôi xem thực đơn được không ạ?',
         ttsText: '잠시만요. 잠시만요, 메뉴판 좀 주시겠어요?',
-        explanationSpeech:
-          locale.code === 'none'
+        explanationSpeech: isSelf
+          ? '잠시만요는 식당이나 카페에서 직원을 정중하게 부를 때 아주 자연스럽게 쓰는 말입니다.'
+          : isEnExpl
             ? 'Use 잠시만요 to call a server politely.'
             : 'Cụm từ 잠시만요 dùng để gọi phục vụ hoặc xin chờ một lát cực kỳ tự nhiên.',
         learningLang: 'ko',
@@ -4404,8 +4657,8 @@ export function buildStarterLessonForLanguage(
         visual: {
           variant: 'css-magnifying-word',
           title: '잠시만요',
-          subtitle: 'Gọi nhân viên · Xin chờ chút',
-          labels: ['jam-si-man-yo', 'Nhà hàng & Cafe'],
+          subtitle: isSelf ? '정중한 호칭 · 양해 구하기' : isEnExpl ? 'Polite server call' : 'Gọi nhân viên · Xin chờ chút',
+          labels: ['jam-si-man-yo', isSelf ? '식당·카페 필수' : isEnExpl ? 'Café & Dining' : 'Nhà hàng & Cafe'],
           highlightWord: '잠시만요',
           sceneIcon: 'chat',
         },
@@ -4413,21 +4666,26 @@ export function buildStarterLessonForLanguage(
       {
         id: 'starter-ko-outro',
         type: 'outro',
-        badge: 'OUTRO',
-        title: 'Lưu lại & Luyện tập',
-        content: 'Hãy luyện nói to mỗi ngày!',
-        translation: locale.promptExampleOutroTranslation,
+        badge: locale.outroBadge,
+        title: locale.outroTitle,
+        content: isSelf
+          ? '매일 큰 소리로 따라 연습해 보세요!'
+          : isEnExpl
+            ? 'Practice speaking aloud every day!'
+            : 'Hãy luyện nói to mỗi ngày!',
+        translation: locale.outroTranslation,
         ttsText: '오늘 배운 표현을 저장하고 꼭 연습해 보세요.',
-        explanationSpeech:
-          locale.code === 'none'
+        explanationSpeech: isSelf
+          ? '오늘 배운 표현을 저장하고 매일 큰 소리로 연습해 보세요.'
+          : isEnExpl
             ? 'Save this video and practice every day!'
             : 'Hãy lưu lại bài học này và luyện đọc to mỗi ngày nhé!',
         learningLang: 'ko',
         durationSec: 3.5,
         visual: {
           variant: 'css-bento-stats',
-          title: 'Hoàn thành!',
-          labels: locale.promptExampleOutroLabels,
+          title: locale.outroTitle,
+          labels: ['잠시만요', locale.outroLabels[1], locale.outroLabels[2]],
           sceneIcon: 'sparkles',
         },
       },
@@ -4437,7 +4695,14 @@ export function buildStarterLessonForLanguage(
 
   if (learningLang === 'fr' || learningLang === 'es') {
     const isFr = learningLang === 'fr';
-    const title = `${STARTER_SAMPLE_TITLE_PREFIX} Mở lời ${isFr ? 'tiếng Pháp' : 'tiếng TBN'} cực khéo (${chosenLevel})`;
+    const isSelf = locale.code === learningLang;
+    const title = isSelf
+      ? isFr
+        ? `【Aperçu】Parler français naturellement (${chosenLevel})`
+        : `【Prueba】Hablar español con naturalidad (${chosenLevel})`
+      : isEnExpl
+        ? `【Sample】Polite ${isFr ? 'French' : 'Spanish'} Openers (${chosenLevel})`
+        : `${STARTER_SAMPLE_TITLE_PREFIX} Mở lời ${isFr ? 'tiếng Pháp' : 'tiếng TBN'} cực khéo (${chosenLevel})`;
     const cards: ReelCard[] = [
       {
         id: `starter-${learningLang}-intro`,
@@ -4449,8 +4714,11 @@ export function buildStarterLessonForLanguage(
         ttsText: isFr
           ? "Aujourd'hui, apprenons des expressions françaises naturelles."
           : 'Hoy vamos a aprender expresiones naturales en español.',
-        explanationSpeech:
-          locale.code === 'none'
+        explanationSpeech: isSelf
+          ? isFr
+            ? "Aujourd'hui, nous allons pratiquer des phrases naturelles et polies en français."
+            : 'Hoy practicamos expresiones naturales y corteses en español.'
+          : isEnExpl
             ? 'Let us learn natural everyday phrases.'
             : `Hôm nay chúng ta học mẫu câu giao tiếp ${isFr ? 'tiếng Pháp' : 'tiếng Tây Ban Nha'} tự nhiên.`,
         learningLang,
@@ -4458,22 +4726,47 @@ export function buildStarterLessonForLanguage(
         visual: {
           variant: 'bs-card-header',
           formula: chosenLevel,
-          title: isFr ? 'Tiếng Pháp Thực Tế' : 'Tiếng Tây Ban Nha Thực Tế',
-          subtitle: 'Nghe chuẩn · Giải thích rõ',
+          title: isSelf
+            ? isFr
+              ? 'Français du quotidien'
+              : 'Español cotidiano'
+            : isEnExpl
+              ? isFr
+                ? 'Practical French'
+                : 'Practical Spanish'
+              : isFr
+                ? 'Tiếng Pháp Thực Tế'
+                : 'Tiếng Tây Ban Nha Thực Tế',
+          subtitle: isSelf
+            ? isFr
+              ? 'Écoute claire · Contexte réel'
+              : 'Escucha clara · Uso real'
+            : isEnExpl
+              ? 'Clear audio · Real context'
+              : 'Nghe chuẩn · Giải thích rõ',
           sceneIcon: 'sparkles',
         },
       },
       {
         id: `starter-${learningLang}-1`,
         type: 'vocab',
-        badge: '01 / 02',
-        indexLabel: '01 / 02',
+        badge: '01 / 01',
+        indexLabel: '01 / 01',
         title: isFr ? "S'il vous plaît" : 'Por favor',
         content: isFr ? "Un café, s'il vous plaît." : 'Un café, por favor.',
-        translation: locale.code === 'none' ? 'A coffee, please.' : 'Cho tôi một ly cà phê ạ.',
+        translation: isSelf
+          ? isFr
+            ? 'Formule de politesse indispensable pour commander'
+            : 'Expresión indispensable para pedir con cortesía'
+          : isEnExpl
+            ? 'A coffee, please.'
+            : 'Cho tôi một ly cà phê ạ.',
         ttsText: isFr ? "S'il vous plaît. Un café, s'il vous plaît." : 'Por favor. Un café, por favor.',
-        explanationSpeech:
-          locale.code === 'none'
+        explanationSpeech: isSelf
+          ? isFr
+            ? "Ajoutez toujours s'il vous plaît lorsque vous commandez au café."
+            : 'Añade siempre por favor al pedir algo en una cafetería.'
+          : isEnExpl
             ? 'Always add please when ordering.'
             : 'Mẫu câu lịch sự kinh điển khi gọi đồ uống tại quán.',
         learningLang,
@@ -4481,29 +4774,47 @@ export function buildStarterLessonForLanguage(
         visual: {
           variant: 'css-magnifying-word',
           title: isFr ? "S'il vous plaît" : 'Por favor',
-          subtitle: 'Gọi món lịch sự',
-          labels: [isFr ? 'Lịch sự' : 'Tự nhiên', 'Quán cà phê'],
+          subtitle: isSelf
+            ? isFr
+              ? 'Politesse au café'
+              : 'Cortesía al pedir'
+            : isEnExpl
+              ? 'Polite café order'
+              : 'Gọi món lịch sự',
+          labels: [
+            isSelf ? (isFr ? 'Poli' : 'Cortés') : isEnExpl ? 'Polite' : isFr ? 'Lịch sự' : 'Tự nhiên',
+            isSelf ? (isFr ? 'Au café' : 'En el café') : isEnExpl ? 'At the café' : 'Quán cà phê',
+          ],
           sceneIcon: 'cup',
         },
       },
       {
         id: `starter-${learningLang}-outro`,
         type: 'outro',
-        badge: 'OUTRO',
-        title: 'Lưu lại & Luyện nói ngay',
-        content: 'Luyện đọc to mỗi ngày!',
-        translation: locale.promptExampleOutroTranslation,
+        badge: locale.outroBadge,
+        title: locale.outroTitle,
+        content: isSelf
+          ? isFr
+            ? 'Répétez à voix haute chaque jour !'
+            : '¡Practica en voz alta cada día!'
+          : isEnExpl
+            ? 'Practice aloud every day!'
+            : 'Luyện đọc to mỗi ngày!',
+        translation: locale.outroTranslation,
         ttsText: isFr ? 'Enregistrez cette leçon pour pratiquer.' : 'Guarda esta lección para practicar.',
-        explanationSpeech:
-          locale.code === 'none'
+        explanationSpeech: isSelf
+          ? isFr
+            ? 'Enregistrez cette leçon et répétez à voix haute chaque jour !'
+            : '¡Guarda esta lección y practica en voz alta todos los días!'
+          : isEnExpl
             ? 'Save this lesson and practice daily!'
             : 'Hãy lưu lại bài học này và luyện đọc to mỗi ngày nhé!',
         learningLang,
         durationSec: 3.4,
         visual: {
           variant: 'css-bento-stats',
-          title: 'Hoàn thành!',
-          labels: locale.promptExampleOutroLabels,
+          title: locale.outroTitle,
+          labels: [isFr ? "S'il vous plaît" : 'Por favor', locale.outroLabels[1], locale.outroLabels[2]],
           sceneIcon: 'sparkles',
         },
       },
@@ -4512,7 +4823,10 @@ export function buildStarterLessonForLanguage(
   }
 
   // English starter
-  const title = `${STARTER_SAMPLE_TITLE_PREFIX} Đừng dùng từ cũ nữa! (${chosenLevel})`;
+  const isSelfEn = locale.code === 'en' || locale.code === 'none';
+  const title = isSelfEn
+    ? `【Sample】Stop Using Basic Words (${chosenLevel})`
+    : `${STARTER_SAMPLE_TITLE_PREFIX} Đừng dùng từ cũ nữa! (${chosenLevel})`;
   const cards: ReelCard[] = [
     {
       id: 'starter-en-intro',
@@ -4522,35 +4836,33 @@ export function buildStarterLessonForLanguage(
       title,
       content: 'Stop using basic words — speak naturally at work & in daily life',
       translation: locale.introVisualSubtitle,
-      ttsText: 'Stop using the same basic words every day. Here are two smart upgrades.',
-      explanationSpeech:
-        locale.code === 'none'
-          ? 'Today we upgrade everyday words for clearer communication.'
-          : 'Hôm nay chúng ta nâng cấp cách diễn đạt tiếng Anh tự nhiên và chuyên nghiệp hơn.',
+      ttsText: 'Stop using the same basic words every day. Here is one smart upgrade.',
+      explanationSpeech: isSelfEn
+        ? 'Today we upgrade everyday words for clearer communication.'
+        : 'Hôm nay chúng ta nâng cấp cách diễn đạt tiếng Anh tự nhiên và chuyên nghiệp hơn.',
       learningLang: 'en',
       durationSec: 4.5,
       visual: {
         variant: 'bs-card-header',
         formula: chosenLevel,
         title: 'Smart Upgrades',
-        subtitle: 'Nghe chuẩn · Nói tự nhiên',
+        subtitle: isSelfEn ? 'Clear voice · Natural tone' : 'Nghe chuẩn · Nói tự nhiên',
         sceneIcon: 'sparkles',
       },
     },
     {
       id: 'starter-en-1',
       type: 'vocab',
-      badge: '01 / 02',
-      indexLabel: '01 / 02',
+      badge: '01 / 01',
+      indexLabel: '01 / 01',
       title: 'articulate',
       content: 'She is remarkably articulate during team meetings.',
       phonetic: '/ɑːrˈtɪk.jə.lət/',
-      translation: locale.code === 'none' ? 'able to express ideas clearly' : 'diễn đạt mạch lạc, rõ ràng',
+      translation: isSelfEn ? 'able to express ideas clearly' : 'diễn đạt mạch lạc, rõ ràng',
       ttsText: 'Number one: articulate. She is remarkably articulate during team meetings.',
-      explanationSpeech:
-        locale.code === 'none'
-          ? 'Articulate means speaking clearly and persuasively.'
-          : 'Từ vựng articulate nghĩa là diễn đạt mạch lạc và thuyết phục. Ví dụ: Cô ấy trình bày rất mạch lạc trong các buổi họp.',
+      explanationSpeech: isSelfEn
+        ? 'Articulate means speaking clearly and persuasively.'
+        : 'Từ vựng articulate nghĩa là diễn đạt mạch lạc và thuyết phục. Ví dụ: Cô ấy trình bày rất mạch lạc trong các buổi họp.',
       learningLang: 'en',
       durationSec: 5.2,
       visual: {
@@ -4565,21 +4877,20 @@ export function buildStarterLessonForLanguage(
     {
       id: 'starter-en-outro',
       type: 'outro',
-      badge: 'OUTRO',
-      title: 'Save & Practice Today',
+      badge: locale.outroBadge,
+      title: locale.outroTitle,
       content: 'Use these words in your next conversation!',
-      translation: locale.promptExampleOutroTranslation,
+      translation: locale.outroTranslation,
       ttsText: 'Save this lesson and use these expressions today.',
-      explanationSpeech:
-        locale.code === 'none'
-          ? 'Save this video and review it tomorrow!'
-          : 'Hãy lưu lại bài học này và luyện đọc to mỗi ngày nhé!',
+      explanationSpeech: isSelfEn
+        ? 'Save this video and review it tomorrow!'
+        : 'Hãy lưu lại bài học này và luyện đọc to mỗi ngày nhé!',
       learningLang: 'en',
       durationSec: 3.5,
       visual: {
         variant: 'css-bento-stats',
-        title: 'Ready to Use!',
-        labels: locale.promptExampleOutroLabels,
+        title: locale.outroTitle,
+        labels: ['articulate', locale.outroLabels[1], locale.outroLabels[2]],
         sceneIcon: 'sparkles',
       },
     },
@@ -5049,6 +5360,7 @@ export function parseEnglishReelsAiJson(
         rawCards.length,
         options?.targetLang,
         prevVariant,
+        cardObj.learningLang || topLearningLang,
       );
       cards.push(cardObj);
 
@@ -5150,8 +5462,16 @@ function resolveVisualPayloadForReelCard(
   total: number,
   compositionId?: LayoutCompositionId,
   targetLang?: string,
+  learningLang?: LearningLanguageId,
 ): { variant: IllustrationVariant; data: IllustrationPropData } {
-  const fallback = defaultVisualForCard(card, idx, total, targetLang);
+  const resolvedLearning = learningLang || card.learningLang || inferLearningLangFromCards([card]);
+  const locale = getReelLocaleStrings(targetLang, resolvedLearning);
+  const stageChrome = getLocalizedStageChrome(
+    targetLang,
+    resolvedLearning,
+    `${card.title} ${card.content} ${card.translation || ''}`,
+  );
+  const fallback = defaultVisualForCard(card, idx, total, targetLang, undefined, resolvedLearning);
   const custom = card.visual;
   const ctxFallback = resolveContextualVisualForCue(
     `${card.title} ${card.content} ${card.translation || ''}`,
@@ -5207,9 +5527,12 @@ function resolveVisualPayloadForReelCard(
     customPrimitives: custom?.customPrimitives,
   };
 
-  // Populate structured sub-fields for composition-specific illustration renderers
+  // Populate structured sub-fields for composition-specific illustration renderers using strict localized strings
   if (chosenVariant === 'flow-diagram' && (!data.nodes || data.nodes.length === 0)) {
-    const srcLabels = baseLabels && baseLabels.length >= 2 ? baseLabels : [baseTitle, 'Focus', 'Practice'];
+    const srcLabels =
+      baseLabels && baseLabels.length >= 2
+        ? baseLabels
+        : [baseTitle, stageChrome.takeawayTurn, locale.outroLabels[2]];
     const cols = ['#2563EB', '#16A34A', '#7C3AED'];
     const icons: Array<'chat' | 'check' | 'star'> = ['chat', 'check', 'star'];
     data.nodes = srcLabels.slice(0, 3).map((lbl, i) => ({
@@ -5226,8 +5549,8 @@ function resolveVisualPayloadForReelCard(
     data.checklist = items;
   } else if (chosenVariant === 'dialogue-upgrade' && (!data.upgrades || data.upgrades.length === 0)) {
     data.upgrades = [
-      { prompt: card.title, upgrade: (baseLabels && baseLabels[0]) || 'Key Point', badgeColor: '#2563EB' },
-      ...(baseLabels && baseLabels[1] ? [{ prompt: baseSubtitle.slice(0, 28), upgrade: baseLabels[1], badgeColor: '#16A34A' }] : []),
+      { prompt: card.title, upgrade: (baseLabels && baseLabels[0]) || stageChrome.takeawayTurn, badgeColor: '#2563EB' },
+      ...(baseLabels && baseLabels[1] ? [{ prompt: baseSubtitle, upgrade: baseLabels[1], badgeColor: '#16A34A' }] : []),
     ];
   } else if (chosenVariant === 'spatial-boxes' && (!data.boxes || data.boxes.length === 0)) {
     const srcLabels = baseLabels && baseLabels.length >= 2 ? baseLabels : [card.badge || card.type.toUpperCase(), card.title];
@@ -5244,69 +5567,69 @@ function resolveVisualPayloadForReelCard(
     const splitIdx = Math.max(1, words.length - 1);
     data.speechText = words.slice(0, splitIdx).join(' ');
     data.highlightWord = custom?.highlightWord || words[splitIdx] || card.title;
-    data.nodes = (baseLabels && baseLabels.length > 0 ? baseLabels : [card.badge || card.title, 'Natural Use']).slice(0, 3).map((lbl, i) => ({
+    data.nodes = (baseLabels && baseLabels.length > 0 ? baseLabels : [card.badge || card.title, locale.naturalStamp]).slice(0, 3).map((lbl, i) => ({
       label: lbl,
       color: i === 0 ? '#64748B' : '#4F46E5',
     }));
   } else if (chosenVariant === 'contrast-pair-cards' && (!data.nodes || data.nodes.length < 2)) {
     const vsSplit = (baseTitle || card.title).split(/\s+(?:vs\.?|→|->|\/)\s+/i).filter(Boolean);
-    const leftLbl = (baseLabels && baseLabels[0]) || vsSplit[0] || 'Basic';
+    const leftLbl = (baseLabels && baseLabels[0]) || vsSplit[0] || locale.avoidStamp;
     const rightLbl = (baseLabels && baseLabels[1]) || vsSplit[1] || card.title;
     data.labels = [leftLbl, rightLbl];
     data.nodes = [
-      { label: leftLbl, sublabel: 'Standard', color: '#64748B' },
-      { label: rightLbl, sublabel: 'Smart Upgrade', color: '#2563EB' },
+      { label: leftLbl, sublabel: locale.avoidStamp, color: '#64748B' },
+      { label: rightLbl, sublabel: locale.naturalStamp, color: '#2563EB' },
     ];
   } else if (chosenVariant === 'trio-icon-cards' && (!data.nodes || data.nodes.length < 2)) {
     const srcLabels =
       baseLabels && baseLabels.length >= 2
         ? baseLabels.slice(0, 3)
-        : [card.title, card.indexLabel || 'Meaning', 'Example'];
+        : [card.title, card.indexLabel || locale.vocabSectionLabel, locale.explanationSectionLabel];
     const cols = ['#2563EB', '#059669', '#D97706'];
     const icons: IllustrationSceneIcon[] = ['book', 'sparkles', 'mic'];
     data.nodes = srcLabels.map((lbl, i) => ({
       label: lbl,
-      sublabel: i === 0 ? 'Focus' : i === 1 ? 'Nuance' : 'Speak',
+      sublabel: i === 0 ? stageChrome.takeawayTurn : i === 1 ? locale.detailSectionLabel : locale.outroLabels[2],
       color: cols[i % cols.length],
       sceneIcon: icons[i % icons.length],
     }));
   } else if (chosenVariant === 'p168-step-quiz-formula') {
-    data.title = data.title || `Question ${idx + 1}`;
+    data.title = data.title || `${locale.quizAskTag} ${idx + 1}`;
     data.speechText = custom?.speechText || card.content;
-    data.labels = baseLabels && baseLabels.length >= 2 ? baseLabels : [card.title, 'Key Form'];
-    data.formula = data.formula || `${data.labels[0]}  /  ${data.labels[1] || 'Option B'}`;
+    data.labels = baseLabels && baseLabels.length >= 2 ? baseLabels : [card.title, locale.grammarSectionLabel];
+    data.formula = data.formula || `${data.labels[0]}  /  ${data.labels[1] || locale.detailSectionLabel}`;
   } else if (chosenVariant === 'p168-grammar-formula') {
-    data.formula = data.formula || `${card.title} + Pattern`;
+    data.formula = data.formula || `${card.title}`;
     data.speechText = custom?.speechText || card.example || card.content;
-    data.labels = baseLabels && baseLabels.length >= 2 ? baseLabels : [card.title, 'Core Structure', 'Natural Example'];
+    data.labels = baseLabels && baseLabels.length >= 2 ? baseLabels : [card.title, locale.grammarSectionLabel, locale.explanationSectionLabel];
   } else if (chosenVariant === 'p168-pronunciation-matrix' && (!data.nodes || data.nodes.length < 2)) {
-    const src = baseLabels && baseLabels.length >= 2 ? baseLabels : ['/t/', '/d/', '/ɪd/'];
+    const src = baseLabels && baseLabels.length >= 2 ? baseLabels : locale.outroLabels;
     const cols = ['#0EA5E9', '#10B981', '#8B5CF6'];
     data.nodes = src.slice(0, 3).map((lbl, i) => ({
       label: lbl,
-      sublabel: i === 0 ? 'Clear' : i === 1 ? 'Voiced' : 'Syllable',
+      sublabel: locale.outroLabels[i % locale.outroLabels.length],
       color: cols[i % cols.length],
     }));
   } else if (chosenVariant === 'p168-situation-cards' && (!data.nodes || data.nodes.length < 2)) {
-    const src = baseLabels && baseLabels.length >= 2 ? baseLabels : ['With Friends', 'At Work', 'Softly'];
+    const src = baseLabels && baseLabels.length >= 2 ? baseLabels : [stageChrome.openTurn, stageChrome.replyTurn, stageChrome.takeawayTurn];
     const cols = ['#2563EB', '#059669', '#D97706'];
     const icons: IllustrationSceneIcon[] = ['chat', 'briefcase', 'handshake'];
     data.nodes = src.slice(0, 3).map((lbl, i) => ({
       label: lbl,
-      sublabel: i === 0 ? 'Casual' : i === 1 ? 'Polite' : 'Gentle',
+      sublabel: [stageChrome.toneLeft, stageChrome.toneRight, locale.naturalStamp][i % 3],
       color: cols[i % cols.length],
       sceneIcon: icons[i % icons.length],
     }));
   } else if (chosenVariant === 'p168-slider-compare') {
     const vsSplit = (baseTitle || card.title).split(/\s+(?:vs\.?|→|->|\/)\s+/i).filter(Boolean);
-    const leftLbl = (baseLabels && baseLabels[0]) || vsSplit[0] || 'Standard';
+    const leftLbl = (baseLabels && baseLabels[0]) || vsSplit[0] || stageChrome.toneLeft;
     const rightLbl = (baseLabels && baseLabels[1]) || vsSplit[1] || card.title;
     data.labels = [leftLbl, rightLbl];
     data.value = typeof data.value === 'number' ? data.value : (idx + 1) / Math.max(1, total);
   } else if (chosenVariant === 'p168-story-dialogue' && (!data.nodes || data.nodes.length < 2)) {
     data.nodes = [
       { label: card.title, color: '#4F46E5' },
-      { label: card.translation || 'Natural Context', color: '#059669' },
+      { label: card.translation || stageChrome.conversation, color: '#059669' },
     ];
   }
 
@@ -5322,6 +5645,7 @@ export function reelCardsToLessonProject(
     compositionId?: LayoutCompositionId;
     aspectRatio?: ExportAspectRatioId;
     targetLang?: string;
+    learningLanguage?: LearningLanguageId;
     backgroundImage?: BackgroundImageConfig;
     subtitleConfig?: SubtitleDisplayConfig;
     cardDurationsSec?: number[];
@@ -5575,8 +5899,10 @@ export function reelCardsToLessonProject(
   const theme: CanvasThemeId = options?.theme ?? 'pastel-sunrise';
   const isDark = isDarkCanvasTheme(theme);
 
-  const primaryLearningLang =
-    (safeCards.find((c) => c.learningLang)?.learningLang as LearningLanguageId) || 'en';
+  const primaryLearningLang = inferLearningLangFromCards(
+    safeCards,
+    options?.learningLanguage,
+  );
   const locale = getReelLocaleStrings(options?.targetLang, primaryLearningLang);
 
   if (options?.sceneJsonOverride && (!options.compositionId || options.compositionId === options.sceneJsonOverride.compositionId)) {
@@ -5597,9 +5923,7 @@ export function reelCardsToLessonProject(
   }
 
   const compId = options?.compositionId || 'story-scenes';
-  const defaultTrLocale = getTranslationTargetLocale(
-    (safeCards.find((c) => c.learningLang)?.learningLang as LearningLanguageId) || 'en',
-  );
+  const defaultTrLocale = getTranslationTargetLocale(primaryLearningLang);
   const resolvedSubtitleConfig: SubtitleDisplayConfig = {
     position: options?.subtitleConfig?.position || (compId === 'plain' ? 'center' : 'bottom'),
     size: options?.subtitleConfig?.size || (compId === 'plain' ? 'lg' : 'md'),
@@ -5882,6 +6206,7 @@ export function reelCardsToLessonProject(
       safeCards.length,
       options?.compositionId,
       options?.targetLang,
+      primaryLearningLang,
     );
 
     const activeStepIdx =
@@ -6975,13 +7300,13 @@ export function reelCardsToLessonProject(
           fullSections.push({ text: card.translation.trim(), tone: 'neutral' });
         }
         if (card.vocabNotes?.trim()) {
-          fullSections.push({ label: 'Từ vựng', text: card.vocabNotes.trim(), tone: 'indigo' });
+          fullSections.push({ label: locale.vocabSectionLabel, text: card.vocabNotes.trim(), tone: 'indigo' });
         }
         if (card.grammarNote?.trim()) {
-          fullSections.push({ label: 'Ngữ pháp', text: card.grammarNote.trim(), tone: 'amber' });
+          fullSections.push({ label: locale.grammarSectionLabel, text: card.grammarNote.trim(), tone: 'amber' });
         }
         if (card.explanation?.trim()) {
-          fullSections.push({ label: 'Giải thích', text: card.explanation.trim(), tone: 'emerald' });
+          fullSections.push({ label: locale.explanationSectionLabel, text: card.explanation.trim(), tone: 'emerald' });
         }
 
         elements.push({
@@ -7023,20 +7348,21 @@ export function reelCardsToLessonProject(
             speakerRoster.length >= 2
               ? speakerRoster.slice(0, 3).map((r, ri) => ({
                   label: r.name,
-                  sublabel: r.role || `Host ${ri + 1}`,
+                  sublabel: r.role || `${locale.hostPrefix} ${ri + 1}`,
                   color: r.color,
                 }))
               : [
-                  { label: card.speaker || 'Host A', sublabel: card.speakerRole || 'Host 1', color: '#3B82F6' },
-                  { label: 'Host B', sublabel: 'Co-Host', color: '#8B5CF6' },
+                  { label: card.speaker || `${locale.hostPrefix} 1`, sublabel: card.speakerRole || `${locale.hostPrefix} 1`, color: '#3B82F6' },
+                  { label: `${locale.hostPrefix} 2`, sublabel: locale.coHostLabel, color: '#8B5CF6' },
                 ];
           resolvedPropVariant = 'podcast-studio';
           resolvedPropData = {
             ...visualSpec.data,
             labels: undefined,
-            formula: card.speaker ? 'PODCAST · LIVE' : 'PODCAST STUDIO',
+            formula: card.speaker ? locale.podcastLiveLabel : locale.podcastStudioLabel,
             title: card.title || card.badge,
             reactionText: card.speaker || studioNodes[0]?.label,
+            highlightWord: locale.onMicLabel,
             nodes: studioNodes,
             sceneIcon: 'mic',
           };
@@ -7048,9 +7374,9 @@ export function reelCardsToLessonProject(
               labels:
                 speakerRoster.length >= 2
                   ? speakerRoster.slice(0, 3).map((r) => r.name)
-                  : [card.speaker || 'Speaker A', 'Conversation'],
+                  : [card.speaker || `${locale.speakerLabelDefault} 1`, locale.conversationLabel],
               title: card.title || card.badge,
-              reactionText: card.speaker || 'Speaker',
+              reactionText: card.speaker || locale.speakerLabelDefault,
               speechText: card.content,
               highlightWord: card.translation || card.title,
               sceneIcon: 'chat',
@@ -7065,8 +7391,8 @@ export function reelCardsToLessonProject(
                   ? speakerRoster.slice(0, 2).map((r) => r.name).join(' ↔ ')
                   : card.speaker || card.title,
               labels: [
-                prevCard?.speaker ? `${prevCard.speaker}: ${prevCard.content.slice(0, 38)}` : card.title,
-                card.speaker ? `${card.speaker}: ${card.content.slice(0, 42)}` : card.content.slice(0, 42),
+                prevCard?.speaker ? `${prevCard.speaker}: ${prevCard.content}` : card.title,
+                card.speaker ? `${card.speaker}: ${card.content}` : card.content,
               ],
               sceneIcon: 'chat',
             };
@@ -7134,9 +7460,9 @@ export function reelCardsToLessonProject(
             badge: inferredReelBadge,
             stampText:
               inferredReelBadge === 'cross'
-                ? 'AVOID'
+                ? locale.avoidStamp
                 : inferredReelBadge === 'check' && card.type !== 'outro'
-                  ? 'NATURAL'
+                  ? locale.naturalStamp
                   : undefined,
             stampColor:
               inferredReelBadge === 'cross'
@@ -7202,6 +7528,8 @@ export function reelCardsToLessonProject(
     elements: resolvedElements,
     watermark: options?.watermark,
     titleLayout: options?.titleLayout,
+    learningLanguage: options?.learningLanguage,
+    targetLanguage: options?.targetLang,
   };
 }
 

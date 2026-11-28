@@ -862,6 +862,23 @@ export function resolveElementLayoutForAspect(
         });
         continue;
       }
+      const isFullStudyCard =
+        el.type === 'sentence-card' &&
+        el.props.kind === 'sentence-card' &&
+        Array.isArray(el.props.sections) &&
+        el.props.sections.length > 0;
+      if (isFullStudyCard) {
+        out.set(el.id, {
+          ...el.layout,
+          x: stage.width / 2,
+          y: hasTopSubCollision
+            ? Math.round(stage.height * 0.56)
+            : Math.round(stage.height * 0.48),
+          width: stage.width - 64,
+          scale: 1,
+        });
+        continue;
+      }
       const scaledHeight = el.layout.height ? Math.round(el.layout.height * Math.max(0.75, yScale)) : undefined;
       out.set(el.id, {
         ...el.layout,
@@ -1114,19 +1131,28 @@ export function resolveElementLayoutForAspect(
           scale: hasQuiz ? 0.84 : hasRightLower ? 0.92 : 0.97,
         });
       } else {
+        const isFullStudyCard =
+          el.type === 'sentence-card' &&
+          el.props.kind === 'sentence-card' &&
+          Array.isArray(el.props.sections) &&
+          el.props.sections.length > 0;
         const cIdx = Math.max(0, midCards.findIndex((c) => c.id === el.id));
         const hasCenterLower = midMeters.length > 0 || midQuizOpts.length > 0;
         const baseY =
-          midCards.length > 1
-            ? 410 + cIdx * 240
-            : hasCenterLower && el.type === 'sentence-card'
-              ? 355
-              : 515;
+          isFullStudyCard
+            ? 505
+            : midCards.length > 1
+              ? 410 + cIdx * 240
+              : hasCenterLower && el.type === 'sentence-card'
+                ? 355
+                : 515;
         out.set(el.id, {
           ...el.layout,
           x: 960,
-          y: hasTopSubCollision ? Math.max(baseY, 445) : baseY,
-          width: Math.min(1260, Math.round(el.layout.width * 1.25)),
+          y: hasTopSubCollision ? Math.max(baseY, isFullStudyCard ? 550 : 445) : baseY,
+          width: isFullStudyCard
+            ? Math.min(1560, Math.max(1380, Math.round(el.layout.width * 1.65)))
+            : Math.min(1260, Math.round(el.layout.width * 1.25)),
           scale: hasCenterLower ? 0.92 : 1,
         });
       }
@@ -6099,19 +6125,19 @@ function drawIllustrationProp(
       ctx.fillText(props.data.subtitle, 0, 74);
     }
   } else if (props.variant === 'css-chat-thread') {
-    fillCardWithShadow(ctx, -420, -132, 840, 264, 30, '#F8FAFC', 0.08);
+    fillCardWithShadow(ctx, -420, -142, 840, 284, 30, '#F8FAFC', 0.08);
     const s0 = computeStaggerItemState(elElapsed, 0, 0.0, 0.34);
     if (s0.visible) {
       ctx.save();
       ctx.globalAlpha *= s0.opacity;
       ctx.translate(0, s0.translateY);
-      fillCardWithShadow(ctx, -382, -104, 620, 88, 24, '#FFFFFF', 0.06);
-      const l0Fitted = fitWrappedTextBlock(ctx, props.data?.labels?.[0] || 'A: "Excuse me?"', 560, 74, {
+      fillCardWithShadow(ctx, -382, -116, 640, 102, 24, '#FFFFFF', 0.06);
+      const l0Fitted = fitWrappedTextBlock(ctx, props.data?.labels?.[0] || 'A: "Excuse me?"', 588, 86, {
         fontWeight: 600,
         fontFamily: FONT_SANS,
-        maxFontSize: 26,
-        minFontSize: 13,
-        maxLines: 3,
+        maxFontSize: 25,
+        minFontSize: 12,
+        maxLines: 4,
         lineHeightRatio: 1.15,
       });
       ctx.font = `600 ${l0Fitted.fontSize}px ${FONT_SANS}`;
@@ -6119,7 +6145,7 @@ function drawIllustrationProp(
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       l0Fitted.lines.forEach((ln, li) =>
-        ctx.fillText(ln, -352, -60 - ((l0Fitted.lines.length - 1) * l0Fitted.lineHeight) / 2 + li * l0Fitted.lineHeight),
+        ctx.fillText(ln, -354, -65 - ((l0Fitted.lines.length - 1) * l0Fitted.lineHeight) / 2 + li * l0Fitted.lineHeight, 592),
       );
       ctx.restore();
     }
@@ -6129,12 +6155,12 @@ function drawIllustrationProp(
       ctx.save();
       ctx.globalAlpha *= s1.opacity;
       ctx.translate(0, s1.translateY);
-      fillCardWithShadow(ctx, -238, 12, 620, 90, 24, '#4F46E5', 0.14);
-      const l1Fitted = fitWrappedTextBlock(ctx, props.data?.labels?.[1] || 'B: "Go right ahead!"', 560, 76, {
+      fillCardWithShadow(ctx, -258, 6, 640, 104, 24, '#4F46E5', 0.14);
+      const l1Fitted = fitWrappedTextBlock(ctx, props.data?.labels?.[1] || 'B: "Go right ahead!"', 588, 88, {
         fontWeight: 700,
-        maxFontSize: 26,
-        minFontSize: 13,
-        maxLines: 3,
+        maxFontSize: 25,
+        minFontSize: 12,
+        maxLines: 4,
         lineHeightRatio: 1.15,
       });
       ctx.font = `700 ${l1Fitted.fontSize}px ${FONT_DISPLAY}`;
@@ -6142,7 +6168,7 @@ function drawIllustrationProp(
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       l1Fitted.lines.forEach((ln, li) =>
-        ctx.fillText(ln, -208, 57 - ((l1Fitted.lines.length - 1) * l1Fitted.lineHeight) / 2 + li * l1Fitted.lineHeight),
+        ctx.fillText(ln, -230, 58 - ((l1Fitted.lines.length - 1) * l1Fitted.lineHeight) / 2 + li * l1Fitted.lineHeight, 592),
       );
       ctx.restore();
     }
@@ -7102,26 +7128,34 @@ function drawIllustrationProp(
     ctx.stroke();
 
     const dialogueTxt = props.data?.speechText || '"Why? What happened? Did someone tell a joke?"';
-    const fittedDlg = fitWrappedTextBlock(ctx, dialogueTxt, 480, 114, {
+    const fittedDlg = fitWrappedTextBlock(ctx, dialogueTxt, 484, 118, {
       fontWeight: 700,
-      maxFontSize: 27,
-      minFontSize: 18,
-      maxLines: 3,
-      lineHeightRatio: 1.24,
+      maxFontSize: 26,
+      minFontSize: 12,
+      maxLines: 4,
+      lineHeightRatio: 1.2,
     });
     ctx.font = `700 ${fittedDlg.fontSize}px ${FONT_SANS}`;
     ctx.fillStyle = '#0F172A';
     const dStartY = 19 - ((fittedDlg.lines.length - 1) * fittedDlg.lineHeight) / 2;
-    fittedDlg.lines.forEach((ln, li) => ctx.fillText(ln, 115, dStartY + li * fittedDlg.lineHeight, 480));
+    fittedDlg.lines.forEach((ln, li) => ctx.fillText(ln, 115, dStartY + li * fittedDlg.lineHeight, 484));
 
     // Bottom highlight pill takeaway
     const keyHighlight = props.data?.highlightWord || props.data?.subtitle || 'Natural everyday reaction';
     ctx.fillStyle = '#DBEAFE';
-    drawRoundedRectPath(ctx, -340, 118, 680, 50, 25);
+    drawRoundedRectPath(ctx, -356, 118, 712, 52, 26);
     ctx.fill();
-    ctx.font = `800 24px ${FONT_DISPLAY}`;
+    const fittedKey = fitWrappedTextBlock(ctx, keyHighlight, 668, 44, {
+      fontWeight: 800,
+      maxFontSize: 23,
+      minFontSize: 13,
+      maxLines: 2,
+      lineHeightRatio: 1.14,
+    });
+    ctx.font = `800 ${fittedKey.fontSize}px ${FONT_DISPLAY}`;
     ctx.fillStyle = '#1D4ED8';
-    ctx.fillText(keyHighlight, 0, 143, 640);
+    const kStartY = 144 - ((fittedKey.lines.length - 1) * fittedKey.lineHeight) / 2;
+    fittedKey.lines.forEach((ln, li) => ctx.fillText(ln, 0, kStartY + li * fittedKey.lineHeight, 668));
   } else if (props.variant === 'podcast-studio') {
     drawPodcastStudioScene(ctx, props.data, time, cues);
   } else if (props.variant === 'dynamic-scene' && props.data?.dynamicScene) {
@@ -7264,7 +7298,7 @@ function drawPodcastStudioScene(
   cues: TranscriptCue[],
 ) {
   const cardW = 840;
-  const cardH = 368;
+  const cardH = 412;
   fillCardWithShadow(ctx, -cardW / 2, -cardH / 2, cardW, cardH, 32, '#0F172A', 0.24);
   ctx.strokeStyle = 'rgba(129, 140, 248, 0.38)';
   ctx.lineWidth = 2.5;
@@ -7316,7 +7350,7 @@ function drawPodcastStudioScene(
       : idx === 0;
 
     ctx.fillStyle = isActive ? 'rgba(59, 130, 246, 0.18)' : 'rgba(30, 41, 59, 0.72)';
-    drawRoundedRectPath(ctx, cx - colW / 2, -104, colW, 184, 24);
+    drawRoundedRectPath(ctx, cx - colW / 2, -118, colW, 212, 24);
     ctx.fill();
     ctx.strokeStyle = isActive ? spkAccent : 'rgba(148, 163, 184, 0.25)';
     ctx.lineWidth = isActive ? 3.5 : 1.5;
@@ -7329,19 +7363,19 @@ function drawPodcastStudioScene(
       ctx.strokeStyle = hexToRgba(spkAccent, 0.45);
       ctx.lineWidth = 4;
       ctx.beginPath();
-      ctx.arc(cx, -34, 48 * pulse, 0, Math.PI * 2);
+      ctx.arc(cx, -50, 46 * pulse, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
 
     drawCharacterAvatar(ctx, {
       x: cx,
-      y: -36,
+      y: -52,
       shirtColor: spkAccent,
       hairColor: idx % 2 === 0 ? '#0F172A' : '#78350F',
       hairStyle: idx % 2 === 1 ? 'bob' : 'side',
       expression: isActive ? 'happy' : 'curious',
-      scale: 0.62,
+      scale: 0.58,
       lipSync: isActive ? lip : undefined,
     });
 
@@ -7349,19 +7383,20 @@ function drawPodcastStudioScene(
     ctx.textBaseline = 'middle';
     ctx.font = `800 22px ${FONT_DISPLAY}`;
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillText(spk.label, cx, 26, colW - 24);
+    ctx.fillText(spk.label, cx, 24, colW - 24);
 
     if (isActive) {
+      const micBadgeText = data?.highlightWord || '● ON MIC';
       ctx.fillStyle = spkAccent;
-      drawRoundedRectPath(ctx, cx - 64, 42, 128, 28, 14);
+      drawRoundedRectPath(ctx, cx - 78, 46, 156, 30, 15);
       ctx.fill();
       ctx.font = `800 15px ${FONT_SANS}`;
       ctx.fillStyle = '#FFFFFF';
-      ctx.fillText('● ON MIC', cx, 56, 114);
+      ctx.fillText(micBadgeText, cx, 61, 140);
     } else if (spk.sublabel) {
-      ctx.font = `600 16px ${FONT_SANS}`;
+      ctx.font = `600 17px ${FONT_SANS}`;
       ctx.fillStyle = '#94A3B8';
-      ctx.fillText(spk.sublabel, cx, 56, colW - 24);
+      ctx.fillText(spk.sublabel, cx, 61, colW - 24);
     }
   });
 
@@ -7372,9 +7407,9 @@ function drawPodcastStudioScene(
   const waveStartX = -((barCount * barW + (barCount - 1) * barGap) / 2);
   for (let b = 0; b < barCount; b++) {
     const wave = 0.25 + 0.75 * Math.abs(Math.sin(time * 6.2 + b * 0.48) * Math.cos(time * 2.4 + b * 0.2));
-    const bh = Math.round(12 + wave * 42);
+    const bh = Math.round(14 + wave * 44);
     ctx.fillStyle = b % 3 === 0 ? '#60A5FA' : b % 3 === 1 ? '#A78BFA' : '#34D399';
-    drawRoundedRectPath(ctx, waveStartX + b * (barW + barGap), 132 - bh / 2, barW, bh, 7);
+    drawRoundedRectPath(ctx, waveStartX + b * (barW + barGap), 146 - bh / 2, barW, bh, 7);
     ctx.fill();
   }
 }
@@ -7384,43 +7419,44 @@ function drawSentenceCard(
   props: SentenceCardProps,
   width: number,
   elElapsed = 1,
+  options?: { maxCardHeight?: number },
 ) {
   const safeWidth = Math.max(260, width);
   const innerMaxW = Math.max(180, safeWidth - 88);
   const textLen = props.text.trim().length;
-  const widthScale = Math.min(1, safeWidth / 760);
+  const widthScale = Math.min(1.28, Math.max(0.84, safeWidth / 820));
   const hasSections = Array.isArray(props.sections) && props.sections.length > 0;
   const baseHeadFont = hasSections
     ? textLen > 140
-      ? 28
+      ? 32
       : textLen > 85
-        ? 32
-        : 36
+        ? 36
+        : 40
     : textLen > 95
       ? 36
       : textLen > 58
         ? 42
         : 48;
-  const maxHeadFont = Math.max(20, Math.round(baseHeadFont * widthScale));
+  const maxHeadFont = Math.max(24, Math.round(baseHeadFont * widthScale));
 
-  const fittedHead = fitWrappedTextBlock(ctx, props.text, innerMaxW, hasSections ? 340 : 380, {
+  const fittedHead = fitWrappedTextBlock(ctx, props.text, innerMaxW, hasSections ? 340 : 400, {
     fontWeight: 700,
     maxFontSize: maxHeadFont,
-    minFontSize: hasSections ? 16 : 20,
+    minFontSize: hasSections ? 18 : 20,
     maxLines: hasSections ? 10 : 6,
-    lineHeightRatio: 1.26,
+    lineHeightRatio: 1.24,
   });
   let headFontSize = fittedHead.fontSize;
   let lineH = fittedHead.lineHeight;
   let lines = fittedHead.lines;
 
-  const subFontSize = Math.max(16, Math.round((hasSections ? 22 : 25) * widthScale));
-  const subLineH = Math.round(subFontSize * 1.26);
+  const subFontSize = Math.max(22, Math.round((hasSections ? 27 : 28) * widthScale));
+  const subLineH = Math.round(subFontSize * 1.24);
   const fittedSub = props.subtext
-    ? fitWrappedTextBlock(ctx, props.subtext, innerMaxW, hasSections ? 220 : 280, {
+    ? fitWrappedTextBlock(ctx, props.subtext, innerMaxW, hasSections ? 260 : 300, {
         fontWeight: 600,
         maxFontSize: subFontSize,
-        minFontSize: 12,
+        minFontSize: 16,
         maxLines: hasSections ? 6 : 9,
         lineHeightRatio: 1.24,
       })
@@ -7437,33 +7473,45 @@ function drawSentenceCard(
     lineHeight: number;
     lines: string[];
     boxH: number;
+    colW: number;
+    spanFull: boolean;
+  }
+  interface MeasuredSectionRow {
+    items: MeasuredSection[];
+    rowH: number;
   }
   let measuredSections: MeasuredSection[] = [];
-  if (hasSections && props.sections) {
-    const rawSections = props.sections.filter((s) => Boolean(s.text && s.text.trim()));
-    const sectionInnerW = Math.max(160, innerMaxW - 28);
-    // Iteratively find section + head font size so ALL sections fit comfortably inside maxStudyCardH
-    const maxStudyCardH = 1040;
+  let measuredSectionRows: MeasuredSectionRow[] = [];
+  const rawSections =
+    hasSections && props.sections
+      ? props.sections.filter((s) => Boolean(s.text && s.text.trim()))
+      : [];
+  const useTwoColSections = safeWidth >= 1150 && rawSections.length >= 2;
+
+  if (rawSections.length > 0) {
+    const colGap = 18;
+    const halfColW = Math.floor((innerMaxW - colGap) / 2);
+    const maxStudyCardH = Math.max(480, options?.maxCardHeight ?? 1080);
     let tryScale = 1;
-    for (let attempt = 0; attempt < 6; attempt++) {
+    for (let attempt = 0; attempt < 8; attempt++) {
       if (attempt > 0) {
-        tryScale = Math.max(0.62, tryScale - 0.08);
-        const reHead = fitWrappedTextBlock(ctx, props.text, innerMaxW, Math.round(320 * tryScale), {
+        tryScale = Math.max(0.58, tryScale - 0.06);
+        const reHead = fitWrappedTextBlock(ctx, props.text, innerMaxW, Math.round(300 * tryScale), {
           fontWeight: 700,
-          maxFontSize: Math.max(16, Math.round(maxHeadFont * tryScale)),
-          minFontSize: 15,
+          maxFontSize: Math.max(18, Math.round(maxHeadFont * tryScale)),
+          minFontSize: 16,
           maxLines: 12,
-          lineHeightRatio: 1.22,
+          lineHeightRatio: 1.2,
         });
         headFontSize = reHead.fontSize;
         lineH = reHead.lineHeight;
         lines = reHead.lines;
         if (props.subtext) {
-          const reSub = fitWrappedTextBlock(ctx, props.subtext, innerMaxW, 140, {
+          const reSub = fitWrappedTextBlock(ctx, props.subtext, innerMaxW, Math.round(200 * tryScale), {
             fontWeight: 600,
-            maxFontSize: Math.max(14, Math.round(subFontSize * tryScale)),
-            minFontSize: 13,
-            maxLines: 5,
+            maxFontSize: Math.max(16, Math.round(subFontSize * tryScale)),
+            minFontSize: 15,
+            maxLines: 6,
             lineHeightRatio: 1.2,
           });
           subLines = reSub.lines;
@@ -7472,18 +7520,21 @@ function drawSentenceCard(
         }
       }
 
-      const secMaxFont = Math.max(14, Math.round(23 * widthScale * tryScale));
-      measuredSections = rawSections.map((sec) => {
+      const secMaxFont = Math.max(18, Math.round(27 * widthScale * tryScale));
+      measuredSections = rawSections.map((sec, sIdx) => {
+        const spanFull = !useTwoColSections || (rawSections.length % 2 === 1 && sIdx === rawSections.length - 1);
+        const boxW = spanFull ? innerMaxW : halfColW;
+        const secInnerW = Math.max(150, boxW - 32);
         const displayStr = sec.label ? `${sec.label}: ${sec.text.trim()}` : sec.text.trim();
-        const fitted = fitWrappedTextBlock(ctx, displayStr, sectionInnerW, 240, {
+        const fitted = fitWrappedTextBlock(ctx, displayStr, secInnerW, 280, {
           fontWeight: 600,
           fontFamily: FONT_SANS,
           maxFontSize: secMaxFont,
-          minFontSize: 13,
-          maxLines: 10,
-          lineHeightRatio: 1.24,
+          minFontSize: 15,
+          maxLines: 12,
+          lineHeightRatio: 1.25,
         });
-        const boxH = fitted.lines.length * fitted.lineHeight + 18;
+        const boxH = fitted.lines.length * fitted.lineHeight + 24;
         return {
           label: sec.label,
           tone: sec.tone || 'neutral',
@@ -7491,12 +7542,37 @@ function drawSentenceCard(
           lineHeight: fitted.lineHeight,
           lines: fitted.lines,
           boxH,
+          colW: boxW,
+          spanFull,
         };
       });
 
+      measuredSectionRows = [];
+      if (useTwoColSections) {
+        let i = 0;
+        while (i < measuredSections.length) {
+          const first = measuredSections[i];
+          if (first.spanFull || i + 1 >= measuredSections.length) {
+            measuredSectionRows.push({ items: [first], rowH: first.boxH });
+            i += 1;
+          } else {
+            const second = measuredSections[i + 1];
+            measuredSectionRows.push({
+              items: [first, second],
+              rowH: Math.max(first.boxH, second.boxH),
+            });
+            i += 2;
+          }
+        }
+      } else {
+        for (const ms of measuredSections) {
+          measuredSectionRows.push({ items: [ms], rowH: ms.boxH });
+        }
+      }
+
       const speakerHCalc = props.speakerLabel ? 42 : 0;
       const subHCalc = subLines.length > 0 ? subLines.length * actualSubLineH + 14 : 0;
-      const secHCalc = measuredSections.reduce((acc, s) => acc + s.boxH + 10, 0);
+      const secHCalc = measuredSectionRows.reduce((acc, r) => acc + r.rowH + 10, 0);
       const estTotal = lines.length * lineH + subHCalc + speakerHCalc + secHCalc + 74;
       if (estTotal <= maxStudyCardH) break;
     }
@@ -7504,7 +7580,7 @@ function drawSentenceCard(
 
   const speakerH = props.speakerLabel ? 42 : 0;
   const subH = subLines.length > 0 ? subLines.length * actualSubLineH + 16 : 0;
-  const sectionsH = measuredSections.reduce((acc, s) => acc + s.boxH + 10, 0);
+  const sectionsH = measuredSectionRows.reduce((acc, r) => acc + r.rowH + 10, 0);
   const stampPad = props.stampText ? 18 : 0;
   const cardH = Math.max(
     156,
@@ -7635,8 +7711,8 @@ function drawSentenceCard(
     cursorY += subLines.length * actualSubLineH + 8;
   }
 
-  // Structured All-in-One Study Sections
-  if (measuredSections.length > 0) {
+  // Structured All-in-One Study Sections (1-col portrait or 2-col widescreen)
+  if (measuredSectionRows.length > 0) {
     cursorY += 6;
     const toneStyles: Record<
       'neutral' | 'indigo' | 'amber' | 'emerald',
@@ -7672,25 +7748,58 @@ function drawSentenceCard(
       },
     };
 
-    for (const sec of measuredSections) {
-      const style = toneStyles[sec.tone];
-      const bx = -innerMaxW / 2;
-      ctx.fillStyle = isDarkBg ? style.darkBg : style.bg;
-      drawRoundedRectPath(ctx, bx, cursorY, innerMaxW, sec.boxH, 16);
-      ctx.fill();
-      ctx.strokeStyle = isDarkBg ? 'rgba(148, 163, 184, 0.22)' : style.border;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+    const colGap = 18;
+    for (const row of measuredSectionRows) {
+      if (row.items.length === 2) {
+        const [leftSec, rightSec] = row.items;
+        const leftX = -innerMaxW / 2;
+        const rightX = leftX + leftSec.colW + colGap;
+        const pairs: Array<{ sec: MeasuredSection; bx: number }> = [
+          { sec: leftSec, bx: leftX },
+          { sec: rightSec, bx: rightX },
+        ];
+        for (const { sec, bx } of pairs) {
+          const style = toneStyles[sec.tone];
+          ctx.fillStyle = isDarkBg ? style.darkBg : style.bg;
+          drawRoundedRectPath(ctx, bx, cursorY, sec.colW, row.rowH, 16);
+          ctx.fill();
+          ctx.strokeStyle = isDarkBg ? 'rgba(148, 163, 184, 0.22)' : style.border;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
 
-      ctx.font = `600 ${sec.fontSize}px ${FONT_SANS}`;
-      ctx.fillStyle = isDarkBg ? style.darkText : style.text;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const firstLineY = cursorY + 9 + sec.lineHeight / 2;
-      sec.lines.forEach((sLn, sIdx) => {
-        ctx.fillText(sLn, 0, firstLineY + sIdx * sec.lineHeight, innerMaxW - 24);
-      });
-      cursorY += sec.boxH + 10;
+          ctx.font = `600 ${sec.fontSize}px ${FONT_SANS}`;
+          ctx.fillStyle = isDarkBg ? style.darkText : style.text;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          const textH = sec.lines.length * sec.lineHeight;
+          const firstLineY = cursorY + (row.rowH - textH) / 2 + sec.lineHeight / 2;
+          const centerX = bx + sec.colW / 2;
+          sec.lines.forEach((sLn, sIdx) => {
+            ctx.fillText(sLn, centerX, firstLineY + sIdx * sec.lineHeight, sec.colW - 24);
+          });
+        }
+      } else {
+        const sec = row.items[0];
+        const style = toneStyles[sec.tone];
+        const bx = -sec.colW / 2;
+        ctx.fillStyle = isDarkBg ? style.darkBg : style.bg;
+        drawRoundedRectPath(ctx, bx, cursorY, sec.colW, row.rowH, 16);
+        ctx.fill();
+        ctx.strokeStyle = isDarkBg ? 'rgba(148, 163, 184, 0.22)' : style.border;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.font = `600 ${sec.fontSize}px ${FONT_SANS}`;
+        ctx.fillStyle = isDarkBg ? style.darkText : style.text;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const textH = sec.lines.length * sec.lineHeight;
+        const firstLineY = cursorY + (row.rowH - textH) / 2 + sec.lineHeight / 2;
+        sec.lines.forEach((sLn, sIdx) => {
+          ctx.fillText(sLn, 0, firstLineY + sIdx * sec.lineHeight, sec.colW - 24);
+        });
+      }
+      cursorY += row.rowH + 10;
     }
   }
   ctx.restore();
@@ -9106,7 +9215,9 @@ export function renderProjectFrame(
         break;
       }
       case 'sentence-card':
-        drawSentenceCard(ctx, el.props, clampedWidth, Math.max(0, lessonTime - el.startTime));
+        drawSentenceCard(ctx, el.props, clampedWidth, Math.max(0, lessonTime - el.startTime), {
+          maxCardHeight: stageH <= 1120 ? 680 : stageH <= 1380 ? 860 : 1120,
+        });
         break;
       case 'tone-meter':
         drawToneMeter(ctx, el.props, clampedWidth, lessonTime);

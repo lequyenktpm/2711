@@ -281,17 +281,38 @@ export function estimateElementHalfExtents(el: SceneElement): {
       const speakerExtra = el.props.speakerLabel ? 42 : 0;
       let sectionsH = 0;
       if (hasSections && el.props.sections) {
-        const secFont = Math.max(16, Math.round(23 * widthScale));
-        const secLineH = Math.round(secFont * 1.26);
-        for (const sec of el.props.sections) {
+        const rawSecs = el.props.sections.filter((s) => Boolean(s.text && s.text.trim()));
+        const secFont = Math.max(16, Math.round(23 * Math.min(1, widthScale)));
+        const secLineH = Math.round(secFont * 1.24);
+        const useTwoCol = clampedWidth >= 1150 && rawSecs.length >= 2;
+        const halfColW = Math.floor((innerW - 18) / 2);
+        const secHeights = rawSecs.map((sec, sIdx) => {
+          const spanFull = !useTwoCol || (rawSecs.length % 2 === 1 && sIdx === rawSecs.length - 1);
+          const boxInnerW = Math.max(150, (spanFull ? innerW : halfColW) - 28);
           const combined = sec.label ? `${sec.label}: ${sec.text}` : sec.text;
-          const sLines = Math.max(1, estimateWrappedLineCount(combined, innerW - 24, secFont));
-          sectionsH += sLines * secLineH + 26;
+          const sLines = Math.max(1, estimateWrappedLineCount(combined, boxInnerW, secFont));
+          return sLines * secLineH + 22;
+        });
+        if (useTwoCol) {
+          let i = 0;
+          while (i < secHeights.length) {
+            if (secHeights.length % 2 === 1 && i === secHeights.length - 1) {
+              sectionsH += secHeights[i] + 10;
+              i += 1;
+            } else {
+              sectionsH += Math.max(secHeights[i], secHeights[i + 1] ?? 0) + 10;
+              i += 2;
+            }
+          }
+        } else {
+          sectionsH = secHeights.reduce((acc, h) => acc + h + 10, 0);
         }
       }
       const stampPad = el.props.stampText ? 18 : 0;
       const rawCardH = Math.max(156, lines * lineH + subH + speakerExtra + sectionsH + 74 + stampPad);
-      const cardH = hasSections ? Math.min(980, rawCardH) : rawCardH;
+      const cardH = hasSections
+        ? Math.min(clampedWidth >= 1150 ? 700 : 1080, rawCardH)
+        : rawCardH;
       const badgeExtra = el.props.badge && el.props.badge !== 'none' ? 18 : 0;
       const stampExtra = el.props.stampText ? 22 : 0;
       baseHalfH = Math.ceil((cardH + badgeExtra + stampExtra) / 2);

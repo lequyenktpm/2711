@@ -15,9 +15,12 @@ import {
   Layers,
   Link2,
   Loader2,
+  Maximize2,
+  Minimize2,
   Music,
   Pause,
   Play,
+  Power,
   RotateCcw,
   Sparkles,
   Square,
@@ -55,10 +58,12 @@ import {
 import {
   ASPECT_RATIO_OPTIONS,
   DEFAULT_MP4_EXPORT_SETTINGS,
+  estimateMp4FileSize,
   ExportAspectRatioId,
   ExportFpsOption,
   ExportQualityId,
   ExportResolutionId,
+  QUALITY_OPTIONS,
   resolveMp4EncodingParams,
 } from '../engine/mp4Config';
 import { ExportAbortedError, exportProjectToServerDisk } from '../engine/mp4Exporter';
@@ -95,6 +100,7 @@ import {
 import { buildVideoDescription } from '../engine/videoDescriptionBuilder';
 import { downloadTextAsPlainFile, isHtmlPayload } from '../utils/safeFileDownload';
 import { playExportCompleteSound, playTtsCompleteSound } from '../utils/soundEffects';
+import { ShutdownCountdownBanner } from '../utils/systemShutdownHelper';
 import { notifyEdgeFallbackToGoogle } from '../utils/ttsFallbackNotice';
 import { isMultilingualVoiceId } from '../engine/bilingualTtsHelper';
 import { parseTranscriptAuto } from '../engine/transcriptParser';
@@ -1090,6 +1096,7 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
       `# VAI TRÒ: BIÊN TẬP VIÊN NỘI DUNG VIDEO GIÁO DỤC (${modeLabel})`,
       'Hãy biên tập, sửa lỗi chính tả, tối ưu ngắt câu phụ đề/script bên dưới và đặt tiêu đề ngắn gọn cuốn hút đúng ngôn ngữ bài học.',
       '- **YÊU CẦU CHẤT LƯỢNG (CẤM LAN MAN, CẤM LẶP LẠI, SÂU SẮC)**: Giữ câu thoại súc tích, giàu giá trị học tập, tuyệt đối không chêm lời thừa sáo rỗng hay lặp lại ý cũ.',
+      '- **NGÔN NGỮ NGHIÊM NGẶT (STRICT LANGUAGE PURITY)**: Chỉ sử dụng đúng ngôn ngữ bài học (và tối đa 1 ngôn ngữ giải thích gốc nếu nguồn đã có), tuyệt đối không chèn ngôn ngữ thứ 3 vào title, badge, phụ đề hay outro.',
       '- Nếu người dùng có yêu cầu thời lượng (VD 10–30 phút) trong script mà nguồn không đủ dữ liệu để mở rộng sâu sắc không lan man, hãy báo lý do cụ thể trong `"durationReport.shortfallReason"`.',
       '',
       '# NỘI DUNG SUBTITLE / SCRIPT ĐẦU VÀO',
@@ -1448,8 +1455,17 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
   const [readingLearningLang, setReadingLearningLang] = useState<LearningLanguageId>(
     () => initialEduSaved?.readingLearningLang || 'en',
   );
-  const [readingTitle, setReadingTitle] = useState('Why 5 AM Changes Everything!');
-  const [readingTopic, setReadingTopic] = useState('CEFR B1 · DAILY HABITS');
+  const initialReadingStarter =
+    READING_STARTER_BY_LANG[(initialEduSaved?.readingLearningLang as ReadingLearningLang) || 'en'] ||
+    READING_STARTER_BY_LANG.en;
+  const [readingTitle, setReadingTitle] = useState(() => initialReadingStarter.title);
+  const [readingTopic, setReadingTopic] = useState(() => {
+    const badgeParts = initialReadingStarter.topicBadge.split('·');
+    const suffix = badgeParts[1]?.trim() || 'READING';
+    return initialEduSaved?.readingAiLevel
+      ? `${badgeParts[0].replace(/\S+\s*$/, '').trim()} ${initialEduSaved.readingAiLevel} · ${suffix}`.trim()
+      : initialReadingStarter.topicBadge;
+  });
   const [readingPaletteId, setReadingPaletteId] =
     useState<ReadingBookPalette['id']>(
       () => (initialEduSaved?.readingPaletteId as ReadingBookPalette['id']) || 'Sunny Yellow',
@@ -1522,15 +1538,11 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
       }
     };
   }, []);
-  const [readingText, setReadingText] = useState(
-    `Tom wakes up early every morning.\nHe opens the window and makes his bed.\nThen he drinks a glass of water and eats breakfast.\nHe checks the time, takes his bag, and leaves home.\nA good morning helps him start the day with energy.`,
-  );
+  const [readingText, setReadingText] = useState(() => initialReadingStarter.text);
   const [readingIntroEnabled, setReadingIntroEnabled] = useState(() =>
     typeof initialEduSaved?.readingIntroEnabled === 'boolean' ? initialEduSaved.readingIntroEnabled : true,
   );
-  const [readingIntroText, setReadingIntroText] = useState(
-    "Today's reading lesson: A Simple Morning Routine. Listen carefully and read along word by word.",
-  );
+  const [readingIntroText, setReadingIntroText] = useState(() => initialReadingStarter.introSubtitle);
   const [isReadingIntroCustom, setIsReadingIntroCustom] = useState(false);
   const [readingIntroSeconds, setReadingIntroSeconds] = useState(() =>
     typeof initialEduSaved?.readingIntroSeconds === 'number' ? initialEduSaved.readingIntroSeconds : 3.4,
@@ -1609,7 +1621,25 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
       if (typeof s.kmMusicVol === 'number') setKmMusicVol(s.kmMusicVol);
       if (typeof s.kmSfxVol === 'number') setKmSfxVol(s.kmSfxVol);
       if (typeof s.kmVoiceVol === 'number') setKmVoiceVol(s.kmVoiceVol);
-      if (s.readingLearningLang) setReadingLearningLang(s.readingLearningLang);
+      if (s.readingLearningLang) {
+        setReadingLearningLang(s.readingLearningLang);
+        const hydratedStarter =
+          READING_STARTER_BY_LANG[(s.readingLearningLang as ReadingLearningLang) || 'en'] ||
+          READING_STARTER_BY_LANG.en;
+        setReadingText((prevText) => {
+          const isBuiltInStarter = Object.values(READING_STARTER_BY_LANG).some(
+            (st) => st.text.trim() === prevText.trim(),
+          );
+          if (!isBuiltInStarter) return prevText;
+          setReadingTitle(hydratedStarter.title);
+          setReadingTopic(
+            s.readingAiLevel
+              ? `${hydratedStarter.topicBadge.split('·')[0].trim().replace(/\S+$/, s.readingAiLevel)} · ${hydratedStarter.topicBadge.split('·')[1]?.trim() || 'READING'}`
+              : hydratedStarter.topicBadge,
+          );
+          return hydratedStarter.text;
+        });
+      }
       if (s.readingFormat) setReadingFormat(s.readingFormat);
       if (s.readingAiLevel) setReadingAiLevel(s.readingAiLevel);
       if (s.readingAiTopic !== undefined) setReadingAiTopic(s.readingAiTopic);
@@ -1690,6 +1720,9 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
       setKmSfxVol(DEFAULT_BGM_VOLUME);
       setKmVoiceVol(1.0);
       setReadingLearningLang('en');
+      setReadingTitle(READING_STARTER_BY_LANG.en.title);
+      setReadingTopic(READING_STARTER_BY_LANG.en.topicBadge);
+      setReadingText(READING_STARTER_BY_LANG.en.text);
       setReadingFormat('auto');
       setReadingAiLevel('B1');
       setReadingAiTopic('');
@@ -1880,7 +1913,19 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
   const [isExportingReadingMp4, setIsExportingReadingMp4] = useState(false);
   const [readingExportProgress, setReadingExportProgress] = useState(0);
   const [readingExportStatus, setReadingExportStatus] = useState('');
+  const [isReadingFullscreen, setIsReadingFullscreen] = useState(false);
+  const [readingAutoShutdown, setReadingAutoShutdown] = useState(false);
+  const [showReadingShutdownBanner, setShowReadingShutdownBanner] = useState(false);
   const readingAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!isReadingFullscreen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsReadingFullscreen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isReadingFullscreen]);
 
   const [alignResult, setAlignResult] = useState<{
     language?: string;
@@ -1960,7 +2005,11 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
     (lang: LearningLanguageId, overrideLevel?: string) => {
       const starter = READING_STARTER_BY_LANG[(lang as ReadingLearningLang) || 'en'] || READING_STARTER_BY_LANG.en;
       setReadingTitle(starter.title);
-      setReadingTopic(overrideLevel ? `${starter.topicBadge.split('·')[0].replace(/\S+$/, overrideLevel)} · READING` : starter.topicBadge);
+      setReadingTopic(
+        overrideLevel
+          ? `${starter.topicBadge.split('·')[0].trim().replace(/\S+$/, overrideLevel)} · ${starter.topicBadge.split('·')[1]?.trim() || 'READING'}`
+          : starter.topicBadge,
+      );
       setReadingText(starter.text);
       if (!isReadingIntroCustom) {
         setReadingIntroText(starter.introSubtitle);
@@ -2857,6 +2906,9 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
       readingOutcomeMsg = doneMsg;
       emitOutputUpdated({ relativePath: saved.relativePath, sourceTab: 'Reading Along' });
       playExportCompleteSound();
+      if (readingAutoShutdown) {
+        setShowReadingShutdownBanner(true);
+      }
       await refreshOutputFolders();
     } catch (err) {
       if (err instanceof ExportAbortedError || controller.signal.aborted) {
@@ -5886,6 +5938,57 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
                             </select>
                           </div>
                         </div>
+                        {(() => {
+                          const effectiveDur = Math.max(
+                            1,
+                            readingTimeline.effectiveTotalDuration || alignAudioDur || 0,
+                          );
+                          const readingEst = estimateMp4FileSize(effectiveDur, {
+                            aspectRatio: readingAspect,
+                            resolution: readingResolution,
+                            quality: readingQuality,
+                            fps: readingFps,
+                          });
+                          const qualMeta = QUALITY_OPTIONS.find((q) => q.id === readingQuality);
+                          return (
+                            <div
+                              data-testid="reading-mp4-estimate-box"
+                              className="pt-2 border-t border-slate-200/80 space-y-1.5 text-[10.5px]"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-slate-600">
+                                  <strong className="text-slate-800">{qualMeta?.label || 'Chuẩn'}:</strong>{' '}
+                                  {readingEst.qualityDescription}
+                                </span>
+                                <span
+                                  data-testid="reading-mp4-size-badge"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-800 font-semibold font-mono tabular-nums"
+                                >
+                                  Ước lượng: {readingEst.mbLabel} ({readingEst.rangeLabel})
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap items-center justify-between gap-2 text-slate-500">
+                                <span className="tabular-nums">
+                                  {alignFile ? 'Theo Audio đã có' : 'Ước tính từ thời lượng đọc'} ({effectiveDur.toFixed(1)}s · {(readingEst.encoding.videoBitrate / 1_000_000).toFixed(2)} Mbps + {Math.round(readingEst.encoding.audioBitrate / 1000)}k audio)
+                                </span>
+                                <label
+                                  className="inline-flex items-center gap-1.5 text-slate-700 font-medium cursor-pointer"
+                                  title="Chỉ hoạt động khi chạy KineticSub Studio cục bộ trên Windows qua run.bat (có 15 giây đếm ngược & nút hủy)"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    data-testid="reading-auto-shutdown-toggle"
+                                    checked={readingAutoShutdown}
+                                    onChange={(e) => setReadingAutoShutdown(e.target.checked)}
+                                    className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                  />
+                                  <Power className="w-3 h-3 text-amber-600" />
+                                  <span>Tự tắt máy sau khi render xong (Windows local)</span>
+                                </label>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {alignError && (
@@ -5970,10 +6073,36 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
 
                   {/* Right Column: Live Book + Pointer Preview AND Audio TTS/Align */}
                   <div className="lg:col-span-6 space-y-3" data-testid="reading-right-column">
-                    <div className="bg-slate-900 rounded-xl p-3 text-white space-y-2.5">
+                    <div
+                      className={
+                        isReadingFullscreen
+                          ? 'fixed inset-0 z-50 bg-slate-950/95 p-4 sm:p-6 flex flex-col justify-between gap-3 text-white'
+                          : 'bg-slate-900 rounded-xl p-3 text-white space-y-2.5'
+                      }
+                    >
                       <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
                         <span className="font-bold text-indigo-300">BOOK + POINTER PREVIEW</span>
                         <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            data-testid="reading-fullscreen-btn"
+                            onClick={() => setIsReadingFullscreen((v) => !v)}
+                            title={isReadingFullscreen ? 'Thu nhỏ (Esc)' : 'Phóng to toàn màn hình'}
+                            aria-label={isReadingFullscreen ? 'Thu nhỏ xem trước' : 'Phóng toàn màn hình xem trước'}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[10px] font-semibold"
+                          >
+                            {isReadingFullscreen ? (
+                              <>
+                                <Minimize2 className="w-3 h-3" />
+                                <span>Thu nhỏ</span>
+                              </>
+                            ) : (
+                              <>
+                                <Maximize2 className="w-3 h-3" />
+                                <span>Fullscreen</span>
+                              </>
+                            )}
+                          </button>
                           {readingTimeline.hasOutro && (
                             <button
                               type="button"
@@ -6045,7 +6174,13 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
                         </div>
                       </div>
 
-                      <div className={`${previewCanvasDims.cls} mx-auto rounded-lg overflow-hidden bg-slate-950 border border-slate-800`}>
+                      <div
+                        className={`${
+                          isReadingFullscreen
+                            ? 'flex-1 min-h-0 flex items-center justify-center'
+                            : previewCanvasDims.cls
+                        } mx-auto w-full rounded-lg overflow-hidden bg-slate-950 border border-slate-800`}
+                      >
                         <canvas
                           ref={readingCanvasRef}
                           data-testid="reading-along-canvas"
@@ -6732,6 +6867,11 @@ export const EducationalStudioTab: React.FC<EducationalStudioTabProps> = ({
             )}
           </div>
         </div>
+        <ShutdownCountdownBanner
+          active={showReadingShutdownBanner}
+          completedTitle={readingTitle || readingTopic || 'Reading Along MP4'}
+          onCancel={() => setShowReadingShutdownBanner(false)}
+        />
       </div>
   );
 };

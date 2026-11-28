@@ -627,6 +627,8 @@ export interface LessonProject {
   cues: TranscriptCue[];
   elements: SceneElement[];
   audioFileName?: string;
+  learningLanguage?: string;
+  targetLanguage?: string;
 }
 
 export interface ScenePlanShape {

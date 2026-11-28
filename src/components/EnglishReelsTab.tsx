@@ -80,6 +80,7 @@ import {
   estimateCardSpeechDuration,
   getLevelsForLearningLanguage,
   getQuizCardSpeechParts,
+  getReelLocaleStrings,
   inferLearningLangFromCards,
   LEARNING_LANGUAGE_OPTIONS,
   LearningLanguageId,
@@ -94,6 +95,7 @@ import {
   ReelMode,
   ReelScrapeResult,
   reelCardsToLessonProject,
+  isStarterSampleTitle,
   sanitizeTtsSpeech,
   STARTER_SAMPLE_TITLE_PREFIX,
 } from '../engine/englishReelsEngine';
@@ -394,7 +396,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     Boolean(
       initialReelsSaved?.lessonTitle &&
         initialReelsSaved.lessonTitle !== 'Hotel Check-in & Polite Requests' &&
-        !initialReelsSaved.lessonTitle.startsWith(STARTER_SAMPLE_TITLE_PREFIX),
+        !isStarterSampleTitle(initialReelsSaved.lessonTitle),
     ),
   );
   const modeWorkspacesRef = useRef<Partial<Record<ReelCreationMode, ReelsModeWorkspaceSnapshot>>>({});
@@ -1373,12 +1375,41 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     };
   };
 
+  const activeLearningLang = useMemo<LearningLanguageId>(() => {
+    const inferred = inferLearningLangFromCards(cards);
+    const hasNonEnScript = cards.some(
+      (c) =>
+        (c.learningLang && c.learningLang !== 'en') ||
+        /[\u3040-\u30ff\u4e00-\u9faf\uac00-\ud7af]/.test(`${c.title} ${c.content} ${c.ttsText || ''}`),
+    );
+    if (inferred !== 'en') return inferred;
+    if (reelCreationMode === 'creator') {
+      if (creatorLearningLang !== 'en' && !hasNonEnScript && cards.length > 0) {
+        return 'en';
+      }
+      return creatorLearningLang;
+    }
+    if (reelCreationMode === 'translation') {
+      if (translationLearningLang !== 'en' && !hasNonEnScript && cards.length > 0) {
+        return 'en';
+      }
+      return translationLearningLang;
+    }
+    return inferred;
+  }, [reelCreationMode, creatorLearningLang, translationLearningLang, cards]);
+
+  const cardPreviewLocale = useMemo(
+    () => getReelLocaleStrings(targetLang, activeLearningLang),
+    [targetLang, activeLearningLang],
+  );
+
   const previewProject = useMemo(() => {
     const baseProj = reelCardsToLessonProject(cards, {
       title: lessonTitle,
       theme: selectedTheme,
       aspectRatio: reelsAspectRatio,
       targetLang,
+      learningLanguage: activeLearningLang,
       backgroundImage,
       subtitleConfig: {
         position: subtitlePosition,
@@ -1429,6 +1460,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     selectedTheme,
     reelsAspectRatio,
     targetLang,
+    activeLearningLang,
     backgroundImage,
     selectedComposition,
     subtitlePosition,
@@ -1997,13 +2029,6 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     for (const v of allVoices) dedup.set(v.id, v);
     return Array.from(dedup.values());
   }, [ttsProviders, effectiveHasGeminiKey, effectiveHasElevenLabsKey]);
-
-  const activeLearningLang: LearningLanguageId =
-    reelCreationMode === 'creator'
-      ? creatorLearningLang
-      : reelCreationMode === 'translation'
-        ? translationLearningLang
-        : inferLearningLangFromCards(cards, 'en');
 
   const explVoiceLang =
     explanationVoiceChoices.find((v) => v.id === explanationTtsVoice)?.lang ||
@@ -4518,7 +4543,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                           !hasCustomCardsRef.current ||
                           (!pastedAiJson.trim() &&
                             (lessonTitle === 'Hotel Check-in & Polite Requests' ||
-                              lessonTitle.startsWith(STARTER_SAMPLE_TITLE_PREFIX)));
+                              isStarterSampleTitle(lessonTitle)));
                         if (isSampleOrUntouched) {
                           applyStarterLesson(nextLang, targetLang, nextLvl);
                         }
@@ -4577,6 +4602,14 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                         setCreatorItemCount(
                           recommendCreatorItemCount(creatorDurationMinutes, enableDualTts && nextLang !== 'none'),
                         );
+                        const isSampleOrUntouched =
+                          !hasCustomCardsRef.current ||
+                          (!pastedAiJson.trim() &&
+                            (lessonTitle === 'Hotel Check-in & Polite Requests' ||
+                              isStarterSampleTitle(lessonTitle)));
+                        if (isSampleOrUntouched) {
+                          applyStarterLesson(creatorLearningLang, nextLang, creatorLevel);
+                        }
                       }}
                       className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg"
                     >
@@ -5358,7 +5391,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                 aria-label="Tỉ lệ khung hình English Reels"
                 className="inline-flex rounded-lg bg-slate-100 p-0.5 border border-slate-200"
               >
-                {(['9:16', '16:9'] as ExportAspectRatioId[]).map((ratio) => (
+                {(['9:16', '16:9', '1:1', '4:5'] as ExportAspectRatioId[]).map((ratio) => (
                   <button
                     key={ratio}
                     type="button"
@@ -5370,7 +5403,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    {ratio === '9:16' ? '9:16 Dọc' : '16:9 Ngang'}
+                    {ratio === '9:16' ? '9:16 Dọc' : ratio === '16:9' ? '16:9 Ngang' : ratio}
                   </button>
                 ))}
               </div>
@@ -6359,7 +6392,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                             onClick={() => setSelectedCardPreviewField('translation')}
                             className="text-[11px] leading-snug text-indigo-700 font-medium cursor-pointer hover:underline bg-indigo-50/50 rounded-lg px-2 py-1 text-left"
                           >
-                            <span className="font-bold">Từ vựng:</span> {activeCard.vocabNotes}
+                            <span className="font-bold">{cardPreviewLocale.vocabSectionLabel}:</span> {activeCard.vocabNotes}
                           </div>
                         )}
                         {activeCard.grammarNote && (
@@ -6369,7 +6402,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                               selectedCardPreviewField === 'grammarNote' ? 'ring-2 ring-indigo-500' : 'hover:bg-amber-50'
                             }`}
                           >
-                            <span className="font-bold">Ngữ pháp:</span> {activeCard.grammarNote}
+                            <span className="font-bold">{cardPreviewLocale.grammarSectionLabel}:</span> {activeCard.grammarNote}
                           </div>
                         )}
                         {activeCard.explanation && (
@@ -6377,7 +6410,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                             onClick={() => setSelectedCardPreviewField('quiz')}
                             className="text-[11px] leading-snug text-emerald-700 font-medium cursor-pointer hover:underline text-left bg-emerald-50/50 rounded-lg px-2 py-1"
                           >
-                            {activeCard.explanation}
+                            <span className="font-bold">{cardPreviewLocale.explanationSectionLabel}:</span> {activeCard.explanation}
                           </div>
                         )}
                       </div>
@@ -7307,7 +7340,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                   </div>
                   <div className="flex flex-wrap items-center justify-between gap-2 text-slate-500">
                     <span className="tabular-nums">
-                      {generatedAudioFile ? 'Theo Audio đã tạo' : 'Ước tính từ kịch bản'} ({effectiveDuration.toFixed(1)}s · {(sizeEst.encoding.videoBitrate / 1_000_000).toFixed(2)} Mbps + 128k audio)
+                      {generatedAudioFile ? 'Theo Audio đã tạo' : 'Ước tính từ kịch bản'} ({effectiveDuration.toFixed(1)}s · {(sizeEst.encoding.videoBitrate / 1_000_000).toFixed(2)} Mbps + {Math.round(sizeEst.encoding.audioBitrate / 1000)}k audio)
                     </span>
                     <label
                       className="inline-flex items-center gap-1.5 text-slate-700 font-medium cursor-pointer"

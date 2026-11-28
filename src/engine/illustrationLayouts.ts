@@ -258,6 +258,199 @@ export function shouldApplyCompositionOverride(
   return !hasCustomJson || forceOverride;
 }
 
+export interface LocalizedStageChrome {
+  podcastStudio: string;
+  podcastLive: string;
+  multiSpeakerTitle: string;
+  speakerDefault: string;
+  hostPrefix: string;
+  coHost: string;
+  onMic: string;
+  conversation: string;
+  detailLabel: string;
+  openTurn: string;
+  replyTurn: string;
+  takeawayTurn: string;
+  dialogueTurnLabel: string;
+  toneTitle: string;
+  toneLeft: string;
+  toneRight: string;
+}
+
+export function getLocalizedStageChrome(
+  targetLang?: string,
+  learningLang?: string,
+  sampleText?: string,
+): LocalizedStageChrome {
+  const rawNorm = (targetLang || '').trim().toLowerCase();
+  const isLearningSelf =
+    rawNorm === 'learning' ||
+    rawNorm === 'self' ||
+    rawNorm === 'target' ||
+    rawNorm.includes('ngôn ngữ muốn học') ||
+    rawNorm.includes('ngôn ngữ đang học');
+  const norm = isLearningSelf && learningLang ? learningLang.trim().toLowerCase() : rawNorm;
+
+  const pickByCode = (code: string): LocalizedStageChrome | null => {
+    if (code === 'ja' || code === 'japanese' || code === '日本語' || code === 'tiếng nhật') {
+      return {
+        podcastStudio: 'ポッドキャスト収録',
+        podcastLive: 'ポッドキャスト · 収録',
+        multiSpeakerTitle: '複数話者ダイアログ',
+        speakerDefault: '話者',
+        hostPrefix: '司会',
+        coHost: '対談相手',
+        onMic: '● 発言中',
+        conversation: '会話',
+        detailLabel: '詳細',
+        openTurn: '切り出し',
+        replyTurn: '応答',
+        takeawayTurn: 'ポイント',
+        dialogueTurnLabel: '会話',
+        toneTitle: 'ニュアンス',
+        toneLeft: 'カジュアル',
+        toneRight: '丁寧',
+      };
+    }
+    if (code === 'zh' || code === 'zh-cn' || code === 'chinese' || code === '中文' || code === 'tiếng trung') {
+      return {
+        podcastStudio: '播客录音室',
+        podcastLive: '播客 · 对话',
+        multiSpeakerTitle: '多人情景对话',
+        speakerDefault: '说话人',
+        hostPrefix: '主持',
+        coHost: '嘉宾',
+        onMic: '● 发言中',
+        conversation: '对话',
+        detailLabel: '详情',
+        openTurn: '开场',
+        replyTurn: '回应',
+        takeawayTurn: '要点',
+        dialogueTurnLabel: '对话',
+        toneTitle: '语气',
+        toneLeft: '随意',
+        toneRight: '礼貌',
+      };
+    }
+    if (code === 'ko' || code === 'ko-kr' || code === 'korean' || code === '한국어' || code === 'tiếng hàn') {
+      return {
+        podcastStudio: '팟캐스트 스튜디오',
+        podcastLive: '팟캐스트 · 녹음',
+        multiSpeakerTitle: '다인 대화',
+        speakerDefault: '화자',
+        hostPrefix: '진행',
+        coHost: '공동 진행',
+        onMic: '● 발언 중',
+        conversation: '대화',
+        detailLabel: '상세',
+        openTurn: '시작',
+        replyTurn: '응답',
+        takeawayTurn: '핵심',
+        dialogueTurnLabel: '대화',
+        toneTitle: '어감',
+        toneLeft: '편한 말투',
+        toneRight: '공손한 말투',
+      };
+    }
+    if (code === 'fr' || code === 'french' || code === 'français' || code === 'tiếng pháp') {
+      return {
+        podcastStudio: 'STUDIO PODCAST',
+        podcastLive: 'PODCAST · DIRECT',
+        multiSpeakerTitle: 'Dialogue à plusieurs voix',
+        speakerDefault: 'Intervenant',
+        hostPrefix: 'Animateur',
+        coHost: 'Co-animateur',
+        onMic: '● EN ONDE',
+        conversation: 'Dialogue',
+        detailLabel: 'Détails',
+        openTurn: 'Ouverture',
+        replyTurn: 'Réponse',
+        takeawayTurn: 'À retenir',
+        dialogueTurnLabel: 'Dialogue',
+        toneTitle: 'Registre',
+        toneLeft: 'familier',
+        toneRight: 'poli',
+      };
+    }
+    if (code === 'es' || code === 'spanish' || code === 'español' || code === 'tiếng tây ban nha') {
+      return {
+        podcastStudio: 'ESTUDIO PODCAST',
+        podcastLive: 'PODCAST · EN VIVO',
+        multiSpeakerTitle: 'Diálogo entre hablantes',
+        speakerDefault: 'Hablante',
+        hostPrefix: 'Anfitrión',
+        coHost: 'Coanfitrión',
+        onMic: '● AL AIRE',
+        conversation: 'Diálogo',
+        detailLabel: 'Detalles',
+        openTurn: 'Inicio',
+        replyTurn: 'Respuesta',
+        takeawayTurn: 'Clave',
+        dialogueTurnLabel: 'Diálogo',
+        toneTitle: 'Tono',
+        toneLeft: 'informal',
+        toneRight: 'cortés',
+      };
+    }
+    if (code === 'en' || code === 'english' || code === 'none') {
+      return {
+        podcastStudio: 'PODCAST STUDIO',
+        podcastLive: 'PODCAST · LIVE',
+        multiSpeakerTitle: 'Multi-Speaker Dialogue',
+        speakerDefault: 'Speaker',
+        hostPrefix: 'Host',
+        coHost: 'Co-Host',
+        onMic: '● ON MIC',
+        conversation: 'Conversation',
+        detailLabel: 'Details',
+        openTurn: 'Opening',
+        replyTurn: 'Reply',
+        takeawayTurn: 'Key Point',
+        dialogueTurnLabel: 'Dialogue',
+        toneTitle: 'TONE',
+        toneLeft: 'casual',
+        toneRight: 'polite',
+      };
+    }
+    if (code === 'vi' || code === 'vietnamese' || code === 'tiếng việt') {
+      return {
+        podcastStudio: 'PHÒNG THU PODCAST',
+        podcastLive: 'PODCAST · TRỰC TIẾP',
+        multiSpeakerTitle: 'Hội thoại nhiều người',
+        speakerDefault: 'Người nói',
+        hostPrefix: 'Người dẫn',
+        coHost: 'Đồng dẫn',
+        onMic: '● ĐANG NÓI',
+        conversation: 'Hội thoại',
+        detailLabel: 'Chi tiết',
+        openTurn: 'Mở lời',
+        replyTurn: 'Phản hồi',
+        takeawayTurn: 'Ghi nhớ',
+        dialogueTurnLabel: 'Hội thoại thực tế',
+        toneTitle: 'SẮC THÁI',
+        toneLeft: 'thân mật',
+        toneRight: 'lịch sự',
+      };
+    }
+    return null;
+  };
+
+  const direct = pickByCode(norm);
+  if (direct) return direct;
+  if (learningLang) {
+    const byLearning = pickByCode(learningLang.trim().toLowerCase());
+    if (byLearning) return byLearning;
+  }
+  const sample = sampleText || '';
+  if (/[\u3040-\u30ff]/.test(sample)) return pickByCode('ja')!;
+  if (/[\uac00-\ud7af]/.test(sample)) return pickByCode('ko')!;
+  if (/[\u4e00-\u9fff]/.test(sample)) return pickByCode('zh')!;
+  if (/[ăâđêôơưàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i.test(sample)) {
+    return pickByCode('vi')!;
+  }
+  return pickByCode('en')!;
+}
+
 function extractTimeHint(text: string): { hour: number; minute: number; formula: string } | null {
   const m = text.match(/\b(\d{1,2}):(\d{2})\b/);
   if (m) {
@@ -990,22 +1183,28 @@ function buildIllustrationDataForComposition(
 
     case 'podcast-duo': {
       const speakers = stripItems.slice(0, 3);
+      const chrome = getLocalizedStageChrome(
+        project.targetLanguage,
+        project.learningLanguage,
+        `${project.title} ${seg.cardText} ${seg.subtext || ''}`,
+      );
       return {
         variant: 'podcast-studio',
         data: {
-          formula: 'PODCAST STUDIO',
-          title: seg.topicLabel || 'Multi-Speaker Dialogue',
-          reactionText: speakers[segIdx % Math.max(1, speakers.length)]?.label || 'Host A',
+          formula: chrome.podcastStudio,
+          title: seg.topicLabel || chrome.multiSpeakerTitle,
+          reactionText: speakers[segIdx % Math.max(1, speakers.length)]?.label || `${chrome.hostPrefix} 1`,
+          highlightWord: chrome.onMic,
           nodes:
             speakers.length >= 2
               ? speakers.map((sp, i) => ({
                   label: sp.label,
-                  sublabel: sp.sublabel || `Host ${i + 1}`,
+                  sublabel: sp.sublabel || `${chrome.hostPrefix} ${i + 1}`,
                   color: sp.accentColor || (i === 0 ? '#3B82F6' : i === 1 ? '#8B5CF6' : '#10B981'),
                 }))
               : [
-                  { label: 'Host A', sublabel: 'Mở lời', color: '#3B82F6' },
-                  { label: 'Host B', sublabel: 'Phản hồi', color: '#8B5CF6' },
+                  { label: `${chrome.hostPrefix} 1`, sublabel: chrome.openTurn, color: '#3B82F6' },
+                  { label: `${chrome.hostPrefix} 2`, sublabel: chrome.replyTurn, color: '#8B5CF6' },
                 ],
           sceneIcon: 'mic',
         },
@@ -1014,16 +1213,24 @@ function buildIllustrationDataForComposition(
 
     case 'dialogue-stage': {
       const speakers = stripItems.slice(0, 3);
-      const activeSpk = speakers[segIdx % Math.max(1, speakers.length)]?.label || 'Speaker A';
+      const chrome = getLocalizedStageChrome(
+        project.targetLanguage,
+        project.learningLanguage,
+        `${project.title} ${seg.cardText} ${seg.subtext || ''}`,
+      );
+      const activeSpk = speakers[segIdx % Math.max(1, speakers.length)]?.label || `${chrome.speakerDefault} 1`;
       if (segIdx % 2 === 0) {
         return {
           variant: 'p168-story-dialogue',
           data: {
-            labels: speakers.length >= 2 ? speakers.map((s) => s.label) : ['Mở đầu', 'Đáp lại', 'Ghi nhớ'],
-            title: seg.topicLabel || 'Hội thoại thực tế',
+            labels:
+              speakers.length >= 2
+                ? speakers.map((s) => s.label)
+                : [chrome.openTurn, chrome.replyTurn, chrome.takeawayTurn],
+            title: seg.topicLabel || chrome.dialogueTurnLabel,
             reactionText: activeSpk,
-            speechText: cleanShortPhrase(seg.cardText, 12, 84),
-            highlightWord: seg.emphasisWord || cleanShortPhrase(seg.subtext || seg.topicLabel, 6, 40),
+            speechText: seg.cardText,
+            highlightWord: seg.emphasisWord || seg.subtext || seg.topicLabel,
             sceneIcon: 'chat',
           },
         };
@@ -1031,10 +1238,10 @@ function buildIllustrationDataForComposition(
       return {
         variant: 'css-chat-thread',
         data: {
-          title: speakers.map((s) => s.label).slice(0, 2).join(' ↔ ') || 'Hội thoại',
+          title: speakers.map((s) => s.label).slice(0, 2).join(' ↔ ') || chrome.conversation,
           labels: [
-            cleanShortPhrase(segments[Math.max(0, segIdx - 1)]?.cardText || seg.topicLabel, 9, 44),
-            cleanShortPhrase(seg.cardText, 9, 44),
+            segments[Math.max(0, segIdx - 1)]?.cardText || seg.topicLabel,
+            seg.cardText,
           ],
           sceneIcon: 'chat',
         },
@@ -1042,12 +1249,17 @@ function buildIllustrationDataForComposition(
     }
 
     case 'full-study-cards': {
+      const chrome = getLocalizedStageChrome(
+        project.targetLanguage,
+        project.learningLanguage,
+        `${project.title} ${seg.cardText} ${seg.subtext || ''}`,
+      );
       return {
         variant: 'bs-card-header',
         data: {
           formula: seg.topicLabel,
-          title: cleanShortPhrase(seg.cardText, 8, 50),
-          subtitle: seg.subtext || 'Thẻ học đầy đủ',
+          title: seg.cardText,
+          subtitle: seg.subtext || chrome.detailLabel,
           sceneIcon: contextualIcon,
         },
       };
@@ -1366,6 +1578,11 @@ export function recomposeProjectWithStyle(
 
   if (compositionId === 'word-reveal' || compositionId === 'full-study-cards') {
     const isFullStudy = compositionId === 'full-study-cards';
+    const recomposeChrome = getLocalizedStageChrome(
+      project.targetLanguage,
+      project.learningLanguage,
+      `${project.title} ${project.cues[0]?.text || ''}`,
+    );
     segments.forEach((seg, idx) => {
       const safeStart = Math.max(0, seg.startTime);
       const safeEnd = Math.max(safeStart + 0.45, seg.endTime);
@@ -1408,7 +1625,7 @@ export function recomposeProjectWithStyle(
           text: seg.cardText,
           subtext: seg.subtext || seg.topicLabel,
           sections: isFullStudy && seg.subtext
-            ? [{ label: 'Chi tiết', text: seg.subtext, tone: 'indigo' }]
+            ? [{ label: recomposeChrome.detailLabel, text: seg.subtext, tone: 'indigo' }]
             : undefined,
           badge: seg.badge,
           stampText: seg.stampText,
@@ -1851,10 +2068,15 @@ export function recomposeProjectWithStyle(
 
     // 3. Tone meter for compositions that benefit from a continuous bottom sentiment bar
     if (profile.showToneMeter) {
+      const toneChrome = getLocalizedStageChrome(
+        project.targetLanguage,
+        project.learningLanguage,
+        `${project.title} ${project.cues[0]?.text || ''}`,
+      );
       newVisuals.push({
         id: `comp-meter-${compositionId}`,
         type: 'tone-meter',
-        label: 'Thanh sắc thái: Rude ↔ Polite',
+        label: `Thanh sắc thái: ${toneChrome.toneLeft} ↔ ${toneChrome.toneRight}`,
         startTime: segments[0]?.startTime ?? 0,
         endTime: project.duration,
         enterAnimation: 'slide-up',
@@ -1862,9 +2084,9 @@ export function recomposeProjectWithStyle(
         layout: { x: 540, y: 1255, width: 700, scale: 1, zIndex: 18 },
         props: {
           kind: 'tone-meter',
-          title: 'TONE',
-          leftLabel: 'casual',
-          rightLabel: 'polite',
+          title: toneChrome.toneTitle,
+          leftLabel: toneChrome.toneLeft,
+          rightLabel: toneChrome.toneRight,
           valueStart: 0.2,
           valueEnd: 0.88,
           animateStart: project.duration * 0.2,

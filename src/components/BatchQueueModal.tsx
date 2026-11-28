@@ -16,6 +16,7 @@ import {
   Layers,
   Loader2,
   Play,
+  Power,
   RotateCcw,
   Shuffle,
   Sparkles,
@@ -68,6 +69,7 @@ import {
 import {
   ASPECT_RATIO_OPTIONS,
   DEFAULT_MP4_EXPORT_SETTINGS,
+  estimateMp4FileSize,
   FPS_OPTIONS,
   Mp4ExportSettings,
   QUALITY_OPTIONS,
@@ -123,6 +125,7 @@ import {
 import { buildVideoDescription } from '../engine/videoDescriptionBuilder';
 import { resizeImageFileToStageDataUrl } from '../utils/imageResize';
 import { playExportCompleteSound, playTtsCompleteSound } from '../utils/soundEffects';
+import { ShutdownCountdownBanner } from '../utils/systemShutdownHelper';
 import { notifyEdgeFallbackToGoogle } from '../utils/ttsFallbackNotice';
 import {
   downloadServerOutputFile,
@@ -487,6 +490,9 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
   }) => {
     await saveBatchCheckpoint(buildCheckpointPayload(overrides));
   };
+
+  const [batchAutoShutdown, setBatchAutoShutdown] = useState(false);
+  const [showBatchShutdownBanner, setShowBatchShutdownBanner] = useState(false);
 
   const refreshOutputFiles = async () => {
     try {
@@ -1741,6 +1747,9 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
     });
     if (!aborted && completedCount > 0) {
       playExportCompleteSound();
+      if (batchAutoShutdown) {
+        setShowBatchShutdownBanner(true);
+      }
     }
     void refreshOutputFiles();
   };
@@ -2405,6 +2414,9 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
     });
     if (!aborted && completedCount > 0) {
       playExportCompleteSound();
+      if (batchAutoShutdown) {
+        setShowBatchShutdownBanner(true);
+      }
     }
     void refreshOutputFiles();
   };
@@ -3719,6 +3731,38 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
                       </button>
                     </div>
                   </div>
+                  {(() => {
+                    const estPerMin = estimateMp4FileSize(60, activeSettings);
+                    const qualMeta = QUALITY_OPTIONS.find((q) => q.id === activeSettings.quality);
+                    return (
+                      <div
+                        data-testid="batch-mp4-estimate-box"
+                        className="pt-2 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-2 text-[10.5px]"
+                      >
+                        <div className="text-slate-600">
+                          <strong className="text-slate-800">{qualMeta?.label || 'Chuẩn'}:</strong>{' '}
+                          {estPerMin.qualityDescription} ·{' '}
+                          <span className="font-mono font-semibold text-indigo-700">
+                            ~{estPerMin.mbLabel}/phút ({estPerMin.rangeLabel})
+                          </span>
+                        </div>
+                        <label
+                          className="inline-flex items-center gap-1.5 text-slate-700 font-medium cursor-pointer"
+                          title="Chỉ hoạt động khi chạy KineticSub Studio cục bộ trên Windows qua run.bat (có 15 giây đếm ngược & nút hủy)"
+                        >
+                          <input
+                            type="checkbox"
+                            data-testid="batch-auto-shutdown-toggle"
+                            checked={batchAutoShutdown}
+                            onChange={(e) => setBatchAutoShutdown(e.target.checked)}
+                            className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                          />
+                          <Power className="w-3 h-3 text-amber-600" />
+                          <span>Tự tắt máy sau khi render xong Batch (Windows local)</span>
+                        </label>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -4490,6 +4534,11 @@ export const BatchQueueModal: React.FC<BatchQueueModalProps> = ({
           </div>
         )}
       </div>
+      <ShutdownCountdownBanner
+        active={showBatchShutdownBanner}
+        completedTitle={`Batch (${batchSubTab})`}
+        onCancel={() => setShowBatchShutdownBanner(false)}
+      />
     </div>
   );
 };

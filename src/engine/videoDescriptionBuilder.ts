@@ -782,8 +782,6 @@ function buildHashtags(params: {
 export function buildVideoDescription(input: VideoDescriptionInput): VideoDescriptionOutput {
   const cleanTitle = cleanOutputTitleStem(input.title, input.title || 'Language Lesson');
   const displayTitle = (input.title || cleanTitle).trim();
-  const nativeLangCode = normalizeSupportedLang(input.nativeLang, 'vi');
-
   const cueTextSample = [
     displayTitle,
     ...(input.sampleLines ?? []),
@@ -795,6 +793,17 @@ export function buildVideoDescription(input: VideoDescriptionInput): VideoDescri
     input.learningLang && input.learningLang !== 'auto'
       ? normalizeSupportedLang(input.learningLang, 'en')
       : inferLangFromTextSample(cueTextSample) || 'en';
+
+  const rawNativeNorm = (input.nativeLang || '').trim().toLowerCase();
+  const isLearningSelf =
+    rawNativeNorm === 'learning' ||
+    rawNativeNorm === 'self' ||
+    rawNativeNorm === 'target' ||
+    rawNativeNorm.includes('ngôn ngữ muốn học') ||
+    rawNativeNorm.includes('ngôn ngữ đang học');
+  const nativeLangCode = isLearningSelf
+    ? detectedLearning
+    : normalizeSupportedLang(input.nativeLang, 'vi');
 
   const cues = input.cues ?? input.project?.cues ?? [];
   const hasCountdown =
