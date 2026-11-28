@@ -5016,6 +5016,130 @@ test('projectWordBoundariesToTokens maps Japanese Edge WordBoundaries onto misma
   assert.ok(mapped[mapped.length - 1].end >= 12.75);
 });
 
+test('reelCardsToLessonProject persists stripItems edits/additions/deletions, stripSingleRow/quizSingleRow toggles, and hiddenElementIds', () => {
+  const trDeck = buildTranslationCardsFromInput({
+    learningLanguage: 'en',
+    level: 'B1',
+    targetLang: 'vi',
+    thinkSec: 3,
+    repeatCount: 2,
+    customInputLines: 'How are you doing? | Bạn dạo này thế nào?',
+  });
+
+  // Clone first translation card with custom edited/added stripItems + stripSingleRow = false
+  const trEditedCards = trDeck.cards.map((c, idx) =>
+    idx === 1
+      ? {
+          ...c,
+          visual: {
+            ...(c.visual || {}),
+            stripSingleRow: false,
+            stripItems: [
+              { label: '1. Nghe câu mẫu', sublabel: 'Bước đầu' },
+              { label: '2. Nghĩ nhanh' },
+              { label: '3. Đọc to' },
+              { label: '4. Ghi nhớ' },
+              { label: '5. Thực hành thêm', accentColor: '#7C3AED' },
+            ],
+          },
+        }
+      : c,
+  );
+
+  const trProj = reelCardsToLessonProject(trEditedCards, {
+    title: 'Strip Persistence Test',
+    theme: 'studio-slate',
+    aspectRatio: '9:16',
+    compositionId: 'story-scenes',
+    targetLang: 'vi',
+    hiddenElementIds: ['reel-stage-0'],
+  });
+
+  // hiddenElementIds removes deleted element cleanly
+  assert.equal(
+    trProj.elements.some((el) => el.id === 'reel-stage-0'),
+    false,
+    'Deleted element id must be omitted from project elements',
+  );
+
+  const trStrip1 = trProj.elements.find((el) => el.id === 'reel-stage-1');
+  assert.ok(trStrip1 && trStrip1.props.kind === 'comparison-strip');
+  assert.equal(trStrip1.props.singleRow, false);
+  assert.equal(trStrip1.props.items.length, 5);
+  assert.equal(trStrip1.props.items[0].label, '1. Nghe câu mẫu');
+  assert.equal(trStrip1.props.items[0].sublabel, 'Bước đầu');
+  assert.equal(trStrip1.props.items[4].label, '5. Thực hành thêm');
+
+  // Verify default vocab/reading card and quiz card also persist stripSingleRow, stripItems, quizSingleRow, and quizOptionSublabels
+  const mixedDeck = buildReelCardsRuleBased('Headline phrase.\nAnother natural line.', {
+    title: 'Mixed Strip Test',
+    mode: 'vocab',
+    targetLang: 'vi',
+    includeQuiz: true,
+  }).cards;
+
+  const firstVocabIdx = mixedDeck.findIndex((c) => c.type !== 'quiz');
+  const quizIdx = mixedDeck.findIndex((c) => c.type === 'quiz');
+  assert.ok(firstVocabIdx >= 0);
+
+  const editedMixed = mixedDeck.map((c, idx) => {
+    if (idx === firstVocabIdx) {
+      return {
+        ...c,
+        visual: {
+          ...(c.visual || {}),
+          stripSingleRow: true,
+          stripItems: [
+            { label: '1. Từ mới', sublabel: 'Focus' },
+            { label: '2. Nghĩa chuẩn' },
+          ],
+        },
+      };
+    }
+    if (idx === quizIdx) {
+      return {
+        ...c,
+        visual: {
+          ...(c.visual || {}),
+          stripSingleRow: true,
+          stripItems: [{ label: '1. Câu hỏi' }, { label: '2. Chọn A/B' }, { label: '3. Đáp án' }],
+          quizSingleRow: true,
+          quizOptionSublabels: ['Mẹo chọn A', 'Loại trừ B'],
+        },
+      };
+    }
+    return c;
+  });
+
+  const mixedProj = reelCardsToLessonProject(editedMixed, {
+    title: 'Mixed Strip Test',
+    theme: 'studio-slate',
+    aspectRatio: '9:16',
+    compositionId: 'story-scenes',
+    targetLang: 'vi',
+  });
+
+  const vocabStrip = mixedProj.elements.find((el) => el.id === `reel-stage-${firstVocabIdx}`);
+  assert.ok(vocabStrip && vocabStrip.props.kind === 'comparison-strip');
+  assert.equal(vocabStrip.props.singleRow, true);
+  assert.equal(vocabStrip.props.items.length, 2);
+  assert.equal(vocabStrip.props.items[0].label, '1. Từ mới');
+  assert.equal(vocabStrip.props.items[0].sublabel, 'Focus');
+
+  if (quizIdx >= 0) {
+    const qStrip = mixedProj.elements.find((el) => el.id === `reel-stage-${quizIdx}`);
+    assert.ok(qStrip && qStrip.props.kind === 'comparison-strip');
+    assert.equal(qStrip.props.singleRow, true);
+    assert.equal(qStrip.props.items.length, 3);
+
+    const qOpts = mixedProj.elements.find((el) => el.id === `reel-quiz-opts-${quizIdx}`);
+    assert.ok(qOpts && qOpts.props.kind === 'comparison-strip');
+    assert.equal(qOpts.props.singleRow, true);
+    assert.equal(qOpts.props.items[0].sublabel, 'Mẹo chọn A');
+  }
+});
+
+
 
 
 

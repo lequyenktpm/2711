@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowDown,
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  Plus,
   RotateCcw,
   Sparkles,
   Trash2,
@@ -82,6 +83,16 @@ export const InlinePreviewElementEditor: React.FC<InlinePreviewElementEditorProp
   stageWidth = 1080,
   stageHeight = 1920,
 }) => {
+  const illLabelsJoined =
+    selectedElement?.props.kind === 'illustration-prop'
+      ? (selectedElement.props.data?.labels ?? []).join(', ')
+      : '';
+  const [labelsDraft, setLabelsDraft] = useState(illLabelsJoined);
+
+  useEffect(() => {
+    setLabelsDraft(illLabelsJoined);
+  }, [selectedElement?.id, illLabelsJoined]);
+
   if (!selectedElement && !selectedOverlayZone) return null;
 
   if (selectedOverlayZone === 'title' && (onChangeTitle || onChangeTitleLayout)) {
@@ -907,44 +918,78 @@ export const InlinePreviewElementEditor: React.FC<InlinePreviewElementEditorProp
       )}
 
       {/* Comparison Strip Editor */}
-      {selectedElement.props.kind === 'comparison-strip' && (
-        <div className="rounded-lg bg-white border border-slate-200 p-2.5 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-[10.5px] font-bold text-slate-700">Các mục trên thanh đối chiếu</div>
-            <label className="inline-flex items-center gap-1.5 text-[10.5px] font-medium text-slate-600 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={Boolean(selectedElement.props.singleRow)}
-                onChange={(e) => {
-                  const prev = selectedElement.props;
-                  if (prev.kind !== 'comparison-strip') return;
+      {selectedElement.props.kind === 'comparison-strip' && (() => {
+        const stripProps = selectedElement.props;
+        return (
+        <div
+          data-testid="inline-comparison-strip-editor"
+          className="rounded-lg bg-white border border-slate-200 p-2.5 space-y-2"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-[10.5px] font-bold text-slate-700">
+              Các mục bên trong ({stripProps.items.length})
+            </div>
+            <div className="flex items-center gap-2.5">
+              <label className="inline-flex items-center gap-1.5 text-[10.5px] font-medium text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  aria-label="1 hàng ngang gọn"
+                  data-testid="inline-strip-singlerow-checkbox"
+                  checked={Boolean(stripProps.singleRow)}
+                  onChange={(e) => {
+                    onUpdateElement(selectedElement.id, {
+                      props: { ...stripProps, singleRow: e.target.checked },
+                    });
+                  }}
+                  className="rounded border-slate-300 text-indigo-600"
+                />
+                <span>1 hàng ngang gọn</span>
+              </label>
+              <button
+                type="button"
+                aria-label="Thêm mục mới"
+                data-testid="inline-strip-add-btn"
+                onClick={() => {
+                  const nextNum = stripProps.items.length + 1;
+                  const lastAccent = stripProps.items[stripProps.items.length - 1]?.accentColor || '#2563EB';
                   onUpdateElement(selectedElement.id, {
-                    props: { ...prev, singleRow: e.target.checked },
+                    props: {
+                      ...stripProps,
+                      items: [
+                        ...stripProps.items,
+                        {
+                          label: `${nextNum}. Mục mới`,
+                          sublabel: '',
+                          accentColor: lastAccent,
+                        },
+                      ],
+                    },
                   });
                 }}
-                className="rounded border-slate-300 text-indigo-600"
-              />
-              <span>1 hàng ngang gọn</span>
-            </label>
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10.5px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 whitespace-nowrap"
+              >
+                <Plus className="w-3 h-3" />
+                <span>Thêm mục</span>
+              </button>
+            </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-            {selectedElement.props.items.map((it, idx) => (
+          <div className="space-y-1.5">
+            {stripProps.items.map((it, idx) => (
               <div key={idx} className="flex items-center gap-1.5">
                 <input
                   type="text"
                   aria-label={`Nhãn mục ${idx + 1}`}
                   value={it.label}
+                  placeholder={`Mục ${idx + 1}`}
                   onChange={(e) => {
-                    const prev = selectedElement.props;
-                    if (prev.kind !== 'comparison-strip') return;
-                    const nextItems = prev.items.map((item, i) =>
+                    const nextItems = stripProps.items.map((item, i) =>
                       i === idx ? { ...item, label: e.target.value } : item,
                     );
                     onUpdateElement(selectedElement.id, {
-                      props: { ...prev, items: nextItems },
+                      props: { ...stripProps, items: nextItems },
                     });
                   }}
-                  className="flex-1 px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
+                  className="flex-1 min-w-0 px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
                 />
                 <input
                   type="text"
@@ -952,22 +997,42 @@ export const InlinePreviewElementEditor: React.FC<InlinePreviewElementEditorProp
                   value={it.sublabel ?? ''}
                   placeholder="Phụ"
                   onChange={(e) => {
-                    const prev = selectedElement.props;
-                    if (prev.kind !== 'comparison-strip') return;
-                    const nextItems = prev.items.map((item, i) =>
+                    const nextItems = stripProps.items.map((item, i) =>
                       i === idx ? { ...item, sublabel: e.target.value } : item,
                     );
                     onUpdateElement(selectedElement.id, {
-                      props: { ...prev, items: nextItems },
+                      props: { ...stripProps, items: nextItems },
                     });
                   }}
-                  className="w-20 px-2 py-1 text-[11px] bg-slate-50 border border-slate-200 rounded"
+                  className="w-24 sm:w-28 px-2 py-1 text-[11px] bg-slate-50 border border-slate-200 rounded"
                 />
+                <button
+                  type="button"
+                  aria-label={`Xóa mục ${idx + 1}`}
+                  data-testid={`inline-strip-delete-item-${idx}`}
+                  disabled={stripProps.items.length <= 1}
+                  title={
+                    stripProps.items.length <= 1
+                      ? 'Cần giữ ít nhất 1 mục (hoặc bấm Xóa ở góc trên để xóa cả component)'
+                      : `Xóa mục "${it.label || idx + 1}"`
+                  }
+                  onClick={() => {
+                    if (stripProps.items.length <= 1) return;
+                    const nextItems = stripProps.items.filter((_, i) => i !== idx);
+                    onUpdateElement(selectedElement.id, {
+                      props: { ...stripProps, items: nextItems },
+                    });
+                  }}
+                  className="p-1.5 text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
               </div>
             ))}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Illustration Prop Editor (non-cartoon-host) */}
       {selectedElement.props.kind === 'illustration-prop' && !isCartoonHost && (() => {
@@ -1072,9 +1137,11 @@ export const InlinePreviewElementEditor: React.FC<InlinePreviewElementEditorProp
               <input
                 type="text"
                 aria-label="Danh sách nhãn phân cách dấu phẩy"
-                value={(d.labels ?? []).join(', ')}
+                value={labelsDraft}
                 onChange={(e) => {
-                  const nextLabels = e.target.value
+                  const raw = e.target.value;
+                  setLabelsDraft(raw);
+                  const nextLabels = raw
                     .split(',')
                     .map((s) => s.trim())
                     .filter(Boolean);
@@ -1088,35 +1155,82 @@ export const InlinePreviewElementEditor: React.FC<InlinePreviewElementEditorProp
             </div>
 
             {Array.isArray(d.checklist) && d.checklist.length > 0 && (
-              <div className="space-y-1 pt-1 border-t border-slate-100">
-                <div className="text-[10px] font-semibold text-slate-600">Danh sách mục (Checklist)</div>
+              <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold text-slate-600">Danh sách mục (Checklist)</span>
+                  <button
+                    type="button"
+                    aria-label="Thêm mục checklist"
+                    onClick={() => {
+                      const nextList = [...d.checklist!, { text: `Mục ${d.checklist!.length + 1}`, ok: true }];
+                      onUpdateElement(selectedElement.id, {
+                        props: { ...illProps, data: { ...d, checklist: nextList } },
+                      });
+                    }}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded hover:bg-indigo-100"
+                  >
+                    <Plus className="w-2.5 h-2.5" />
+                    <span>Thêm mục</span>
+                  </button>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                   {d.checklist.map((item, idx) => (
-                    <input
-                      key={idx}
-                      type="text"
-                      aria-label={`Mục checklist ${idx + 1}`}
-                      value={item.text}
-                      onChange={(e) => {
-                        const nextList = d.checklist!.map((it, i) =>
-                          i === idx ? { ...it, text: e.target.value } : it,
-                        );
-                        onUpdateElement(selectedElement.id, {
-                          props: { ...illProps, data: { ...d, checklist: nextList } },
-                        });
-                      }}
-                      className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
-                    />
+                    <div key={idx} className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        aria-label={`Mục checklist ${idx + 1}`}
+                        value={item.text}
+                        onChange={(e) => {
+                          const nextList = d.checklist!.map((it, i) =>
+                            i === idx ? { ...it, text: e.target.value } : it,
+                          );
+                          onUpdateElement(selectedElement.id, {
+                            props: { ...illProps, data: { ...d, checklist: nextList } },
+                          });
+                        }}
+                        className="flex-1 min-w-0 px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
+                      />
+                      <button
+                        type="button"
+                        aria-label={`Xóa mục checklist ${idx + 1}`}
+                        disabled={d.checklist!.length <= 1}
+                        onClick={() => {
+                          const nextList = d.checklist!.filter((_, i) => i !== idx);
+                          onUpdateElement(selectedElement.id, {
+                            props: { ...illProps, data: { ...d, checklist: nextList } },
+                          });
+                        }}
+                        className="p-1 text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded disabled:opacity-40"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>
             )}
 
             {Array.isArray(d.upgrades) && d.upgrades.length > 0 && (
-              <div className="space-y-1 pt-1 border-t border-slate-100">
-                <div className="text-[10px] font-semibold text-slate-600">Cặp nâng cấp (Basic → Natural)</div>
+              <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold text-slate-600">Cặp nâng cấp (Basic → Natural)</span>
+                  <button
+                    type="button"
+                    aria-label="Thêm cặp nâng cấp"
+                    onClick={() => {
+                      const nextUp = [...d.upgrades!, { prompt: 'Câu cơ bản', upgrade: 'Câu tự nhiên' }];
+                      onUpdateElement(selectedElement.id, {
+                        props: { ...illProps, data: { ...d, upgrades: nextUp } },
+                      });
+                    }}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded hover:bg-indigo-100"
+                  >
+                    <Plus className="w-2.5 h-2.5" />
+                    <span>Thêm cặp</span>
+                  </button>
+                </div>
                 {d.upgrades.map((up, idx) => (
-                  <div key={idx} className="grid grid-cols-2 gap-1.5">
+                  <div key={idx} className="flex items-center gap-1.5">
                     <input
                       type="text"
                       aria-label={`Mẫu cơ bản ${idx + 1}`}
@@ -1129,7 +1243,7 @@ export const InlinePreviewElementEditor: React.FC<InlinePreviewElementEditorProp
                           props: { ...illProps, data: { ...d, upgrades: nextUp } },
                         });
                       }}
-                      className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
+                      className="flex-1 min-w-0 px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
                     />
                     <input
                       type="text"
@@ -1143,18 +1257,51 @@ export const InlinePreviewElementEditor: React.FC<InlinePreviewElementEditorProp
                           props: { ...illProps, data: { ...d, upgrades: nextUp } },
                         });
                       }}
-                      className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
+                      className="flex-1 min-w-0 px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
                     />
+                    <button
+                      type="button"
+                      aria-label={`Xóa cặp nâng cấp ${idx + 1}`}
+                      disabled={d.upgrades!.length <= 1}
+                      onClick={() => {
+                        const nextUp = d.upgrades!.filter((_, i) => i !== idx);
+                        onUpdateElement(selectedElement.id, {
+                          props: { ...illProps, data: { ...d, upgrades: nextUp } },
+                        });
+                      }}
+                      className="p-1 text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded disabled:opacity-40 shrink-0"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
                   </div>
                 ))}
               </div>
             )}
 
             {Array.isArray(d.boxes) && d.boxes.length > 0 && (
-              <div className="space-y-1 pt-1 border-t border-slate-100">
-                <div className="text-[10px] font-semibold text-slate-600">Các ô đối chiếu (Boxes)</div>
+              <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold text-slate-600">Các ô đối chiếu (Boxes)</span>
+                  <button
+                    type="button"
+                    aria-label="Thêm ô đối chiếu"
+                    onClick={() => {
+                      const nextBoxes = [
+                        ...d.boxes!,
+                        { title: `Ô ${d.boxes!.length + 1}`, subtitle: '', icon: 'dot' as const },
+                      ];
+                      onUpdateElement(selectedElement.id, {
+                        props: { ...illProps, data: { ...d, boxes: nextBoxes } },
+                      });
+                    }}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded hover:bg-indigo-100"
+                  >
+                    <Plus className="w-2.5 h-2.5" />
+                    <span>Thêm ô</span>
+                  </button>
+                </div>
                 {d.boxes.map((bx, idx) => (
-                  <div key={idx} className="grid grid-cols-2 gap-1.5">
+                  <div key={idx} className="flex items-center gap-1.5">
                     <input
                       type="text"
                       aria-label={`Tiêu đề ô ${idx + 1}`}
@@ -1167,7 +1314,7 @@ export const InlinePreviewElementEditor: React.FC<InlinePreviewElementEditorProp
                           props: { ...illProps, data: { ...d, boxes: nextBoxes } },
                         });
                       }}
-                      className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
+                      className="flex-1 min-w-0 px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
                     />
                     <input
                       type="text"
@@ -1181,18 +1328,51 @@ export const InlinePreviewElementEditor: React.FC<InlinePreviewElementEditorProp
                           props: { ...illProps, data: { ...d, boxes: nextBoxes } },
                         });
                       }}
-                      className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
+                      className="flex-1 min-w-0 px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
                     />
+                    <button
+                      type="button"
+                      aria-label={`Xóa ô ${idx + 1}`}
+                      disabled={d.boxes!.length <= 1}
+                      onClick={() => {
+                        const nextBoxes = d.boxes!.filter((_, i) => i !== idx);
+                        onUpdateElement(selectedElement.id, {
+                          props: { ...illProps, data: { ...d, boxes: nextBoxes } },
+                        });
+                      }}
+                      className="p-1 text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded disabled:opacity-40 shrink-0"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
                   </div>
                 ))}
               </div>
             )}
 
             {Array.isArray(d.nodes) && d.nodes.length > 0 && (
-              <div className="space-y-1 pt-1 border-t border-slate-100">
-                <div className="text-[10px] font-semibold text-slate-600">Các nút nội dung (Nodes)</div>
+              <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold text-slate-600">Các nút nội dung (Nodes)</span>
+                  <button
+                    type="button"
+                    aria-label="Thêm nút nội dung"
+                    onClick={() => {
+                      const nextNodes = [
+                        ...d.nodes!,
+                        { label: `Bước ${d.nodes!.length + 1}`, sublabel: '' },
+                      ];
+                      onUpdateElement(selectedElement.id, {
+                        props: { ...illProps, data: { ...d, nodes: nextNodes } },
+                      });
+                    }}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded hover:bg-indigo-100"
+                  >
+                    <Plus className="w-2.5 h-2.5" />
+                    <span>Thêm nút</span>
+                  </button>
+                </div>
                 {d.nodes.map((nd, idx) => (
-                  <div key={idx} className="grid grid-cols-2 gap-1.5">
+                  <div key={idx} className="flex items-center gap-1.5">
                     <input
                       type="text"
                       aria-label={`Nhãn node ${idx + 1}`}
@@ -1205,7 +1385,7 @@ export const InlinePreviewElementEditor: React.FC<InlinePreviewElementEditorProp
                           props: { ...illProps, data: { ...d, nodes: nextNodes } },
                         });
                       }}
-                      className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
+                      className="flex-1 min-w-0 px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
                     />
                     <input
                       type="text"
@@ -1220,8 +1400,22 @@ export const InlinePreviewElementEditor: React.FC<InlinePreviewElementEditorProp
                           props: { ...illProps, data: { ...d, nodes: nextNodes } },
                         });
                       }}
-                      className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
+                      className="flex-1 min-w-0 px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded"
                     />
+                    <button
+                      type="button"
+                      aria-label={`Xóa node ${idx + 1}`}
+                      disabled={d.nodes!.length <= 1}
+                      onClick={() => {
+                        const nextNodes = d.nodes!.filter((_, i) => i !== idx);
+                        onUpdateElement(selectedElement.id, {
+                          props: { ...illProps, data: { ...d, nodes: nextNodes } },
+                        });
+                      }}
+                      className="p-1 text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded disabled:opacity-40 shrink-0"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
                   </div>
                 ))}
               </div>

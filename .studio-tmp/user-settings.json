@@ -39,7 +39,7 @@
     "inlineRate": 1,
     "inlineWhisperSync": true
   },
-  "updatedAt": 1795866145143,
+  "updatedAt": 1795868807060,
   "reels": {
     "reelCreationMode": "translation",
     "creatorTopicHint": "",
@@ -203,7 +203,22 @@
         "mp4Quality": "standard",
         "mp4Fps": 24,
         "previewViewMode": "video",
-        "layoutOverridesByAspect": {},
+        "layoutOverridesByAspect": {
+          "16:9": {
+            "reel-prop-0": {
+              "x": 960,
+              "y": 570,
+              "width": 1032,
+              "scale": 0.96
+            },
+            "reel-prop-21": {
+              "x": 960,
+              "y": 623,
+              "width": 1032,
+              "scale": 0.96
+            }
+          }
+        },
         "enableCountdownSfx": true,
         "descriptionStyle": "training-guide",
         "enableLearningAudio": true

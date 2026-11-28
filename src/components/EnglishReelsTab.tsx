@@ -354,6 +354,7 @@ interface ReelsModeWorkspaceSnapshot {
   layoutOverridesByAspect: Partial<
     Record<ExportAspectRatioId, Record<string, ElementLayoutOverride>>
   >;
+  hiddenElementIds: string[];
   selectedPreviewElementId: string | null;
   includeQuizInPrompt: 'auto' | 'always' | 'none';
   targetLang: string;
@@ -684,9 +685,11 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
   const [layoutOverridesByAspect, setLayoutOverridesByAspect] = useState<
     Partial<Record<ExportAspectRatioId, Record<string, ElementLayoutOverride>>>
   >(() => initialModeSaved.layoutOverridesByAspect || {});
+  const [hiddenElementIds, setHiddenElementIds] = useState<string[]>([]);
   const [titleLayoutByAspect, setTitleLayoutByAspect] = useState<
     Partial<Record<ExportAspectRatioId, TitleOverlayLayout | undefined>>
   >({});
+  const stageContainerRef = useRef<HTMLDivElement | null>(null);
   const [autoReflowOnMove, setAutoReflowOnMove] = useState(true);
   const [dismissedOverlapSig, setDismissedOverlapSig] = useState('');
   const dragStateRef = useRef<{
@@ -766,6 +769,32 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
   const setExportNotice = (msg: string | null) => setModeExportNotice(activeModeRef.current, msg);
   const setTtsProgress = (pct: number) => setLocalTtsProgress(pct);
   const setTtsStageLabel = (lbl: string) => setLocalTtsStageLabel(lbl);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      if (!selectedPreviewElementId || isVideoPlaying || isExportingVideo || previewViewMode !== 'video') {
+        return;
+      }
+      if (!stageContainerRef.current || stageContainerRef.current.offsetParent === null) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      e.preventDefault();
+      const targetId = selectedPreviewElementId;
+      setHiddenElementIds((prev) => (prev.includes(targetId) ? prev : [...prev, targetId]));
+      setSelectedPreviewElementId(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedPreviewElementId, isVideoPlaying, isExportingVideo, previewViewMode]);
 
   const currentAudioSignature = useMemo(
     () =>
@@ -1091,6 +1120,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       setMp4Fps(DEFAULT_MP4_EXPORT_SETTINGS.fps);
       setPreviewViewMode('video');
       setLayoutOverridesByAspect({});
+      setHiddenElementIds([]);
       setSelectedPreviewElementId(null);
       setGeneratedAudioFile(null);
       setGeneratedAudioUrl(null);
@@ -1352,13 +1382,17 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
   const stageDims = useMemo(() => getStageDimensionsForAspect(reelsAspectRatio), [reelsAspectRatio]);
 
   const applyElementLayoutOverrides = (proj: LessonProject): LessonProject => {
+    const hiddenSet = hiddenElementIds.length > 0 ? new Set(hiddenElementIds) : null;
     const aspectKey = proj.aspectRatio || reelsAspectRatio;
     const overrides = layoutOverridesByAspect[aspectKey];
-    if (!overrides || Object.keys(overrides).length === 0) return proj;
+    if (!hiddenSet && (!overrides || Object.keys(overrides).length === 0)) return proj;
+    const filtered = hiddenSet
+      ? proj.elements.filter((el) => !hiddenSet.has(el.id))
+      : proj.elements;
     return {
       ...proj,
-      elements: proj.elements.map((el) => {
-        const ov = overrides[el.id];
+      elements: filtered.map((el) => {
+        const ov = overrides?.[el.id];
         if (!ov) return el;
         return {
           ...el,
@@ -1435,6 +1469,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       titleLayout: titleLayoutByAspect[reelsAspectRatio],
       enableLearningAudio,
       enableExplanationAudio: enableDualTts && targetLang !== 'none',
+      hiddenElementIds,
     });
     if (
       !customSyncedCues &&
@@ -1476,6 +1511,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     syncedTimingOffsetMs,
     syncedSpeedFactor,
     layoutOverridesByAspect,
+    hiddenElementIds,
     titleLayoutByAspect,
     enableLearningAudio,
     enableDualTts,
@@ -1820,6 +1856,8 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
         hasCustomCardsRef.current = true;
         syncVoiceForDetectedLang(inferLearningLangFromCards(built.cards));
         setActiveCardIdx(0);
+        setHiddenElementIds([]);
+        setSelectedPreviewElementId(null);
         setSceneJsonOverride(null);
       }
     } catch (err) {
@@ -1881,6 +1919,8 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     syncVoiceForDetectedLang(detectedLang);
     setSceneJsonOverride(parsed.sceneJson ?? null);
     setActiveCardIdx(0);
+    setHiddenElementIds([]);
+    setSelectedPreviewElementId(null);
     invalidateSynthesizedAudio();
     const shortfallWarn =
       parsed.durationReport && !parsed.durationReport.metMinimum && parsed.durationReport.shortfallReason
@@ -1912,6 +1952,8 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     hasCustomCardsRef.current = true;
     syncVoiceForDetectedLang(inferLearningLangFromCards(built.cards));
     setActiveCardIdx(0);
+    setHiddenElementIds([]);
+    setSelectedPreviewElementId(null);
     setSceneJsonOverride(null);
     invalidateSynthesizedAudio();
     setAiJsonNotice(`Đã tách nhanh ${built.cards.length} thẻ (${built.mode.toUpperCase()}) từ nội dung.`);
@@ -2125,6 +2167,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     setActiveCardIdx(0);
     setSelectedPreviewElementId(null);
     setLayoutOverridesByAspect({});
+    setHiddenElementIds([]);
     invalidateSynthesizedAudio();
   };
 
@@ -2159,6 +2202,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     setActiveCardIdx(0);
     setSelectedPreviewElementId(null);
     setLayoutOverridesByAspect({});
+    setHiddenElementIds([]);
     invalidateSynthesizedAudio();
     setAiJsonNotice(`Đã tạo bộ Phản Xạ Dịch ${built.cards.filter((c) => c.type === 'translation').length} câu!`);
   };
@@ -2198,6 +2242,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       videoTime,
       previewViewMode,
       layoutOverridesByAspect,
+      hiddenElementIds,
       selectedPreviewElementId,
       includeQuizInPrompt,
       targetLang,
@@ -2253,6 +2298,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       setVideoTime(saved.videoTime);
       setPreviewViewMode(saved.previewViewMode);
       setLayoutOverridesByAspect(saved.layoutOverridesByAspect);
+      setHiddenElementIds(saved.hiddenElementIds || []);
       setSelectedPreviewElementId(saved.selectedPreviewElementId);
       setIncludeQuizInPrompt(saved.includeQuizInPrompt);
       setTargetLang(saved.targetLang);
@@ -2358,6 +2404,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
     setVideoTime(0.5);
     setPreviewViewMode(persistedNext.previewViewMode || 'video');
     setLayoutOverridesByAspect(persistedNext.layoutOverridesByAspect || {});
+    setHiddenElementIds([]);
     setSelectedPreviewElementId(null);
 
     if (nextMode === 'source') {
@@ -3185,6 +3232,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       titleLayout: titleLayoutByAspect[reelsAspectRatio],
       enableLearningAudio: allowLearningAudio,
       enableExplanationAudio: allowExplAudio,
+      hiddenElementIds,
     });
 
     // Map per-segment WordBoundary cues cleanly onto proj.cues (handles single, Dual-TTS & multi-repeat translation)
@@ -3647,6 +3695,8 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
       syncVoiceForDetectedLang(detectedLang);
       setSceneJsonOverride(parsed.sceneJson ?? null);
       setActiveCardIdx(0);
+      setHiddenElementIds([]);
+      setSelectedPreviewElementId(null);
       invalidateSynthesizedAudio();
       const shortfallWarn =
         parsed.durationReport && !parsed.durationReport.metMinimum && parsed.durationReport.shortfallReason
@@ -3941,6 +3991,8 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                       });
                       setCards(built.cards);
                       setActiveCardIdx(0);
+                      setHiddenElementIds([]);
+                      setSelectedPreviewElementId(null);
                     }}
                     className="px-2.5 py-1 text-[11px] font-medium bg-slate-100 hover:bg-indigo-50 border border-slate-200 rounded-md text-slate-700"
                   >
@@ -5507,15 +5559,19 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
           </div>
 
           {previewViewMode === 'video' ? (
-            <div className="space-y-2.5">
+            <div ref={stageContainerRef} className="space-y-2.5">
               {(() => {
                 const activeAspectOverrides = layoutOverridesByAspect[reelsAspectRatio] ?? {};
+                const previewLessonTime = Math.max(
+                  0,
+                  videoTime - getEffectiveIntroSeconds(previewProject),
+                );
                 const selectedPreviewElement = selectedPreviewElementId
                   ? previewProject.elements.find((el) => el.id === selectedPreviewElementId) ?? null
                   : null;
                 const resolvedPreviewLayouts = resolveElementLayoutForAspect(
                   previewProject.elements,
-                  videoTime,
+                  previewLessonTime,
                   reelsAspectRatio,
                   previewProject.subtitleConfig,
                   previewProject.compositionId,
@@ -5605,7 +5661,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                     previewProject.elements,
                     x,
                     y,
-                    videoTime,
+                    previewLessonTime,
                     reelsAspectRatio,
                     previewProject.subtitleConfig,
                     previewProject.compositionId,
@@ -5736,7 +5792,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                       const reelsOverlaps = detectActiveStageOverlaps(
                         previewProject.elements,
                         resolvedPreviewLayouts,
-                        videoTime,
+                        previewLessonTime,
                         resolvedTitleBox
                           ? {
                               x: resolvedTitleBox.x,
@@ -5950,6 +6006,34 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                             Đặt lại vị trí thẻ này
                           </button>
                         )}
+                        {selectedPreviewElementId && selectedPreviewElement && (
+                          <button
+                            type="button"
+                            data-testid="reels-delete-el-btn"
+                            aria-label={`Xóa ${selectedPreviewElement.label}`}
+                            onClick={() => {
+                              setHiddenElementIds((prev) =>
+                                prev.includes(selectedPreviewElementId) ? prev : [...prev, selectedPreviewElementId],
+                              );
+                              setSelectedPreviewElementId(null);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 font-semibold text-rose-600 bg-rose-50 border border-rose-200 rounded hover:bg-rose-100"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Xóa</span>
+                          </button>
+                        )}
+                        {hiddenElementIds.length > 0 && (
+                          <button
+                            type="button"
+                            data-testid="reels-restore-deleted-btn"
+                            onClick={() => setHiddenElementIds([])}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded hover:bg-amber-100"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Khôi phục ({hiddenElementIds.length})</span>
+                          </button>
+                        )}
                         {Object.keys(activeAspectOverrides).length > 0 && (
                           <button
                             type="button"
@@ -6024,14 +6108,41 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                         if (patch.props.kind === 'topic-pill') {
                           updateCard(targetCardIdx, { badge: patch.props.text });
                         } else if (patch.props.kind === 'comparison-strip') {
-                          updateCardVisual(targetCardIdx, {
-                            labels: patch.props.items.map((item) => item.label).filter(Boolean),
-                          });
+                          if (elId.startsWith('reel-quiz-opts-')) {
+                            const nextOptions = patch.props.items.map((item) =>
+                              item.label.replace(/^[A-Z]\.\s+/, ''),
+                            );
+                            updateCard(targetCardIdx, {
+                              options: nextOptions,
+                              visual: {
+                                ...(card.visual || {}),
+                                quizSingleRow: Boolean(patch.props.singleRow),
+                                quizOptionSublabels: patch.props.items.map((item) => item.sublabel),
+                              },
+                            });
+                          } else {
+                            updateCardVisual(targetCardIdx, {
+                              labels: patch.props.items.map((item) => item.label).filter(Boolean),
+                              stripItems: patch.props.items.map((item) => ({
+                                label: item.label,
+                                sublabel: item.sublabel,
+                                accentColor: item.accentColor,
+                                activateAt: item.activateAt,
+                              })),
+                              stripSingleRow: Boolean(patch.props.singleRow),
+                            });
+                          }
                         } else if (patch.props.kind === 'sentence-card') {
                           if (elId.startsWith('reel-tr-prompt-card-')) {
                             updateCard(targetCardIdx, {
                               sourcePrompt: patch.props.text,
                               translation: patch.props.subtext ?? patch.props.text,
+                            });
+                          } else if (elId.startsWith('reel-tr-ans-card-')) {
+                            updateCard(targetCardIdx, {
+                              content: patch.props.text,
+                              ttsText: patch.props.text,
+                              vocabNotes: patch.props.subtext ?? card.vocabNotes,
                             });
                           } else if (elId.startsWith('reel-q-context-')) {
                             updateCard(targetCardIdx, { contextExcerpt: patch.props.text });
@@ -6073,6 +6184,22 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                         }
                       };
 
+                      const handleDeleteReelsElement = (elId: string) => {
+                        setHiddenElementIds((prev) =>
+                          prev.includes(elId) ? prev : [...prev, elId],
+                        );
+                        setLayoutOverridesByAspect((prev) => {
+                          const aspectMap = prev[reelsAspectRatio];
+                          if (!aspectMap || !aspectMap[elId]) return prev;
+                          const copy = { ...aspectMap };
+                          delete copy[elId];
+                          return { ...prev, [reelsAspectRatio]: copy };
+                        });
+                        if (selectedPreviewElementId === elId) {
+                          setSelectedPreviewElementId(null);
+                        }
+                      };
+
                       return (
                         <InlinePreviewElementEditor
                           selectedElement={selectedPreviewElement}
@@ -6097,6 +6224,7 @@ export const EnglishReelsTab: React.FC<EnglishReelsTabProps> = ({ onSendToStudio
                           }}
                           onChangeWatermark={setWatermarkConfig}
                           onUpdateElement={handleInlineUpdateReelsElement}
+                          onDeleteElement={handleDeleteReelsElement}
                           onResetElementPosition={(id) => {
                             setLayoutOverridesByAspect((prev) => {
                               const copy = { ...(prev[reelsAspectRatio] ?? {}) };

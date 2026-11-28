@@ -401,6 +401,28 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
     }
   };
 
+  useEffect(() => {
+    if (!selectedElementId || !onDeleteElement) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      if (!previewPanelRef.current || previewPanelRef.current.offsetParent === null) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      e.preventDefault();
+      onDeleteElement(selectedElementId);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedElementId, onDeleteElement]);
+
   const toCanvasCoords = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -1666,6 +1688,18 @@ export const StagePreview: React.FC<StagePreviewProps> = ({
                         className="px-2 py-0.5 font-semibold text-slate-700 bg-white border border-slate-200 rounded hover:bg-slate-100"
                       >
                         Đặt lại vị trí
+                      </button>
+                    )}
+                    {onDeleteElement && (
+                      <button
+                        type="button"
+                        data-testid="studio-delete-el-btn"
+                        aria-label={`Xóa ${selectedEl.label}`}
+                        onClick={() => onDeleteElement(selectedEl.id)}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 font-semibold text-rose-600 bg-rose-50 border border-rose-200 rounded hover:bg-rose-100"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Xóa</span>
                       </button>
                     )}
                   </div>

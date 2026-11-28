@@ -245,6 +245,10 @@ export interface ReelCardVisualConfig {
   upgrades?: Array<{ prompt: string; upgrade: string; badgeColor?: string }>;
   boxes?: Array<{ title: string; subtitle?: string; icon: 'dot' | 'surface' | 'cube' | 'check' | 'cross' | 'letter'; accent?: string }>;
   nodes?: Array<{ label: string; sublabel?: string; color?: string; sceneIcon?: IllustrationSceneIcon }>;
+  stripItems?: Array<{ label: string; sublabel?: string; accentColor?: string; activateAt?: number }>;
+  stripSingleRow?: boolean;
+  quizSingleRow?: boolean;
+  quizOptionSublabels?: Array<string | undefined>;
   customPrimitives?: VectorPrimitive[];
 }
 
@@ -5780,6 +5784,7 @@ export function reelCardsToLessonProject(
     titleLayout?: TitleOverlayLayout;
     enableLearningAudio?: boolean;
     enableExplanationAudio?: boolean;
+    hiddenElementIds?: string[];
   },
 ): LessonProject {
   const safeCards =
@@ -6565,8 +6570,40 @@ export function reelCardsToLessonProject(
       const trLocale = getTranslationTargetLocale(card.learningLang || 'en', options?.targetLang);
       const totalRepeats = win.repeatCount || Math.max(1, card.repeatCount ?? 2);
 
-      // Top Roadmap Strip (forced onto 1 crisp horizontal line)
+      // Top Roadmap Strip (customizable labels & 1-row toggle; defaults to 1 crisp horizontal line)
       if (activeProfile.showStrip) {
+        const customStripItems = card.visual?.stripItems;
+        const resolvedStripItems =
+          customStripItems && customStripItems.length > 0
+            ? customStripItems.map((it, sIdx, arr) => ({
+                label: it.label,
+                sublabel: it.sublabel,
+                activateAt:
+                  it.activateAt !== undefined
+                    ? it.activateAt
+                    : sIdx === 0
+                      ? start
+                      : sIdx === 1
+                        ? win.thinkStart
+                        : sIdx === 2
+                          ? win.answerStart
+                          : arr.length <= 4 && sIdx === arr.length - 1
+                            ? end + 9
+                            : win.answerStart,
+                accentColor: it.accentColor || (sIdx === 2 ? '#16A34A' : '#D97706'),
+              }))
+            : trLocale.stageSteps.map((sLbl, sIdx) => ({
+                label: sLbl,
+                activateAt:
+                  sIdx === 0
+                    ? start
+                    : sIdx === 1
+                      ? win.thinkStart
+                      : sIdx === 2
+                        ? win.answerStart
+                        : end + 9,
+                accentColor: sIdx === 2 ? '#16A34A' : '#D97706',
+              }));
         elements.push({
           id: `reel-stage-${idx}`,
           type: 'comparison-strip',
@@ -6578,19 +6615,9 @@ export function reelCardsToLessonProject(
           layout: { x: 540, y: activeProfile.stripY, width: 960, scale: 1, zIndex: 12 },
           props: {
             kind: 'comparison-strip',
-            singleRow: true,
-            items: trLocale.stageSteps.map((sLbl, sIdx) => ({
-              label: sLbl,
-              activateAt:
-                sIdx === 0
-                  ? start
-                  : sIdx === 1
-                    ? win.thinkStart
-                    : sIdx === 2
-                      ? win.answerStart
-                      : end + 9,
-              accentColor: sIdx === 2 ? '#16A34A' : '#D97706',
-            })),
+            singleRow:
+              card.visual?.stripSingleRow !== undefined ? card.visual.stripSingleRow : true,
+            items: resolvedStripItems,
           },
         });
       }
@@ -6874,6 +6901,20 @@ export function reelCardsToLessonProject(
       const ansOpt = card.options[safeAnsIdx];
 
       // Top Lesson Roadmap Strip (Quiz Step Highlighted)
+      const quizStripItems =
+        card.visual?.stripItems && card.visual.stripItems.length > 0
+          ? card.visual.stripItems.map((it, sIdx) => ({
+              label: it.label,
+              sublabel: it.sublabel,
+              activateAt:
+                it.activateAt !== undefined ? it.activateAt : sIdx === activeStepIdx ? start : end + 9,
+              accentColor: it.accentColor || '#D97706',
+            }))
+          : stageSteps.map((sLbl, sIdx) => ({
+              label: sLbl,
+              activateAt: sIdx === activeStepIdx ? start : end + 9,
+              accentColor: '#D97706',
+            }));
       elements.push({
         id: `reel-stage-${idx}`,
         type: 'comparison-strip',
@@ -6885,11 +6926,8 @@ export function reelCardsToLessonProject(
         layout: { x: 540, y: activeProfile.stripY, width: 920, scale: 1, zIndex: 12 },
         props: {
           kind: 'comparison-strip',
-          items: stageSteps.map((sLbl, sIdx) => ({
-            label: sLbl,
-            activateAt: sIdx === activeStepIdx ? start : end + 9,
-            accentColor: '#D97706',
-          })),
+          singleRow: card.visual?.stripSingleRow,
+          items: quizStripItems,
         },
       });
 
@@ -7144,9 +7182,15 @@ export function reelCardsToLessonProject(
         },
         props: {
           kind: 'comparison-strip',
-          items: card.options.slice(0, 4).map((opt, oIdx) => ({
-            label: `${String.fromCharCode(65 + oIdx)}. ${opt}`,
-            sublabel: oIdx === safeAnsIdx ? locale.correctOptionSublabel : undefined,
+          singleRow: card.visual?.quizSingleRow,
+          items: card.options.slice(0, 6).map((opt, oIdx) => ({
+            label: /^[A-Z]\.\s+/.test(opt) ? opt : `${String.fromCharCode(65 + oIdx)}. ${opt}`,
+            sublabel:
+              card.visual?.quizOptionSublabels && oIdx < card.visual.quizOptionSublabels.length
+                ? card.visual.quizOptionSublabels[oIdx]
+                : oIdx === safeAnsIdx
+                  ? locale.correctOptionSublabel
+                  : undefined,
             activateAt: oIdx === safeAnsIdx ? win.answerStart : end + 9,
             accentColor: oIdx === safeAnsIdx ? '#16A34A' : '#64748B',
           })),
@@ -7361,6 +7405,22 @@ export function reelCardsToLessonProject(
       }
     } else {
       if (activeProfile.showStrip) {
+        const defaultStripAccent =
+          card.type === 'intro' ? '#4F46E5' : card.type === 'outro' ? '#16A34A' : '#2563EB';
+        const defaultStripItems =
+          card.visual?.stripItems && card.visual.stripItems.length > 0
+            ? card.visual.stripItems.map((it, sIdx) => ({
+                label: it.label,
+                sublabel: it.sublabel,
+                activateAt:
+                  it.activateAt !== undefined ? it.activateAt : sIdx === activeStepIdx ? start : end + 9,
+                accentColor: it.accentColor || defaultStripAccent,
+              }))
+            : stageSteps.map((sLbl, sIdx) => ({
+                label: sLbl,
+                activateAt: sIdx === activeStepIdx ? start : end + 9,
+                accentColor: defaultStripAccent,
+              }));
         elements.push({
           id: `reel-stage-${idx}`,
           type: 'comparison-strip',
@@ -7372,12 +7432,8 @@ export function reelCardsToLessonProject(
           layout: { x: 540, y: activeProfile.stripY, width: 920, scale: 1, zIndex: 12 },
           props: {
             kind: 'comparison-strip',
-            items: stageSteps.map((sLbl, sIdx) => ({
-              label: sLbl,
-              activateAt: sIdx === activeStepIdx ? start : end + 9,
-              accentColor:
-                card.type === 'intro' ? '#4F46E5' : card.type === 'outro' ? '#16A34A' : '#2563EB',
-            })),
+            singleRow: card.visual?.stripSingleRow,
+            items: defaultStripItems,
           },
         });
       }
@@ -7681,7 +7737,15 @@ export function reelCardsToLessonProject(
     });
   });
 
-  const resolvedElements = resolveProjectOverlaps(elements, {
+  const hiddenSet =
+    options?.hiddenElementIds && options.hiddenElementIds.length > 0
+      ? new Set(options.hiddenElementIds)
+      : null;
+  const visibleElements = hiddenSet
+    ? elements.filter((el) => !hiddenSet.has(el.id))
+    : elements;
+
+  const resolvedElements = resolveProjectOverlaps(visibleElements, {
     preserveKaraokeY: compId === 'plain' || resolvedSubtitleConfig.position !== 'bottom',
   });
   const aspectRatio: ExportAspectRatioId = options?.aspectRatio || '9:16';
